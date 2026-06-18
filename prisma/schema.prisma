@@ -1,0 +1,204 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MemberRole {
+  COORDINACION
+  EQUIPO
+  ROOKIE
+}
+
+enum MemberStatus {
+  ACTIVO
+  HIATUS
+}
+
+enum ProjectStatus {
+  ACTIVO
+  EN_PAUSA
+  PLANIFICACION
+  DESARROLLO
+  TRASPASO
+}
+
+enum Priority {
+  ALTA
+  MEDIA
+  BAJA
+}
+
+enum FeatureStatus {
+  HECHO
+  EN_PROGRESO
+  PENDIENTE
+}
+
+enum TaskType {
+  FEATURE
+  SPIKE
+  FIX
+  REFACTOR
+  CHORE
+  DOCS
+}
+
+enum KanbanColumn {
+  PENDIENTE
+  PROGRESO
+  REVISAR
+  REVISION
+  LISTO
+}
+
+enum DocSlotType {
+  KICKOFF
+  REQUERIMIENTOS
+  TECNICO
+  DECISIONES
+  INFORME
+}
+
+model Member {
+  id        String       @id @default(cuid())
+  name      String
+  role      MemberRole
+  area      String
+  email     String       @unique
+  birthday  DateTime?
+  joinedAt  DateTime
+  status    MemberStatus
+  skills    String[]
+  level     Int
+  streak    Int
+
+  projects          ProjectMember[]
+  assignedTasks     Task[]            @relation("TaskAssignee")
+  achievements      MemberAchievement[]
+  standups          Standup[]
+  documentsAuthored Document[]        @relation("DocumentAuthor")
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  client      String
+  area        String
+  description String
+  status      ProjectStatus
+  startDate   DateTime
+  archived    Boolean       @default(false)
+
+  members   ProjectMember[]
+  features  Feature[]
+  documents Document[]
+  actas     Acta[]
+}
+
+model ProjectMember {
+  projectId String
+  memberId  String
+  role      String
+
+  project Project @relation(fields: [projectId], references: [id])
+  member  Member  @relation(fields: [memberId], references: [id])
+
+  @@id([projectId, memberId])
+}
+
+model Feature {
+  id        String        @id @default(cuid())
+  label     String
+  projectId String
+  name      String
+  priority  Priority
+  status    FeatureStatus
+
+  project Project @relation(fields: [projectId], references: [id])
+  tasks   Task[]
+
+  @@unique([projectId, label])
+}
+
+model Task {
+  id         String       @id @default(cuid())
+  label      String
+  featureId  String
+  assigneeId String?
+  name       String
+  type       TaskType
+  active     Boolean
+  done       Boolean      @default(false)
+  column     KanbanColumn
+
+  feature  Feature @relation(fields: [featureId], references: [id])
+  assignee Member? @relation("TaskAssignee", fields: [assigneeId], references: [id])
+
+  @@unique([featureId, label])
+}
+
+/// content es texto plano por ahora. A futuro, si se necesitan secciones dentro
+/// del documento (contexto, alcance, decisiones), conviene migrarlo a JSON estructurado.
+/// author/date describen hoy "quién y cuándo se llenó el documento", pero conceptualmente
+/// son metadata de una versión. Cuando se implemente versionamiento, deberían moverse a un
+/// modelo DocumentVersion (documentId, authorId, date, content) y Document pasaría a ser
+/// solo el contenedor del slot. Se deja así mientras no exista diseño de versionamiento.
+model Document {
+  id        String      @id @default(cuid())
+  projectId String
+  authorId  String?
+  slot      DocSlotType
+  filled    Boolean     @default(false)
+  date      DateTime?
+  content   String?
+
+  project Project @relation(fields: [projectId], references: [id])
+  author  Member?  @relation("DocumentAuthor", fields: [authorId], references: [id])
+
+  @@unique([projectId, slot])
+}
+
+/// Misma observación que en Document: content es texto plano por ahora, candidato a JSON
+/// por secciones a futuro, y date sería metadata de versión si las actas llegan a requerir
+/// historial de cambios.
+model Acta {
+  id        String   @id @default(cuid())
+  projectId String
+  title     String
+  date      DateTime
+  content   String?
+
+  project Project @relation(fields: [projectId], references: [id])
+}
+
+model Achievement {
+  id   String @id @default(cuid())
+  name String
+  icon String
+
+  members MemberAchievement[]
+}
+
+model MemberAchievement {
+  memberId      String
+  achievementId String
+  unlockedAt    DateTime?
+
+  member      Member      @relation(fields: [memberId], references: [id])
+  achievement Achievement @relation(fields: [achievementId], references: [id])
+
+  @@id([memberId, achievementId])
+}
+
+model Standup {
+  id       String   @id @default(cuid())
+  memberId String
+  date     DateTime
+  text     String
+
+  member Member @relation(fields: [memberId], references: [id])
+}
