@@ -141,8 +141,8 @@ model Task {
   @@unique([featureId, label])
 }
 
-/// content es texto plano por ahora. A futuro, si se necesitan secciones dentro
-/// del documento (contexto, alcance, decisiones), conviene migrarlo a JSON estructurado.
+/// content es texto plano por ahora. A futuro, cuando se hagan secciones dentro
+/// del documento (contexto, alcance, decisiones, por ejemplo), conviene migrarlo a JSON estructurado.
 /// author/date describen hoy "quién y cuándo se llenó el documento", pero conceptualmente
 /// son metadata de una versión. Cuando se implemente versionamiento, deberían moverse a un
 /// modelo DocumentVersion (documentId, authorId, date, content) y Document pasaría a ser
