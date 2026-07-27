@@ -217,3 +217,19 @@ export async function updateProjectDoc(projectId: string, docId: string, content
 
   return null;
 }
+
+export async function createProjectDoc(projectId: string, slotKey: string): Promise<ProjectDetail | null> {
+  const upperSlot = slotKey.toUpperCase();
+  if (!(Object.values(DocSlotType) as string[]).includes(upperSlot)) return null;
+  const slot = upperSlot as DocSlotType;
+
+  const existing = await prisma.document.findUnique({ where: { projectId_slot: { projectId, slot } } });
+  if (!existing || existing.filled) return null;
+
+  await prisma.document.update({
+    where: { projectId_slot: { projectId, slot } },
+    data: { filled: true, date: new Date() },
+  });
+
+  return getProject(projectId);
+}

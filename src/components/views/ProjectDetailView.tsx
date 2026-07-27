@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
 import { AvatarStack } from "@/components/ui/Avatar";
 import { TaskTypeTag } from "@/components/ui/TaskTypeTag";
@@ -16,7 +17,7 @@ import {
   TasksTabIcon,
   KanbanTabIcon,
 } from "@/components/icons";
-import { useProject, type ProjectTask } from "@/lib/api/projects";
+import { useCreateProjectDoc, useProject, type ProjectTask } from "@/lib/api/projects";
 import { EditProjectModal } from "@/components/views/EditProjectModal";
 
 const docIcon = {
@@ -37,9 +38,11 @@ const kanbanColumns: { key: ProjectTask["column"]; label: string }[] = [
 ];
 
 export function ProjectDetailView({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const [tab, setTab] = useState<"backlog" | "tareas" | "kanban">("backlog");
   const [editing, setEditing] = useState(false);
   const { data: project } = useProject(projectId);
+  const createDoc = useCreateProjectDoc(projectId);
   if (!project) return null;
 
   return (
@@ -90,7 +93,22 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                     <div className="doc-fixed-name" style={{ color: "var(--text-3)" }}>{doc.name}</div>
                     <div className="doc-fixed-sub">Sin documento</div>
                   </div>
-                  <button className="btn-xs btn-xs-p" style={{ fontSize: 8.5, padding: "2px 7px" }}>Crear</button>
+                  <button
+                    className="btn-xs btn-xs-p"
+                    style={{ fontSize: 8.5, padding: "2px 7px" }}
+                    disabled={createDoc.isPending && createDoc.variables === doc.key}
+                    onClick={() =>
+                      createDoc.mutate(doc.key, {
+                        onSuccess: () => router.push(`/proyectos/${project.id}/docs/${doc.key}`),
+                      })
+                    }
+                  >
+                    {createDoc.isPending && createDoc.variables === doc.key
+                      ? "Creando…"
+                      : createDoc.isError && createDoc.variables === doc.key
+                        ? "Reintentar"
+                        : "Crear"}
+                  </button>
                 </div>
               );
             }

@@ -125,6 +125,12 @@ async function updateProjectDocRequest(id: string, docId: string, content: strin
   return res.json();
 }
 
+async function createProjectDocRequest(id: string, docId: string): Promise<ProjectDetail> {
+  const res = await fetch(`/api/projects/${id}/docs/${docId}`, { method: "POST" });
+  if (!res.ok) throw new Error("No se pudo crear el documento");
+  return res.json();
+}
+
 export function useProjects() {
   return useQuery({ queryKey: projectsKeys.list(), queryFn: fetchProjects });
 }
@@ -154,6 +160,16 @@ export function useUpdateProjectDoc(id: string, docId: string) {
     mutationFn: (content: string) => updateProjectDocRequest(id, docId, content),
     onSuccess: (updated) => {
       queryClient.setQueryData(projectsKeys.doc(id, docId), updated);
+    },
+  });
+}
+
+export function useCreateProjectDoc(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (docId: string) => createProjectDocRequest(id, docId),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(projectsKeys.detail(id), updated);
     },
   });
 }
