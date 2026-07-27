@@ -1042,3 +1042,53 @@ tbody tr:last-child td { border-bottom: none; }
   flex-shrink: 0;
 }
 .sb-toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ─── MODAL ─── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+.modal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 100%; max-width: 460px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px; border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 15px; font-weight: 700; color: var(--text-1); font-family: var(--font-barlow-condensed), sans-serif; }
+.modal-close {
+  width: 26px; height: 26px; border-radius: 5px; border: none;
+  background: transparent; color: var(--text-3); font-size: 16px; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.modal-close:hover { background: var(--surface-2); color: var(--text-1); }
+.modal-body { padding: 18px; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px; border-top: 1px solid var(--border); }
+.modal-error { font-size: 12px; color: #c0392b; margin-bottom: 12px; }
+
+/* ─── FORM FIELDS (controles reales, no mock) ─── */
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field-input, .field-select, .field-textarea {
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-1);
+  font-family: var(--font-barlow), sans-serif;
+  font-size: 13px;
+  outline: none;
+}
+.field-input:focus, .field-select:focus, .field-textarea:focus { border-color: var(--accent); }
+.field-textarea { resize: vertical; min-height: 64px; }
+.field-checkbox-row { display: flex; align-items: center; gap: 7px; }
+.field-checkbox-row label { font-size: 13px; color: var(--text-2); }

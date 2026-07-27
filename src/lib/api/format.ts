@@ -27,3 +27,18 @@ export function formatWeekdayDayMonthYear(date: Date): string {
     year: "numeric",
   }).format(date).replace(/\./g, "");
 }
+
+// Estas fechas se tratan como "solo calendario" (sin hora ni zona horaria) en toda la app
+// — usar Date#toISOString()/new Date(string) las corrompería en zonas con offset negativo
+// (ej. "2026-06-01" se lee como medianoche UTC, que en Chile cae el 31 de mayo).
+export function toISODateInput(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function parseISODateInput(value: string): Date {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}

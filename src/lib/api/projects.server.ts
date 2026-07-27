@@ -1,6 +1,6 @@
-import { DocSlotType } from "@/generated/prisma/enums";
+import { DocSlotType, ProjectStatus } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
-import { formatDayMonth, formatDayMonthYear, formatMonthYear } from "@/lib/api/format";
+import { formatDayMonth, formatDayMonthYear, formatMonthYear, parseISODateInput, toISODateInput } from "@/lib/api/format";
 import {
   docSlotBadgeColor,
   docSlotIcon,
@@ -13,7 +13,7 @@ import {
   projectStatusLabel,
   taskTypeLabel,
 } from "@/lib/api/status";
-import type { ProjectDetail, ProjectDocDetail, ProjectListItem } from "@/lib/api/projects";
+import type { ProjectDetail, ProjectDocDetail, ProjectListItem, UpdateProjectInput } from "@/lib/api/projects";
 
 const SLOT_ORDER: DocSlotType[] = [
   DocSlotType.KICKOFF,
@@ -47,9 +47,11 @@ export async function getProjects(): Promise<ProjectListItem[]> {
     description: project.description,
     status: projectStatusLabel[project.status],
     statusColor: projectStatusColor[project.status],
+    statusValue: project.status,
     progress: progressFromFeatures(project.features),
     teamSize: project.members.length,
     startDate: formatMonthYear(project.startDate),
+    startDateISO: toISODateInput(project.startDate),
     archived: project.archived,
   }));
 }
@@ -74,9 +76,11 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
     description: project.description,
     status: projectStatusLabel[project.status],
     statusColor: projectStatusColor[project.status],
+    statusValue: project.status,
     progress: progressFromFeatures(project.features),
     teamSize: project.members.length,
     startDate: formatMonthYear(project.startDate),
+    startDateISO: toISODateInput(project.startDate),
     archived: project.archived,
     docs: [...project.documents]
       .sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot))
@@ -113,6 +117,47 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
       })),
     ),
   };
+}
+
+export function parseUpdateProjectInput(body: unknown): UpdateProjectInput | null {
+  if (typeof body !== "object" || body === null) return null;
+  const b = body as Record<string, unknown>;
+
+  const name = typeof b.name === "string" ? b.name.trim() : "";
+  const client = typeof b.client === "string" ? b.client.trim() : "";
+  const area = typeof b.area === "string" ? b.area.trim() : "";
+  const description = typeof b.description === "string" ? b.description.trim() : "";
+  if (!name || !client || !area || !description) return null;
+
+  const status = typeof b.status === "string" ? b.status : "";
+  if (!(Object.values(ProjectStatus) as string[]).includes(status)) return null;
+
+  const startDate = typeof b.startDate === "string" ? b.startDate : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return null;
+
+  if (typeof b.archived !== "boolean") return null;
+
+  return { name, client, area, description, status: status as ProjectStatus, startDate, archived: b.archived };
+}
+
+export async function updateProject(id: string, input: UpdateProjectInput): Promise<ProjectDetail | null> {
+  const exists = await prisma.project.findUnique({ where: { id }, select: { id: true } });
+  if (!exists) return null;
+
+  await prisma.project.update({
+    where: { id },
+    data: {
+      name: input.name,
+      client: input.client,
+      area: input.area,
+      description: input.description,
+      status: input.status,
+      startDate: parseISODateInput(input.startDate),
+      archived: input.archived,
+    },
+  });
+
+  return getProject(id);
 }
 
 export async function getProjectDoc(projectId: string, docId: string): Promise<ProjectDocDetail | null> {

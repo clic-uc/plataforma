@@ -17,6 +17,7 @@ import {
   KanbanTabIcon,
 } from "@/components/icons";
 import { useProject, type ProjectTask } from "@/lib/api/projects";
+import { EditProjectModal } from "@/components/views/EditProjectModal";
 
 const docIcon = {
   clock: DocClockIcon,
@@ -37,6 +38,7 @@ const kanbanColumns: { key: ProjectTask["column"]; label: string }[] = [
 
 export function ProjectDetailView({ projectId }: { projectId: string }) {
   const [tab, setTab] = useState<"backlog" | "tareas" | "kanban">("backlog");
+  const [editing, setEditing] = useState(false);
   const { data: project } = useProject(projectId);
   if (!project) return null;
 
@@ -51,7 +53,9 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             </div>
             <div style={{ fontSize: 13, color: "var(--text-2)", maxWidth: 560 }}>{project.description}</div>
           </div>
-          <button className="btn-primary" style={{ fontSize: 12, flexShrink: 0 }}>Editar proyecto</button>
+          <button className="btn-primary" style={{ fontSize: 12, flexShrink: 0 }} onClick={() => setEditing(true)}>
+            Editar proyecto
+          </button>
         </div>
         <div className="pd-meta-row">
           <div className="pd-meta-item">{project.client}</div>
@@ -220,6 +224,8 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
           </div>
         )}
       </div>
+
+      {editing && <EditProjectModal project={project} onClose={() => setEditing(false)} />}
     </section>
   );
 }

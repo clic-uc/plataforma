@@ -35,6 +35,10 @@ export const projectStatusColor: Record<ProjectStatus, BadgeColor> = {
   TRASPASO: "blue",
 };
 
+export const PROJECT_STATUS_OPTIONS: { value: ProjectStatus; label: string }[] = (
+  Object.entries(projectStatusLabel) as [ProjectStatus, string][]
+).map(([value, label]) => ({ value, label }));
+
 export const featureStatusLabel: Record<FeatureStatus, string> = {
   HECHO: "Hecho",
   EN_PROGRESO: "En progreso",

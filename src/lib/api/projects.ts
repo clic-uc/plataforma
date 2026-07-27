@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ProjectStatus } from "@/generated/prisma/enums";
 import type { BadgeColor } from "@/lib/types";
 
 export interface ProjectListItem {
@@ -9,9 +10,11 @@ export interface ProjectListItem {
   description: string;
   status: string;
   statusColor: BadgeColor;
+  statusValue: ProjectStatus;
   progress: number;
   teamSize: number;
   startDate: string;
+  startDateISO: string;
   archived: boolean;
 }
 
@@ -64,6 +67,16 @@ export interface ProjectDocDetail {
   date: string;
 }
 
+export interface UpdateProjectInput {
+  name: string;
+  client: string;
+  area: string;
+  description: string;
+  status: ProjectStatus;
+  startDate: string;
+  archived: boolean;
+}
+
 export const projectsKeys = {
   all: ["projects"] as const,
   list: () => [...projectsKeys.all, "list"] as const,
@@ -91,6 +104,16 @@ async function fetchProjectDoc(id: string, docId: string): Promise<ProjectDocDet
   return res.json();
 }
 
+async function updateProjectRequest(id: string, input: UpdateProjectInput): Promise<ProjectDetail> {
+  const res = await fetch(`/api/projects/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error("No se pudo guardar el proyecto");
+  return res.json();
+}
+
 export function useProjects() {
   return useQuery({ queryKey: projectsKeys.list(), queryFn: fetchProjects });
 }
@@ -101,4 +124,15 @@ export function useProject(id: string) {
 
 export function useProjectDoc(id: string, docId: string) {
   return useQuery({ queryKey: projectsKeys.doc(id, docId), queryFn: () => fetchProjectDoc(id, docId) });
+}
+
+export function useUpdateProject(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateProjectInput) => updateProjectRequest(id, input),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(projectsKeys.detail(id), updated);
+      queryClient.invalidateQueries({ queryKey: projectsKeys.list() });
+    },
+  });
 }
