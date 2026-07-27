@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Priority, ProjectStatus } from "@/generated/prisma/enums";
+import type { FeatureStatus, Priority, ProjectStatus } from "@/generated/prisma/enums";
 import type { BadgeColor } from "@/lib/types";
 
 export interface ProjectListItem {
@@ -37,8 +37,10 @@ export interface ProjectFeature {
   id: string;
   name: string;
   priority: "alta" | "media" | "baja";
+  priorityValue: Priority;
   status: string;
   statusColor: BadgeColor;
+  statusValue: FeatureStatus;
   taskCount: number;
 }
 
@@ -81,6 +83,12 @@ export interface UpdateProjectInput {
 export interface CreateFeatureInput {
   name: string;
   priority: Priority;
+}
+
+export interface UpdateFeatureInput {
+  name: string;
+  priority: Priority;
+  status: FeatureStatus;
 }
 
 export const projectsKeys = {
@@ -146,6 +154,22 @@ async function createFeatureRequest(id: string, input: CreateFeatureInput): Prom
   return res.json();
 }
 
+async function updateFeatureRequest(id: string, featureId: string, input: UpdateFeatureInput): Promise<ProjectDetail> {
+  const res = await fetch(`/api/projects/${id}/features/${featureId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error("No se pudo guardar la feature");
+  return res.json();
+}
+
+async function deleteFeatureRequest(id: string, featureId: string): Promise<ProjectDetail> {
+  const res = await fetch(`/api/projects/${id}/features/${featureId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("No se pudo eliminar la feature");
+  return res.json();
+}
+
 export function useProjects() {
   return useQuery({ queryKey: projectsKeys.list(), queryFn: fetchProjects });
 }
@@ -193,6 +217,27 @@ export function useCreateFeature(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateFeatureInput) => createFeatureRequest(id, input),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(projectsKeys.detail(id), updated);
+    },
+  });
+}
+
+export function useUpdateFeature(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ featureId, input }: { featureId: string; input: UpdateFeatureInput }) =>
+      updateFeatureRequest(id, featureId, input),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(projectsKeys.detail(id), updated);
+    },
+  });
+}
+
+export function useDeleteFeature(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (featureId: string) => deleteFeatureRequest(id, featureId),
     onSuccess: (updated) => {
       queryClient.setQueryData(projectsKeys.detail(id), updated);
     },

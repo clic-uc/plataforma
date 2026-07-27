@@ -17,9 +17,11 @@ import {
   TasksTabIcon,
   KanbanTabIcon,
 } from "@/components/icons";
-import { useCreateProjectDoc, useProject, type ProjectTask } from "@/lib/api/projects";
+import { ContextMenu } from "@/components/ui/ContextMenu";
+import { useCreateProjectDoc, useDeleteFeature, useProject, type ProjectFeature, type ProjectTask } from "@/lib/api/projects";
 import { EditProjectModal } from "@/components/views/EditProjectModal";
 import { CreateFeatureModal } from "@/components/views/CreateFeatureModal";
+import { EditFeatureModal } from "@/components/views/EditFeatureModal";
 
 const docIcon = {
   clock: DocClockIcon,
@@ -43,8 +45,11 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const [tab, setTab] = useState<"backlog" | "tareas" | "kanban">("backlog");
   const [editing, setEditing] = useState(false);
   const [creatingFeature, setCreatingFeature] = useState(false);
+  const [editingFeature, setEditingFeature] = useState<ProjectFeature | null>(null);
+  const [featureMenu, setFeatureMenu] = useState<{ x: number; y: number; feature: ProjectFeature } | null>(null);
   const { data: project } = useProject(projectId);
   const createDoc = useCreateProjectDoc(projectId);
+  const deleteFeature = useDeleteFeature(projectId);
   if (!project) return null;
 
   return (
@@ -186,7 +191,14 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
         {tab === "backlog" && (
           <div>
             {project.features.map((f) => (
-              <div key={f.id} className="feat-row">
+              <div
+                key={f.id}
+                className="feat-row"
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setFeatureMenu({ x: e.clientX, y: e.clientY, feature: f });
+                }}
+              >
                 <div className="feat-prio" style={{ background: priorityColor[f.priority] }} title={f.priority} />
                 <div className="feat-id">{f.id}</div>
                 <div className="feat-name">{f.name}</div>
@@ -196,7 +208,10 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             ))}
             <div style={{ paddingTop: 10, borderTop: "1px solid var(--border)", marginTop: 2 }}>
               <div style={{ fontFamily: "var(--font-space-mono)", fontSize: 9, color: "var(--text-3)" }}>
-                ● Alta &nbsp;&nbsp; ● Media &nbsp;&nbsp; ● Baja — prioridad por color del indicador
+                Prioridad:{" "}
+                <span style={{ color: priorityColor.alta }}>●</span>{" "}Alta &nbsp;&nbsp;
+                <span style={{ color: priorityColor.media }}>●</span>{" "}Media &nbsp;&nbsp;
+                <span style={{ color: priorityColor.baja }}>●</span>{" "}Baja
               </div>
             </div>
           </div>
@@ -247,6 +262,28 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
 
       {editing && <EditProjectModal project={project} onClose={() => setEditing(false)} />}
       {creatingFeature && <CreateFeatureModal projectId={project.id} onClose={() => setCreatingFeature(false)} />}
+      {editingFeature && (
+        <EditFeatureModal projectId={project.id} feature={editingFeature} onClose={() => setEditingFeature(null)} />
+      )}
+      {featureMenu && (
+        <ContextMenu
+          x={featureMenu.x}
+          y={featureMenu.y}
+          onClose={() => setFeatureMenu(null)}
+          items={[
+            { label: "Editar", onSelect: () => setEditingFeature(featureMenu.feature) },
+            {
+              label: "Eliminar",
+              danger: true,
+              onSelect: () => {
+                if (window.confirm(`¿Eliminar ${featureMenu.feature.id} y sus ${featureMenu.feature.taskCount} tareas?`)) {
+                  deleteFeature.mutate(featureMenu.feature.id);
+                }
+              },
+            },
+          ]}
+        />
+      )}
     </section>
   );
 }

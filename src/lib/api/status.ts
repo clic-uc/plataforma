@@ -51,6 +51,12 @@ export const featureStatusColor: Record<FeatureStatus, BadgeColor> = {
   PENDIENTE: "gray",
 };
 
+export const FEATURE_STATUS_OPTIONS: { value: FeatureStatus; label: string }[] = [
+  { value: "PENDIENTE", label: "Pendiente" },
+  { value: "EN_PROGRESO", label: "En progreso" },
+  { value: "HECHO", label: "Hecho" },
+];
+
 export const priorityLabel: Record<Priority, "alta" | "media" | "baja"> = {
   ALTA: "alta",
   MEDIA: "media",

@@ -1106,3 +1106,51 @@ tbody tr:last-child td { border-bottom: none; }
 .field-textarea { resize: vertical; min-height: 64px; }
 .field-checkbox-row { display: flex; align-items: center; gap: 7px; }
 .field-checkbox-row label { font-size: 13px; color: var(--text-2); }
+
+/* ─── CONTEXT MENU ─── */
+.context-menu {
+  position: fixed;
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  padding: 4px;
+  min-width: 150px;
+}
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font-family: var(--font-barlow), sans-serif;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.context-menu-item:hover { background: var(--surface-2); }
+.context-menu-item.active { font-weight: 700; color: var(--accent); }
+.context-menu-item.danger { color: #c0392b; }
+.context-menu-item.danger:hover { background: rgba(192,57,43,0.08); }
+
+.context-menu-item-wrap { position: relative; }
+.context-menu-arrow { opacity: 0.5; font-size: 13px; }
+.context-menu-sub {
+  position: absolute;
+  top: -4px;
+  left: 100%;
+  margin-left: 2px;
+  z-index: 201;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  padding: 4px;
+  min-width: 130px;
+}

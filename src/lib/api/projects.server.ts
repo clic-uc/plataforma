@@ -1,4 +1,4 @@
-import { DocSlotType, Priority, ProjectStatus } from "@/generated/prisma/enums";
+import { DocSlotType, FeatureStatus, Priority, ProjectStatus } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { formatDayMonth, formatDayMonthYear, formatMonthYear, parseISODateInput, toISODateInput } from "@/lib/api/format";
 import {
@@ -13,7 +13,14 @@ import {
   projectStatusLabel,
   taskTypeLabel,
 } from "@/lib/api/status";
-import type { CreateFeatureInput, ProjectDetail, ProjectDocDetail, ProjectListItem, UpdateProjectInput } from "@/lib/api/projects";
+import type {
+  CreateFeatureInput,
+  ProjectDetail,
+  ProjectDocDetail,
+  ProjectListItem,
+  UpdateFeatureInput,
+  UpdateProjectInput,
+} from "@/lib/api/projects";
 
 const SLOT_ORDER: DocSlotType[] = [
   DocSlotType.KICKOFF,
@@ -101,8 +108,10 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
       id: feature.label,
       name: feature.name,
       priority: priorityLabel[feature.priority],
+      priorityValue: feature.priority,
       status: featureStatusLabel[feature.status],
       statusColor: featureStatusColor[feature.status],
+      statusValue: feature.status,
       taskCount: feature.tasks.length,
     })),
     tasks: project.features.flatMap((feature) =>
@@ -265,6 +274,44 @@ export async function createFeature(projectId: string, input: CreateFeatureInput
   await prisma.feature.create({
     data: { projectId, label, name: input.name, priority: input.priority, status: "PENDIENTE" },
   });
+
+  return getProject(projectId);
+}
+
+export function parseUpdateFeatureInput(body: unknown): UpdateFeatureInput | null {
+  if (typeof body !== "object" || body === null) return null;
+  const b = body as Record<string, unknown>;
+
+  const name = typeof b.name === "string" ? b.name.trim() : "";
+  if (!name) return null;
+
+  const priority = typeof b.priority === "string" ? b.priority : "";
+  if (!(Object.values(Priority) as string[]).includes(priority)) return null;
+
+  const status = typeof b.status === "string" ? b.status : "";
+  if (!(Object.values(FeatureStatus) as string[]).includes(status)) return null;
+
+  return { name, priority: priority as Priority, status: status as FeatureStatus };
+}
+
+export async function updateFeature(projectId: string, label: string, input: UpdateFeatureInput): Promise<ProjectDetail | null> {
+  const existing = await prisma.feature.findUnique({ where: { projectId_label: { projectId, label } } });
+  if (!existing) return null;
+
+  await prisma.feature.update({
+    where: { projectId_label: { projectId, label } },
+    data: { name: input.name, priority: input.priority, status: input.status },
+  });
+
+  return getProject(projectId);
+}
+
+export async function deleteFeature(projectId: string, label: string): Promise<ProjectDetail | null> {
+  const existing = await prisma.feature.findUnique({ where: { projectId_label: { projectId, label } } });
+  if (!existing) return null;
+
+  await prisma.task.deleteMany({ where: { featureId: existing.id } });
+  await prisma.feature.delete({ where: { projectId_label: { projectId, label } } });
 
   return getProject(projectId);
 }
