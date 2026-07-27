@@ -65,6 +65,7 @@ export interface ProjectDocDetail {
   badgeColor: BadgeColor;
   author: string;
   date: string;
+  content: string;
 }
 
 export interface UpdateProjectInput {
@@ -114,6 +115,16 @@ async function updateProjectRequest(id: string, input: UpdateProjectInput): Prom
   return res.json();
 }
 
+async function updateProjectDocRequest(id: string, docId: string, content: string): Promise<ProjectDocDetail> {
+  const res = await fetch(`/api/projects/${id}/docs/${docId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) throw new Error("No se pudo guardar el documento");
+  return res.json();
+}
+
 export function useProjects() {
   return useQuery({ queryKey: projectsKeys.list(), queryFn: fetchProjects });
 }
@@ -133,6 +144,16 @@ export function useUpdateProject(id: string) {
     onSuccess: (updated) => {
       queryClient.setQueryData(projectsKeys.detail(id), updated);
       queryClient.invalidateQueries({ queryKey: projectsKeys.list() });
+    },
+  });
+}
+
+export function useUpdateProjectDoc(id: string, docId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (content: string) => updateProjectDocRequest(id, docId, content),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(projectsKeys.doc(id, docId), updated);
     },
   });
 }

@@ -173,11 +173,12 @@ export async function getProjectDoc(projectId: string, docId: string): Promise<P
     });
     if (doc?.filled) {
       return {
-        title: `${docSlotName[slot]} — ${project.name}`,
+        title: docSlotName[slot],
         type: docSlotName[slot],
         badgeColor: docSlotBadgeColor[slot],
         author: doc.author?.name ?? "",
         date: doc.date ? formatDayMonthYear(doc.date) : "",
+        content: doc.content ?? "",
       };
     }
   }
@@ -190,7 +191,28 @@ export async function getProjectDoc(projectId: string, docId: string): Promise<P
       badgeColor: "amber",
       author: "",
       date: formatDayMonth(acta.date),
+      content: acta.content ?? "",
     };
+  }
+
+  return null;
+}
+
+export async function updateProjectDoc(projectId: string, docId: string, content: string): Promise<ProjectDocDetail | null> {
+  const upperDocId = docId.toUpperCase();
+  if ((Object.values(DocSlotType) as string[]).includes(upperDocId)) {
+    const slot = upperDocId as DocSlotType;
+    const existing = await prisma.document.findUnique({ where: { projectId_slot: { projectId, slot } } });
+    if (existing?.filled) {
+      await prisma.document.update({ where: { projectId_slot: { projectId, slot } }, data: { content } });
+      return getProjectDoc(projectId, docId);
+    }
+  }
+
+  const acta = await prisma.acta.findFirst({ where: { id: docId, projectId } });
+  if (acta) {
+    await prisma.acta.update({ where: { id: docId }, data: { content } });
+    return getProjectDoc(projectId, docId);
   }
 
   return null;
