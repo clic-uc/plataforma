@@ -57,6 +57,12 @@ export const priorityLabel: Record<Priority, "alta" | "media" | "baja"> = {
   BAJA: "baja",
 };
 
+export const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
+  { value: "ALTA", label: "Alta" },
+  { value: "MEDIA", label: "Media" },
+  { value: "BAJA", label: "Baja" },
+];
+
 export const taskTypeLabel: Record<TaskType, "feature" | "spike" | "fix" | "refactor" | "chore" | "docs"> = {
   FEATURE: "feature",
   SPIKE: "spike",

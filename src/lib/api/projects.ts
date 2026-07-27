@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ProjectStatus } from "@/generated/prisma/enums";
+import type { Priority, ProjectStatus } from "@/generated/prisma/enums";
 import type { BadgeColor } from "@/lib/types";
 
 export interface ProjectListItem {
@@ -78,6 +78,11 @@ export interface UpdateProjectInput {
   archived: boolean;
 }
 
+export interface CreateFeatureInput {
+  name: string;
+  priority: Priority;
+}
+
 export const projectsKeys = {
   all: ["projects"] as const,
   list: () => [...projectsKeys.all, "list"] as const,
@@ -131,6 +136,16 @@ async function createProjectDocRequest(id: string, docId: string): Promise<Proje
   return res.json();
 }
 
+async function createFeatureRequest(id: string, input: CreateFeatureInput): Promise<ProjectDetail> {
+  const res = await fetch(`/api/projects/${id}/features`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error("No se pudo crear la feature");
+  return res.json();
+}
+
 export function useProjects() {
   return useQuery({ queryKey: projectsKeys.list(), queryFn: fetchProjects });
 }
@@ -168,6 +183,16 @@ export function useCreateProjectDoc(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (docId: string) => createProjectDocRequest(id, docId),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(projectsKeys.detail(id), updated);
+    },
+  });
+}
+
+export function useCreateFeature(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateFeatureInput) => createFeatureRequest(id, input),
     onSuccess: (updated) => {
       queryClient.setQueryData(projectsKeys.detail(id), updated);
     },

@@ -150,7 +150,7 @@ model Task {
 model Document {
   id        String      @id @default(cuid())
   projectId String
-  authorId  String?
+  authorId  String?     /// autor debería ser última modificación en realidad, ya que son incrementales
   slot      DocSlotType
   filled    Boolean     @default(false)
   date      DateTime?

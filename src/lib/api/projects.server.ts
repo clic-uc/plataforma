@@ -1,4 +1,4 @@
-import { DocSlotType, ProjectStatus } from "@/generated/prisma/enums";
+import { DocSlotType, Priority, ProjectStatus } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { formatDayMonth, formatDayMonthYear, formatMonthYear, parseISODateInput, toISODateInput } from "@/lib/api/format";
 import {
@@ -13,7 +13,7 @@ import {
   projectStatusLabel,
   taskTypeLabel,
 } from "@/lib/api/status";
-import type { ProjectDetail, ProjectDocDetail, ProjectListItem, UpdateProjectInput } from "@/lib/api/projects";
+import type { CreateFeatureInput, ProjectDetail, ProjectDocDetail, ProjectListItem, UpdateProjectInput } from "@/lib/api/projects";
 
 const SLOT_ORDER: DocSlotType[] = [
   DocSlotType.KICKOFF,
@@ -229,6 +229,41 @@ export async function createProjectDoc(projectId: string, slotKey: string): Prom
   await prisma.document.update({
     where: { projectId_slot: { projectId, slot } },
     data: { filled: true, date: new Date() },
+  });
+
+  return getProject(projectId);
+}
+
+export function parseCreateFeatureInput(body: unknown): CreateFeatureInput | null {
+  if (typeof body !== "object" || body === null) return null;
+  const b = body as Record<string, unknown>;
+
+  const name = typeof b.name === "string" ? b.name.trim() : "";
+  if (!name) return null;
+
+  const priority = typeof b.priority === "string" ? b.priority : "";
+  if (!(Object.values(Priority) as string[]).includes(priority)) return null;
+
+  return { name, priority: priority as Priority };
+}
+
+function nextFeatureLabel(existingLabels: string[]): string {
+  const nextNumber = existingLabels.reduce((max, label) => {
+    const match = /^F-(\d+)$/.exec(label);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0) + 1;
+  return `F-${String(nextNumber).padStart(2, "0")}`;
+}
+
+export async function createFeature(projectId: string, input: CreateFeatureInput): Promise<ProjectDetail | null> {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) return null;
+
+  const existing = await prisma.feature.findMany({ where: { projectId }, select: { label: true } });
+  const label = nextFeatureLabel(existing.map((f) => f.label));
+
+  await prisma.feature.create({
+    data: { projectId, label, name: input.name, priority: input.priority, status: "PENDIENTE" },
   });
 
   return getProject(projectId);

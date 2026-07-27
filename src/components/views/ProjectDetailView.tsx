@@ -19,6 +19,7 @@ import {
 } from "@/components/icons";
 import { useCreateProjectDoc, useProject, type ProjectTask } from "@/lib/api/projects";
 import { EditProjectModal } from "@/components/views/EditProjectModal";
+import { CreateFeatureModal } from "@/components/views/CreateFeatureModal";
 
 const docIcon = {
   clock: DocClockIcon,
@@ -41,6 +42,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [tab, setTab] = useState<"backlog" | "tareas" | "kanban">("backlog");
   const [editing, setEditing] = useState(false);
+  const [creatingFeature, setCreatingFeature] = useState(false);
   const { data: project } = useProject(projectId);
   const createDoc = useCreateProjectDoc(projectId);
   if (!project) return null;
@@ -164,7 +166,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
           </button>
           {tab === "backlog" && (
             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-              <button className="btn-xs btn-xs-g">+ Feature</button>
+              <button className="btn-xs btn-xs-g" onClick={() => setCreatingFeature(true)}>+ Feature</button>
             </div>
           )}
           {tab === "tareas" && (
@@ -244,6 +246,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
       </div>
 
       {editing && <EditProjectModal project={project} onClose={() => setEditing(false)} />}
+      {creatingFeature && <CreateFeatureModal projectId={project.id} onClose={() => setCreatingFeature(false)} />}
     </section>
   );
 }
