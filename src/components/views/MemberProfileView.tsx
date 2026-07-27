@@ -1,3 +1,5 @@
+"use client";
+
 import { Badge } from "@/components/ui/Badge";
 import { PlaceholderBox } from "@/components/ui/PlaceholderBox";
 import {
@@ -7,7 +9,8 @@ import {
   FileAchievementIcon,
   LockAchievementIcon,
 } from "@/components/icons";
-import type { Member } from "@/lib/types";
+import { useMember } from "@/lib/api/members";
+import { DEFAULT_ACCENT_COLOR } from "@/lib/api/format";
 
 const achievementIcon = {
   star: StarAchievementIcon,
@@ -17,21 +20,23 @@ const achievementIcon = {
   lock: LockAchievementIcon,
 };
 
-export function MemberProfileView({ member }: { member: Member }) {
+export function MemberProfileView({ memberId }: { memberId: string }) {
+  const { data: member } = useMember(memberId);
+  if (!member) return null;
+
   const filled = "★".repeat(member.rankFilled) + "☆".repeat(4 - member.rankFilled);
 
   return (
     <section className="perfil-layout">
       <div>
         <div className="perfil-card">
-          <div className="perfil-avatar-lg" style={{ background: member.color }}>{member.initials}</div>
+          <div className="perfil-avatar-lg" style={{ background: DEFAULT_ACCENT_COLOR }}>{member.initials}</div>
           <div className="perfil-name">{member.name}</div>
           <Badge color="blue" style={{ marginTop: 8 }}>{member.area}</Badge>
           <hr className="perfil-divider" />
           <div className="perfil-info-row"><span className="perfil-info-label">Email</span><span className="perfil-info-val" style={{ fontFamily: "var(--font-space-mono)", fontSize: 11 }}>{member.email}</span></div>
-          <div className="perfil-info-row"><span className="perfil-info-label">Cumpleaños</span><span className="perfil-info-val">{member.bday}</span></div>
-          <div className="perfil-info-row"><span className="perfil-info-label">Telegram</span><span className="perfil-info-val" style={{ fontFamily: "var(--font-space-mono)", fontSize: 11 }}>{member.telegram}</span></div>
-          <div className="perfil-info-row"><span className="perfil-info-label">Ingresó</span><span className="perfil-info-val">{member.joined}</span></div>
+          <div className="perfil-info-row"><span className="perfil-info-label">Cumpleaños</span><span className="perfil-info-val">{member.birthday}</span></div>
+          <div className="perfil-info-row"><span className="perfil-info-label">Ingresó</span><span className="perfil-info-val">{member.joinedAt}</span></div>
           <div className="perfil-info-row"><span className="perfil-info-label">Estado</span><span className="perfil-info-val"><Badge color={member.statusColor}>{member.status}</Badge></span></div>
           <hr className="perfil-divider" />
           <button className="btn-primary" style={{ width: "100%", fontSize: 12, marginBottom: 7 }}>Editar perfil</button>
@@ -49,7 +54,6 @@ export function MemberProfileView({ member }: { member: Member }) {
             <div style={{ textAlign: "center", padding: "4px 8px" }}>
               <div style={{ fontFamily: "var(--font-barlow-condensed)", fontSize: 28, fontWeight: 700, color: "var(--text-1)", lineHeight: 1, height: 28 }}>{member.level}</div>
               <div style={{ fontFamily: "var(--font-space-mono)", fontSize: 9, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 1 }}>Nivel</div>
-              <div style={{ fontFamily: "var(--font-space-mono)", fontSize: 9, color: "var(--accent)", marginTop: 3 }}>#{member.ranking}</div>
             </div>
             <div style={{ background: "var(--border)", height: 40 }} />
             <div style={{ textAlign: "center", padding: "4px 8px" }}>
@@ -67,7 +71,7 @@ export function MemberProfileView({ member }: { member: Member }) {
               return (
                 <div key={a.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, opacity: a.unlocked ? 1 : 0.32 }} title={a.name}>
                   {a.unlocked ? (
-                    <div style={{ width: 38, height: 38, borderRadius: 8, background: a.color, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ width: 38, height: 38, borderRadius: 8, background: DEFAULT_ACCENT_COLOR, display: "flex", alignItems: "center", justifyContent: "center" }}>
                       <Icon />
                     </div>
                   ) : (
@@ -96,10 +100,10 @@ export function MemberProfileView({ member }: { member: Member }) {
         <div className="card">
           <div className="card-label">Proyectos</div>
           {member.projects.map((p) => (
-            <div key={p.projectId} className="perfil-proj-row">
-              <div className="proj-dot" style={{ background: member.color }} />
+            <div key={p.id} className="perfil-proj-row">
+              <div className="proj-dot" style={{ background: DEFAULT_ACCENT_COLOR }} />
               <div className="proj-info">
-                <div className="proj-name">{p.projectName}</div>
+                <div className="proj-name">{p.name}</div>
                 <div className="proj-meta">{p.role}</div>
               </div>
               <Badge color={p.statusColor}>{p.status}</Badge>

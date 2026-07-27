@@ -6,10 +6,11 @@ import { Badge } from "@/components/ui/Badge";
 import { AvatarStack } from "@/components/ui/Avatar";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { SearchIcon } from "@/components/icons";
-import { projects } from "../../../prisma/seed/data/projects";
+import { useProjects } from "@/lib/api/projects";
 
 export function ProyectosView() {
   const [tab, setTab] = useState<"activos" | "archivados">("activos");
+  const { data: projects = [] } = useProjects();
   const activos = projects.filter((p) => !p.archived);
   const archivados = projects.filter((p) => p.archived);
   const shown = tab === "activos" ? activos : archivados;
@@ -50,16 +51,12 @@ export function ProyectosView() {
               <ProgressBar progress={p.progress} />
               <div className="pcard-foot">
                 <div className="pcard-pct">{p.progress}% completado</div>
-                <div className="gh-pill">
-                  <div className="gh-dot" style={{ background: p.prCount > 0 ? "#e07328" : "var(--badge-green-fg)" }} />
-                  {p.prCount} {p.prCount === 1 ? "PR" : "PRs"}
-                </div>
               </div>
               <div className="pcard-meta">
                 <AvatarStack count={p.teamSize} accentFirst />
                 <div className="pcard-labels">
-                  <span className="pcard-label">{p.teamLabel}</span>
-                  <span className="pcard-label">{p.clientLabel}</span>
+                  <span className="pcard-label">{p.area}</span>
+                  <span className="pcard-label">{p.client}</span>
                 </div>
               </div>
             </Link>

@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
 import { RankStars } from "@/components/ui/RankStars";
 import { SearchIcon } from "@/components/icons";
-import { members } from "../../../prisma/seed/data/members";
+import { useMembers } from "@/lib/api/members";
+import { DEFAULT_ACCENT_COLOR } from "@/lib/api/format";
 
 export function MembersTableView() {
   const router = useRouter();
+  const { data: members = [] } = useMembers();
 
   return (
     <section>
@@ -41,26 +43,26 @@ export function MembersTableView() {
               <tr key={m.id} onClick={() => router.push(`/miembros/${m.id}`)}>
                 <td>
                   <div className="dir-name-cell">
-                    <div className="dir-avatar" style={{ background: m.color }}>{m.initials}</div>
+                    <div className="dir-avatar" style={{ background: DEFAULT_ACCENT_COLOR }}>{m.initials}</div>
                     <div>
                       <div className="dir-fullname">{m.name}</div>
                       <div className="dir-email">{m.email}</div>
                     </div>
                   </div>
                 </td>
-                <td><RankStars filled={m.rankFilled} number={m.rankNumber} /></td>
-                <td><Badge color="blue" style={{ fontSize: 9 }}>{m.areaLabel}</Badge></td>
+                <td><RankStars filled={m.rankFilled} /></td>
+                <td><Badge color="blue" style={{ fontSize: 9 }}>{m.area}</Badge></td>
                 <td>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }} onClick={(e) => e.stopPropagation()}>
-                    {m.projectChips.map((c) => (
-                      <Link key={c.projectId} href={`/proyectos/${c.projectId}`} className="proj-task-chip">
-                        <span className="proj-task-chip-dot" style={{ background: c.color }} />{c.projectName}
+                    {m.projects.map((p) => (
+                      <Link key={p.id} href={`/proyectos/${p.id}`} className="proj-task-chip">
+                        <span className="proj-task-chip-dot" style={{ background: DEFAULT_ACCENT_COLOR }} />{p.name}
                       </Link>
                     ))}
                   </div>
                 </td>
                 <td><Badge color={m.statusColor}>{m.status}</Badge></td>
-                <td style={{ fontFamily: "var(--font-space-mono)", fontSize: 11 }}>{m.bday}</td>
+                <td style={{ fontFamily: "var(--font-space-mono)", fontSize: 11 }}>{m.birthday}</td>
               </tr>
             ))}
           </tbody>

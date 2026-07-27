@@ -3,10 +3,16 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { PlaceholderBox } from "@/components/ui/PlaceholderBox";
-import type { DocDetail } from "../../../prisma/seed/data/projects";
+import { useProject, useProjectDoc } from "@/lib/api/projects";
 
-export function DocEditorView({ doc, projectName }: { doc: DocDetail; projectName: string }) {
-  const [title, setTitle] = useState(doc.title);
+// El padre monta este componente con key={docId}, así que el estado local
+// se reinicia solo al cambiar de documento (ver docs/[docId]/page.tsx).
+export function DocEditorView({ projectId, docId }: { projectId: string; docId: string }) {
+  const { data: project } = useProject(projectId);
+  const { data: doc } = useProjectDoc(projectId, docId);
+  const [title, setTitle] = useState(() => doc?.title ?? "");
+
+  if (!project || !doc) return null;
 
   return (
     <section className="doc-ew">
@@ -50,10 +56,9 @@ export function DocEditorView({ doc, projectName }: { doc: DocDetail; projectNam
         <div className="doc-sc">
           <div className="ds-lbl">Metadatos</div>
           <div className="ds-row"><span className="ds-key">Tipo</span><span className="ds-val"><Badge color={doc.badgeColor} style={{ fontSize: 9 }}>{doc.type}</Badge></span></div>
-          <div className="ds-row"><span className="ds-key">Proyecto</span><span className="ds-val" style={{ fontSize: 11 }}>{projectName}</span></div>
+          <div className="ds-row"><span className="ds-key">Proyecto</span><span className="ds-val" style={{ fontSize: 11 }}>{project.name}</span></div>
           {doc.author && <div className="ds-row"><span className="ds-key">Autor</span><span className="ds-val" style={{ fontSize: 11 }}>{doc.author}</span></div>}
           <div className="ds-row"><span className="ds-key">Creado</span><span className="ds-val" style={{ fontSize: 11, fontFamily: "var(--font-space-mono)" }}>{doc.date}</span></div>
-          <div className="ds-row"><span className="ds-key">Versión</span><span className="ds-val" style={{ fontFamily: "var(--font-space-mono)", fontSize: 11 }}>v1.2</span></div>
         </div>
 
         <div className="doc-sc">

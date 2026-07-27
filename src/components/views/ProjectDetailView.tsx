@@ -16,7 +16,7 @@ import {
   TasksTabIcon,
   KanbanTabIcon,
 } from "@/components/icons";
-import type { KanbanColumn, Project } from "@/lib/types";
+import { useProject, type ProjectTask } from "@/lib/api/projects";
 
 const docIcon = {
   clock: DocClockIcon,
@@ -27,7 +27,7 @@ const docIcon = {
 
 const priorityColor = { alta: "#dc4e2a", media: "#d4a853", baja: "#a09080" };
 
-const kanbanColumns: { key: KanbanColumn; label: string }[] = [
+const kanbanColumns: { key: ProjectTask["column"]; label: string }[] = [
   { key: "pendiente", label: "PENDIENTE" },
   { key: "progreso", label: "EN PROGRESO" },
   { key: "revisar", label: "POR REVISAR" },
@@ -35,8 +35,10 @@ const kanbanColumns: { key: KanbanColumn; label: string }[] = [
   { key: "listo", label: "LISTO" },
 ];
 
-export function ProjectDetailView({ project }: { project: Project }) {
+export function ProjectDetailView({ projectId }: { projectId: string }) {
   const [tab, setTab] = useState<"backlog" | "tareas" | "kanban">("backlog");
+  const { data: project } = useProject(projectId);
+  if (!project) return null;
 
   return (
     <section>
@@ -49,13 +51,7 @@ export function ProjectDetailView({ project }: { project: Project }) {
             </div>
             <div style={{ fontSize: 13, color: "var(--text-2)", maxWidth: 560 }}>{project.description}</div>
           </div>
-          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-            <div className="gh-pill" style={{ padding: "5px 11px", border: "1px solid var(--border)", borderRadius: 5, background: "var(--surface)" }}>
-              <div className="gh-dot" style={{ background: "var(--badge-green-fg)" }} />
-              <span style={{ fontSize: 10.5 }}>{project.prCount} PRs</span>
-            </div>
-            <button className="btn-primary" style={{ fontSize: 12 }}>Editar proyecto</button>
-          </div>
+          <button className="btn-primary" style={{ fontSize: 12, flexShrink: 0 }}>Editar proyecto</button>
         </div>
         <div className="pd-meta-row">
           <div className="pd-meta-item">{project.client}</div>
@@ -191,7 +187,7 @@ export function ProjectDetailView({ project }: { project: Project }) {
                 <div className="task-id">{t.id}</div>
                 <div className={`task-name${t.done ? " done" : ""}`}>{t.name}</div>
                 <TaskTypeTag type={t.type} />
-                <div className={`task-ava${t.assigneeAccent ? " accent-ava" : ""}`} />
+                <div className={`task-ava${t.hasAssignee ? " accent-ava" : ""}`} />
               </div>
             ))}
           </div>
@@ -213,7 +209,7 @@ export function ProjectDetailView({ project }: { project: Project }) {
                       <div className="kanban-card-name">{t.name}</div>
                       <div className="kanban-card-foot">
                         <TaskTypeTag type={t.type} />
-                        <div className={`task-ava${t.assigneeAccent ? " accent-ava" : ""}`} />
+                        <div className={`task-ava${t.hasAssignee ? " accent-ava" : ""}`} />
                       </div>
                     </div>
                   ))}
