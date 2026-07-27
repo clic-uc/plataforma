@@ -1,4 +1,4 @@
-import { DocSlotType, FeatureStatus, Priority, ProjectStatus } from "@/generated/prisma/enums";
+import { DocSlotType, FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { formatDayMonth, formatDayMonthYear, formatMonthYear, parseISODateInput, toISODateInput } from "@/lib/api/format";
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/lib/api/status";
 import type {
   CreateFeatureInput,
+  CreateTaskInput,
   ProjectDetail,
   ProjectDocDetail,
   ProjectListItem,
@@ -312,6 +313,60 @@ export async function deleteFeature(projectId: string, label: string): Promise<P
 
   await prisma.task.deleteMany({ where: { featureId: existing.id } });
   await prisma.feature.delete({ where: { projectId_label: { projectId, label } } });
+
+  return getProject(projectId);
+}
+
+export function parseCreateTaskInput(body: unknown): CreateTaskInput | null {
+  if (typeof body !== "object" || body === null) return null;
+  const b = body as Record<string, unknown>;
+
+  const featureId = typeof b.featureId === "string" ? b.featureId.trim() : "";
+  if (!featureId) return null;
+
+  const name = typeof b.name === "string" ? b.name.trim() : "";
+  if (!name) return null;
+
+  const type = typeof b.type === "string" ? b.type : "";
+  if (!(Object.values(TaskType) as string[]).includes(type)) return null;
+
+  const column = typeof b.column === "string" ? b.column : "";
+  if (!(Object.values(KanbanColumn) as string[]).includes(column)) return null;
+
+  return { featureId, name, type: type as TaskType, column: column as KanbanColumn };
+}
+
+function nextTaskLabel(existingLabels: string[]): string {
+  const nextNumber = existingLabels.reduce((max, label) => {
+    const match = /^T-(\d+)$/.exec(label);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0) + 1;
+  return `T-${String(nextNumber).padStart(2, "0")}`;
+}
+
+export async function createTask(projectId: string, input: CreateTaskInput): Promise<ProjectDetail | null> {
+  const feature = await prisma.feature.findUnique({
+    where: { projectId_label: { projectId, label: input.featureId } },
+  });
+  if (!feature) return null;
+
+  const existing = await prisma.task.findMany({
+    where: { feature: { projectId } },
+    select: { label: true },
+  });
+  const label = nextTaskLabel(existing.map((t) => t.label));
+
+  await prisma.task.create({
+    data: {
+      label,
+      featureId: feature.id,
+      name: input.name,
+      type: input.type,
+      active: true,
+      done: false,
+      column: input.column,
+    },
+  });
 
   return getProject(projectId);
 }

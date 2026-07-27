@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { FeatureStatus, Priority, ProjectStatus } from "@/generated/prisma/enums";
+import type { FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
 import type { BadgeColor } from "@/lib/types";
 
 export interface ProjectListItem {
@@ -91,6 +91,13 @@ export interface UpdateFeatureInput {
   status: FeatureStatus;
 }
 
+export interface CreateTaskInput {
+  featureId: string;
+  name: string;
+  type: TaskType;
+  column: KanbanColumn;
+}
+
 export const projectsKeys = {
   all: ["projects"] as const,
   list: () => [...projectsKeys.all, "list"] as const,
@@ -170,6 +177,16 @@ async function deleteFeatureRequest(id: string, featureId: string): Promise<Proj
   return res.json();
 }
 
+async function createTaskRequest(id: string, input: CreateTaskInput): Promise<ProjectDetail> {
+  const res = await fetch(`/api/projects/${id}/tasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error("No se pudo crear la tarea");
+  return res.json();
+}
+
 export function useProjects() {
   return useQuery({ queryKey: projectsKeys.list(), queryFn: fetchProjects });
 }
@@ -238,6 +255,16 @@ export function useDeleteFeature(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (featureId: string) => deleteFeatureRequest(id, featureId),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(projectsKeys.detail(id), updated);
+    },
+  });
+}
+
+export function useCreateTask(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateTaskInput) => createTaskRequest(id, input),
     onSuccess: (updated) => {
       queryClient.setQueryData(projectsKeys.detail(id), updated);
     },

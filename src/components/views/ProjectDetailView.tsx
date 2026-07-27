@@ -18,10 +18,12 @@ import {
   KanbanTabIcon,
 } from "@/components/icons";
 import { ContextMenu } from "@/components/ui/ContextMenu";
+import { kanbanColumnValue } from "@/lib/api/status";
 import { useCreateProjectDoc, useDeleteFeature, useProject, type ProjectFeature, type ProjectTask } from "@/lib/api/projects";
 import { EditProjectModal } from "@/components/views/EditProjectModal";
 import { CreateFeatureModal } from "@/components/views/CreateFeatureModal";
 import { EditFeatureModal } from "@/components/views/EditFeatureModal";
+import { CreateTaskModal } from "@/components/views/CreateTaskModal";
 
 const docIcon = {
   clock: DocClockIcon,
@@ -47,6 +49,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const [creatingFeature, setCreatingFeature] = useState(false);
   const [editingFeature, setEditingFeature] = useState<ProjectFeature | null>(null);
   const [featureMenu, setFeatureMenu] = useState<{ x: number; y: number; feature: ProjectFeature } | null>(null);
+  const [creatingTaskColumn, setCreatingTaskColumn] = useState<ProjectTask["column"] | null>(null);
   const { data: project } = useProject(projectId);
   const createDoc = useCreateProjectDoc(projectId);
   const deleteFeature = useDeleteFeature(projectId);
@@ -178,12 +181,11 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
               <div className="select-mock" style={{ height: 26 }}><span style={{ fontSize: 9.5 }}>Feature ▾</span></div>
               <div className="select-mock" style={{ height: 26 }}><span style={{ fontSize: 9.5 }}>Estado ▾</span></div>
-              <button className="btn-xs btn-xs-g">+ Tarea</button>
+              <button className="btn-xs btn-xs-g" onClick={() => setCreatingTaskColumn("pendiente")}>+ Tarea</button>
             </div>
           )}
           {tab === "kanban" && (
             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-              <button className="btn-xs btn-xs-p">+ Columna</button>
             </div>
           )}
         </div>
@@ -252,7 +254,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                       </div>
                     </div>
                   ))}
-                  <div className="kanban-col-add">+ Tarea</div>
+                  <div className="kanban-col-add" onClick={() => setCreatingTaskColumn(col.key)}>+ Tarea</div>
                 </div>
               );
             })}
@@ -264,6 +266,14 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
       {creatingFeature && <CreateFeatureModal projectId={project.id} onClose={() => setCreatingFeature(false)} />}
       {editingFeature && (
         <EditFeatureModal projectId={project.id} feature={editingFeature} onClose={() => setEditingFeature(null)} />
+      )}
+      {creatingTaskColumn && (
+        <CreateTaskModal
+          projectId={project.id}
+          features={project.features}
+          column={kanbanColumnValue[creatingTaskColumn]}
+          onClose={() => setCreatingTaskColumn(null)}
+        />
       )}
       {featureMenu && (
         <ContextMenu

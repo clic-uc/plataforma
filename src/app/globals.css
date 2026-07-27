@@ -822,7 +822,7 @@ tbody tr:last-child td { border-bottom: none; }
 .sec-htitle { font-family: var(--font-space-mono), monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); }
 .btn-xs { padding: 4px 9px; border-radius: 4px; font-size: 11px; font-family: var(--font-barlow), sans-serif; cursor: pointer; border: none; }
 .btn-xs-p { background: var(--accent); color: #fff; }
-.btn-xs-g { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
+.btn-xs-g { background: var(--accent); color: #fff; border: 1px solid var(--border); }
 
 /* ─── PROJECT TABS (Backlog/Tareas/Kanban) ─── */
 .proj-tabs-bar {

@@ -127,7 +127,7 @@ model Feature {
 model Task {
   id         String       @id @default(cuid())
   label      String
-  featureId  String
+  featureId  String?
   assigneeId String?
   name       String
   type       TaskType
@@ -135,8 +135,8 @@ model Task {
   done       Boolean      @default(false)
   column     KanbanColumn
 
-  feature  Feature @relation(fields: [featureId], references: [id])
-  assignee Member? @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  feature  Feature? @relation(fields: [featureId], references: [id])
+  assignee Member?  @relation("TaskAssignee", fields: [assigneeId], references: [id])
 
   @@unique([featureId, label])
 }

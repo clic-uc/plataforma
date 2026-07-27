@@ -78,12 +78,29 @@ export const taskTypeLabel: Record<TaskType, "feature" | "spike" | "fix" | "refa
   DOCS: "docs",
 };
 
+export const TASK_TYPE_OPTIONS: { value: TaskType; label: string }[] = [
+  { value: "FEATURE", label: "Feature" },
+  { value: "SPIKE", label: "Spike" },
+  { value: "FIX", label: "Fix" },
+  { value: "REFACTOR", label: "Refactor" },
+  { value: "CHORE", label: "Chore" },
+  { value: "DOCS", label: "Docs" },
+];
+
 export const kanbanColumnLabel: Record<KanbanColumn, "pendiente" | "progreso" | "revisar" | "revision" | "listo"> = {
   PENDIENTE: "pendiente",
   PROGRESO: "progreso",
   REVISAR: "revisar",
   REVISION: "revision",
   LISTO: "listo",
+};
+
+export const kanbanColumnValue: Record<"pendiente" | "progreso" | "revisar" | "revision" | "listo", KanbanColumn> = {
+  pendiente: "PENDIENTE",
+  progreso: "PROGRESO",
+  revisar: "REVISAR",
+  revision: "REVISION",
+  listo: "LISTO",
 };
 
 export const docSlotName: Record<DocSlotType, string> = {
