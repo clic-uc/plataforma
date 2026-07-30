@@ -31,8 +31,7 @@ const SLOT_ORDER: DocSlotType[] = [
   DocSlotType.INFORME,
 ];
 
-function progressFromFeatures(features: { tasks: { done: boolean }[] }[]): number {
-  const tasks = features.flatMap((f) => f.tasks);
+function progressFromTasks(tasks: { done: boolean }[]): number {
   if (tasks.length === 0) return 0;
   const done = tasks.filter((t) => t.done).length;
   return Math.round((done / tasks.length) * 100);
@@ -43,7 +42,7 @@ export async function getProjects(): Promise<ProjectListItem[]> {
     orderBy: { startDate: "desc" },
     include: {
       members: true,
-      features: { include: { tasks: true } },
+      tasks: true,
     },
   });
 
@@ -56,7 +55,7 @@ export async function getProjects(): Promise<ProjectListItem[]> {
     status: projectStatusLabel[project.status],
     statusColor: projectStatusColor[project.status],
     statusValue: project.status,
-    progress: progressFromFeatures(project.features),
+    progress: progressFromTasks(project.tasks),
     teamSize: project.members.length,
     startDate: formatMonthYear(project.startDate),
     startDateISO: toISODateInput(project.startDate),
@@ -69,12 +68,20 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
     where: { id },
     include: {
       members: true,
-      features: { include: { tasks: { orderBy: { label: "asc" } } }, orderBy: { label: "asc" } },
+      features: { orderBy: { label: "asc" } },
+      tasks: { orderBy: { label: "asc" } },
       documents: { include: { author: true } },
       actas: { orderBy: { date: "asc" } },
     },
   });
   if (!project) return null;
+
+  const featureLabelById = new Map(project.features.map((f) => [f.id, f.label]));
+  const taskCountByFeatureId = new Map<string, number>();
+  for (const task of project.tasks) {
+    if (!task.featureId) continue;
+    taskCountByFeatureId.set(task.featureId, (taskCountByFeatureId.get(task.featureId) ?? 0) + 1);
+  }
 
   return {
     id: project.id,
@@ -85,7 +92,7 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
     status: projectStatusLabel[project.status],
     statusColor: projectStatusColor[project.status],
     statusValue: project.status,
-    progress: progressFromFeatures(project.features),
+    progress: progressFromTasks(project.tasks),
     teamSize: project.members.length,
     startDate: formatMonthYear(project.startDate),
     startDateISO: toISODateInput(project.startDate),
@@ -113,19 +120,17 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
       status: featureStatusLabel[feature.status],
       statusColor: featureStatusColor[feature.status],
       statusValue: feature.status,
-      taskCount: feature.tasks.length,
+      taskCount: taskCountByFeatureId.get(feature.id) ?? 0,
     })),
-    tasks: project.features.flatMap((feature) =>
-      feature.tasks.map((task) => ({
-        id: task.label,
-        featureId: feature.label,
-        name: task.name,
-        type: taskTypeLabel[task.type],
-        done: task.done,
-        hasAssignee: task.assigneeId !== null,
-        column: kanbanColumnLabel[task.column],
-      })),
-    ),
+    tasks: project.tasks.map((task) => ({
+      id: task.label,
+      featureId: task.featureId ? (featureLabelById.get(task.featureId) ?? null) : null,
+      name: task.name,
+      type: taskTypeLabel[task.type],
+      done: task.done,
+      hasAssignee: task.assigneeId !== null,
+      column: kanbanColumnLabel[task.column],
+    })),
   };
 }
 
@@ -321,8 +326,7 @@ export function parseCreateTaskInput(body: unknown): CreateTaskInput | null {
   if (typeof body !== "object" || body === null) return null;
   const b = body as Record<string, unknown>;
 
-  const featureId = typeof b.featureId === "string" ? b.featureId.trim() : "";
-  if (!featureId) return null;
+  const featureId = typeof b.featureId === "string" ? b.featureId.trim() || null : null;
 
   const name = typeof b.name === "string" ? b.name.trim() : "";
   if (!name) return null;
@@ -345,13 +349,20 @@ function nextTaskLabel(existingLabels: string[]): string {
 }
 
 export async function createTask(projectId: string, input: CreateTaskInput): Promise<ProjectDetail | null> {
-  const feature = await prisma.feature.findUnique({
-    where: { projectId_label: { projectId, label: input.featureId } },
-  });
-  if (!feature) return null;
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) return null;
+
+  let featureId: string | null = null;
+  if (input.featureId) {
+    const feature = await prisma.feature.findUnique({
+      where: { projectId_label: { projectId, label: input.featureId } },
+    });
+    if (!feature) return null;
+    featureId = feature.id;
+  }
 
   const existing = await prisma.task.findMany({
-    where: { feature: { projectId } },
+    where: { projectId },
     select: { label: true },
   });
   const label = nextTaskLabel(existing.map((t) => t.label));
@@ -359,7 +370,8 @@ export async function createTask(projectId: string, input: CreateTaskInput): Pro
   await prisma.task.create({
     data: {
       label,
-      featureId: feature.id,
+      projectId,
+      featureId,
       name: input.name,
       type: input.type,
       active: true,

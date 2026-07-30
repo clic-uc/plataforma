@@ -224,7 +224,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             {project.tasks.map((t) => (
               <div key={t.id} className="task-row">
                 <div className={`task-cb${t.done ? " done" : ""}`} />
-                <span className="task-feat-tag">{t.featureId}</span>
+                {t.featureId && <span className="task-feat-tag">{t.featureId}</span>}
                 <div className="task-id">{t.id}</div>
                 <div className={`task-name${t.done ? " done" : ""}`}>{t.name}</div>
                 <TaskTypeTag type={t.type} />
@@ -246,7 +246,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                   </div>
                   {tasks.map((t) => (
                     <div key={t.id} className="kanban-card" style={col.key === "listo" ? { opacity: 0.65 } : undefined}>
-                      <div className="kanban-card-id">{t.id} · {t.featureId}</div>
+                      <div className="kanban-card-id">{t.featureId ? `${t.id} · ${t.featureId}` : t.id}</div>
                       <div className="kanban-card-name">{t.name}</div>
                       <div className="kanban-card-foot">
                         <TaskTypeTag type={t.type} />

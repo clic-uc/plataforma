@@ -65,14 +65,13 @@ como UI decorativa sin conectar.
 - Sin drag & drop en el Kanban: una tarea se crea directo en una columna, pero no se puede mover
   arrastrándola entre columnas después.
 - Filtros "Feature ▾" / "Estado ▾" en la pestaña Tareas son decorativos.
-- **`Task.featureId` ya es opcional a nivel de schema y DB** (migración
-  `20260727214422_task_feature_optional`), pero la app todavía no lo aprovecha: `createTask` sigue
-  exigiendo una feature válida y el modal de creación sigue mostrando el selector como obligatorio.
-  Para que las "tareas sueltas" sirvan de algo de verdad falta:
-  - Decidir cómo se ven en Backlog/Kanban/Tareas (hoy los tres están organizados 100% por feature).
-  - Probablemente agregar una relación directa `Task → Project`, porque hoy la única forma en que
-    una tarea "sabe" a qué proyecto pertenece es indirecta, a través de su feature — una tarea sin
-    feature quedaría sin proyecto asociado tal como está el modelo ahora.
+- **`Task.featureId` es opcional y `Task` ahora tiene `projectId` propio** (migración
+  `20260730120000_task_project_relation`, sobre la base de `20260727214422_task_feature_optional`).
+  El modal de creación permite "Sin feature" y `createTask`/`getProject` ya no dependen de la
+  feature para saber a qué proyecto pertenece una tarea. El unique de label pasó de
+  `[featureId, label]` a `[projectId, label]`.
+  - Pendiente: la pestaña Backlog sigue organizada 100% por feature, así que una tarea sin feature
+    no aparece ahí (solo en Tareas/Kanban) — no hay todavía una sección tipo "Sueltas" en Backlog.
 
 ## Notas de infraestructura
 

@@ -25,20 +25,7 @@ export function CreateTaskModal({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    mutation.mutate({ featureId, name, type, column }, { onSuccess: onClose });
-  }
-
-  if (features.length === 0) {
-    return (
-      <Modal title="Nueva tarea" onClose={onClose}>
-        <div className="ph" style={{ height: 72 }}>
-          <div className="ph-text">Primero crea una feature — las tareas se agrupan bajo una.</div>
-        </div>
-        <div className="modal-footer" style={{ padding: 0, border: "none", marginTop: 12 }}>
-          <button type="button" className="btn-ghost" onClick={onClose}>Cerrar</button>
-        </div>
-      </Modal>
-    );
+    mutation.mutate({ featureId: featureId || null, name, type, column }, { onSuccess: onClose });
   }
 
   return (
@@ -47,6 +34,7 @@ export function CreateTaskModal({
         <div className="form-field">
           <div className="f-label">Feature</div>
           <select className="field-select" value={featureId} onChange={(e) => setFeatureId(e.target.value)}>
+            <option value="">Sin feature</option>
             {features.map((f) => (
               <option key={f.id} value={f.id}>{f.id} — {f.name}</option>
             ))}

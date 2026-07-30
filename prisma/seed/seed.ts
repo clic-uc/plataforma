@@ -220,6 +220,7 @@ async function main() {
       await prisma.task.create({
         data: {
           label: t.id,
+          projectId: project.id,
           featureId,
           name: t.name,
           type: taskTypeMap[t.type],

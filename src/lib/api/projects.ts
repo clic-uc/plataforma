@@ -46,7 +46,7 @@ export interface ProjectFeature {
 
 export interface ProjectTask {
   id: string;
-  featureId: string;
+  featureId: string | null;
   name: string;
   type: "feature" | "spike" | "fix" | "refactor" | "chore" | "docs";
   done: boolean;
@@ -92,7 +92,7 @@ export interface UpdateFeatureInput {
 }
 
 export interface CreateTaskInput {
-  featureId: string;
+  featureId: string | null;
   name: string;
   type: TaskType;
   column: KanbanColumn;
