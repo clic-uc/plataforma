@@ -14,6 +14,7 @@ import {
   taskTypeLabel,
 } from "@/lib/api/status";
 import type {
+  CreateActaInput,
   CreateFeatureInput,
   CreateTaskInput,
   ProjectDetail,
@@ -21,6 +22,7 @@ import type {
   ProjectListItem,
   UpdateFeatureInput,
   UpdateProjectInput,
+  UpdateTaskInput,
 } from "@/lib/api/projects";
 
 const SLOT_ORDER: DocSlotType[] = [
@@ -31,9 +33,9 @@ const SLOT_ORDER: DocSlotType[] = [
   DocSlotType.INFORME,
 ];
 
-function progressFromTasks(tasks: { done: boolean }[]): number {
+function progressFromTasks(tasks: { column: KanbanColumn }[]): number {
   if (tasks.length === 0) return 0;
-  const done = tasks.filter((t) => t.done).length;
+  const done = tasks.filter((t) => t.column === "LISTO").length;
   return Math.round((done / tasks.length) * 100);
 }
 
@@ -127,7 +129,7 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
       featureId: task.featureId ? (featureLabelById.get(task.featureId) ?? null) : null,
       name: task.name,
       type: taskTypeLabel[task.type],
-      done: task.done,
+      done: task.column === "LISTO",
       hasAssignee: task.assigneeId !== null,
       column: kanbanColumnLabel[task.column],
     })),
@@ -244,6 +246,30 @@ export async function createProjectDoc(projectId: string, slotKey: string): Prom
   await prisma.document.update({
     where: { projectId_slot: { projectId, slot } },
     data: { filled: true, date: new Date() },
+  });
+
+  return getProject(projectId);
+}
+
+export function parseCreateActaInput(body: unknown): CreateActaInput | null {
+  if (typeof body !== "object" || body === null) return null;
+  const b = body as Record<string, unknown>;
+
+  const title = typeof b.title === "string" ? b.title.trim() : "";
+  if (!title) return null;
+
+  const date = typeof b.date === "string" ? b.date : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+
+  return { title, date };
+}
+
+export async function createActa(projectId: string, input: CreateActaInput): Promise<ProjectDetail | null> {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) return null;
+
+  await prisma.acta.create({
+    data: { projectId, title: input.title, date: parseISODateInput(input.date) },
   });
 
   return getProject(projectId);
@@ -375,10 +401,41 @@ export async function createTask(projectId: string, input: CreateTaskInput): Pro
       name: input.name,
       type: input.type,
       active: true,
-      done: false,
       column: input.column,
     },
   });
+
+  return getProject(projectId);
+}
+
+export const parseUpdateTaskInput = parseCreateTaskInput;
+
+export async function updateTask(projectId: string, label: string, input: UpdateTaskInput): Promise<ProjectDetail | null> {
+  const existing = await prisma.task.findUnique({ where: { projectId_label: { projectId, label } } });
+  if (!existing) return null;
+
+  let featureId: string | null = null;
+  if (input.featureId) {
+    const feature = await prisma.feature.findUnique({
+      where: { projectId_label: { projectId, label: input.featureId } },
+    });
+    if (!feature) return null;
+    featureId = feature.id;
+  }
+
+  await prisma.task.update({
+    where: { projectId_label: { projectId, label } },
+    data: { featureId, name: input.name, type: input.type, column: input.column },
+  });
+
+  return getProject(projectId);
+}
+
+export async function deleteTask(projectId: string, label: string): Promise<ProjectDetail | null> {
+  const existing = await prisma.task.findUnique({ where: { projectId_label: { projectId, label } } });
+  if (!existing) return null;
+
+  await prisma.task.delete({ where: { projectId_label: { projectId, label } } });
 
   return getProject(projectId);
 }

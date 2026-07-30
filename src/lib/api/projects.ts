@@ -98,6 +98,13 @@ export interface CreateTaskInput {
   column: KanbanColumn;
 }
 
+export type UpdateTaskInput = CreateTaskInput;
+
+export interface CreateActaInput {
+  title: string;
+  date: string;
+}
+
 export const projectsKeys = {
   all: ["projects"] as const,
   list: () => [...projectsKeys.all, "list"] as const,
@@ -187,6 +194,32 @@ async function createTaskRequest(id: string, input: CreateTaskInput): Promise<Pr
   return res.json();
 }
 
+async function updateTaskRequest(id: string, taskId: string, input: UpdateTaskInput): Promise<ProjectDetail> {
+  const res = await fetch(`/api/projects/${id}/tasks/${taskId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error("No se pudo guardar la tarea");
+  return res.json();
+}
+
+async function deleteTaskRequest(id: string, taskId: string): Promise<ProjectDetail> {
+  const res = await fetch(`/api/projects/${id}/tasks/${taskId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("No se pudo eliminar la tarea");
+  return res.json();
+}
+
+async function createActaRequest(id: string, input: CreateActaInput): Promise<ProjectDetail> {
+  const res = await fetch(`/api/projects/${id}/actas`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error("No se pudo crear el acta");
+  return res.json();
+}
+
 export function useProjects() {
   return useQuery({ queryKey: projectsKeys.list(), queryFn: fetchProjects });
 }
@@ -265,6 +298,37 @@ export function useCreateTask(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateTaskInput) => createTaskRequest(id, input),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(projectsKeys.detail(id), updated);
+    },
+  });
+}
+
+export function useUpdateTask(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, input }: { taskId: string; input: UpdateTaskInput }) =>
+      updateTaskRequest(id, taskId, input),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(projectsKeys.detail(id), updated);
+    },
+  });
+}
+
+export function useDeleteTask(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) => deleteTaskRequest(id, taskId),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(projectsKeys.detail(id), updated);
+    },
+  });
+}
+
+export function useCreateActa(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateActaInput) => createActaRequest(id, input),
     onSuccess: (updated) => {
       queryClient.setQueryData(projectsKeys.detail(id), updated);
     },

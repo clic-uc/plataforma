@@ -134,7 +134,6 @@ model Task {
   name       String
   type       TaskType
   active     Boolean
-  done       Boolean      @default(false)
   column     KanbanColumn
 
   project  Project  @relation(fields: [projectId], references: [id])

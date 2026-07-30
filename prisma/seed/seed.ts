@@ -226,7 +226,6 @@ async function main() {
           type: taskTypeMap[t.type],
           // el mock no tiene asignación real, solo un flag visual (assigneeAccent)
           active: true,
-          done: t.done,
           column: kanbanColumnMap[t.column],
         },
       });

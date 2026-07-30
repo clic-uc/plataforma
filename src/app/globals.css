@@ -853,13 +853,6 @@ tbody tr:last-child td { border-bottom: none; }
 /* ─── TASKS ─── */
 .task-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .task-row:last-child { border-bottom: none; }
-.task-cb {
-  width: 13px; height: 13px; border-radius: 3px;
-  border: 1.5px solid var(--border-dash); flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-}
-.task-cb.done { background: var(--badge-green-fg); border-color: var(--badge-green-fg); }
-.task-cb.done::after { content: ''; display: block; width: 5px; height: 3px; border-left: 1.5px solid #fff; border-bottom: 1.5px solid #fff; transform: rotate(-45deg) translate(1px,-1px); }
 .task-id { font-family: var(--font-space-mono), monospace; font-size: 9px; color: var(--text-3); min-width: 24px; }
 .task-name { font-size: 12px; color: var(--text-1); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-name.done { color: var(--text-3); text-decoration: line-through; }

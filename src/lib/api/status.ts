@@ -103,6 +103,14 @@ export const kanbanColumnValue: Record<"pendiente" | "progreso" | "revisar" | "r
   listo: "LISTO",
 };
 
+export const KANBAN_COLUMN_OPTIONS: { value: KanbanColumn; label: string }[] = [
+  { value: "PENDIENTE", label: "Pendiente" },
+  { value: "PROGRESO", label: "En progreso" },
+  { value: "REVISAR", label: "Por revisar" },
+  { value: "REVISION", label: "En revisión" },
+  { value: "LISTO", label: "Listo" },
+];
+
 export const docSlotName: Record<DocSlotType, string> = {
   KICKOFF: "Kickoff",
   REQUERIMIENTOS: "Requerimientos",

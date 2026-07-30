@@ -19,11 +19,20 @@ import {
 } from "@/components/icons";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import { kanbanColumnValue } from "@/lib/api/status";
-import { useCreateProjectDoc, useDeleteFeature, useProject, type ProjectFeature, type ProjectTask } from "@/lib/api/projects";
+import {
+  useCreateProjectDoc,
+  useDeleteFeature,
+  useDeleteTask,
+  useProject,
+  type ProjectFeature,
+  type ProjectTask,
+} from "@/lib/api/projects";
 import { EditProjectModal } from "@/components/views/EditProjectModal";
 import { CreateFeatureModal } from "@/components/views/CreateFeatureModal";
 import { EditFeatureModal } from "@/components/views/EditFeatureModal";
 import { CreateTaskModal } from "@/components/views/CreateTaskModal";
+import { EditTaskModal } from "@/components/views/EditTaskModal";
+import { CreateActaModal } from "@/components/views/CreateActaModal";
 
 const docIcon = {
   clock: DocClockIcon,
@@ -50,10 +59,19 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const [editingFeature, setEditingFeature] = useState<ProjectFeature | null>(null);
   const [featureMenu, setFeatureMenu] = useState<{ x: number; y: number; feature: ProjectFeature } | null>(null);
   const [creatingTaskColumn, setCreatingTaskColumn] = useState<ProjectTask["column"] | null>(null);
+  const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
+  const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: ProjectTask } | null>(null);
+  const [creatingActa, setCreatingActa] = useState(false);
   const { data: project } = useProject(projectId);
   const createDoc = useCreateProjectDoc(projectId);
   const deleteFeature = useDeleteFeature(projectId);
+  const deleteTask = useDeleteTask(projectId);
   if (!project) return null;
+
+  function openTaskMenu(e: React.MouseEvent, task: ProjectTask) {
+    e.preventDefault();
+    setTaskMenu({ x: e.clientX, y: e.clientY, task });
+  }
 
   return (
     <section>
@@ -140,7 +158,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
         <div className="card">
           <div className="sec-hrow" style={{ marginBottom: 10 }}>
             <div className="sec-htitle">Actas <span style={{ opacity: 0.5 }}>{project.actas.length}</span></div>
-            <button className="btn-xs btn-xs-g">+ Agregar acta</button>
+            <button className="btn-xs btn-xs-g" onClick={() => setCreatingActa(true)}>+ Agregar acta</button>
           </div>
           {project.actas.length === 0 ? (
             <div className="ph" style={{ height: 72 }}>
@@ -222,8 +240,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
         {tab === "tareas" && (
           <div>
             {project.tasks.map((t) => (
-              <div key={t.id} className="task-row">
-                <div className={`task-cb${t.done ? " done" : ""}`} />
+              <div key={t.id} className="task-row" onContextMenu={(e) => openTaskMenu(e, t)}>
                 {t.featureId && <span className="task-feat-tag">{t.featureId}</span>}
                 <div className="task-id">{t.id}</div>
                 <div className={`task-name${t.done ? " done" : ""}`}>{t.name}</div>
@@ -245,7 +262,12 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                     <span className="kanban-col-count">{tasks.length}</span>
                   </div>
                   {tasks.map((t) => (
-                    <div key={t.id} className="kanban-card" style={col.key === "listo" ? { opacity: 0.65 } : undefined}>
+                    <div
+                      key={t.id}
+                      className="kanban-card"
+                      style={col.key === "listo" ? { opacity: 0.65 } : undefined}
+                      onContextMenu={(e) => openTaskMenu(e, t)}
+                    >
                       <div className="kanban-card-id">{t.featureId ? `${t.id} · ${t.featureId}` : t.id}</div>
                       <div className="kanban-card-name">{t.name}</div>
                       <div className="kanban-card-foot">
@@ -275,6 +297,15 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
           onClose={() => setCreatingTaskColumn(null)}
         />
       )}
+      {editingTask && (
+        <EditTaskModal
+          projectId={project.id}
+          task={editingTask}
+          features={project.features}
+          onClose={() => setEditingTask(null)}
+        />
+      )}
+      {creatingActa && <CreateActaModal projectId={project.id} onClose={() => setCreatingActa(false)} />}
       {featureMenu && (
         <ContextMenu
           x={featureMenu.x}
@@ -288,6 +319,25 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
               onSelect: () => {
                 if (window.confirm(`¿Eliminar ${featureMenu.feature.id} y sus ${featureMenu.feature.taskCount} tareas?`)) {
                   deleteFeature.mutate(featureMenu.feature.id);
+                }
+              },
+            },
+          ]}
+        />
+      )}
+      {taskMenu && (
+        <ContextMenu
+          x={taskMenu.x}
+          y={taskMenu.y}
+          onClose={() => setTaskMenu(null)}
+          items={[
+            { label: "Editar", onSelect: () => setEditingTask(taskMenu.task) },
+            {
+              label: "Eliminar",
+              danger: true,
+              onSelect: () => {
+                if (window.confirm(`¿Eliminar ${taskMenu.task.id}?`)) {
+                  deleteTask.mutate(taskMenu.task.id);
                 }
               },
             },
