@@ -33,6 +33,11 @@ const SLOT_ORDER: DocSlotType[] = [
   DocSlotType.INFORME,
 ];
 
+function parseDocSlot(value: string): DocSlotType | null {
+  const upper = value.toUpperCase();
+  return (Object.values(DocSlotType) as string[]).includes(upper) ? (upper as DocSlotType) : null;
+}
+
 function progressFromTasks(tasks: { column: KanbanColumn }[]): number {
   if (tasks.length === 0) return 0;
   const done = tasks.filter((t) => t.column === "LISTO").length;
@@ -129,9 +134,11 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
       featureId: task.featureId ? (featureLabelById.get(task.featureId) ?? null) : null,
       name: task.name,
       type: taskTypeLabel[task.type],
+      typeValue: task.type,
       done: task.column === "LISTO",
       hasAssignee: task.assigneeId !== null,
       column: kanbanColumnLabel[task.column],
+      columnValue: task.column,
     })),
   };
 }
@@ -181,9 +188,8 @@ export async function getProjectDoc(projectId: string, docId: string): Promise<P
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { name: true } });
   if (!project) return null;
 
-  const upperDocId = docId.toUpperCase();
-  if ((Object.values(DocSlotType) as string[]).includes(upperDocId)) {
-    const slot = upperDocId as DocSlotType;
+  const slot = parseDocSlot(docId);
+  if (slot) {
     const doc = await prisma.document.findUnique({
       where: { projectId_slot: { projectId, slot } },
       include: { author: true },
@@ -216,9 +222,8 @@ export async function getProjectDoc(projectId: string, docId: string): Promise<P
 }
 
 export async function updateProjectDoc(projectId: string, docId: string, content: string): Promise<ProjectDocDetail | null> {
-  const upperDocId = docId.toUpperCase();
-  if ((Object.values(DocSlotType) as string[]).includes(upperDocId)) {
-    const slot = upperDocId as DocSlotType;
+  const slot = parseDocSlot(docId);
+  if (slot) {
     const existing = await prisma.document.findUnique({ where: { projectId_slot: { projectId, slot } } });
     if (existing?.filled) {
       await prisma.document.update({ where: { projectId_slot: { projectId, slot } }, data: { content } });
@@ -236,9 +241,8 @@ export async function updateProjectDoc(projectId: string, docId: string, content
 }
 
 export async function createProjectDoc(projectId: string, slotKey: string): Promise<ProjectDetail | null> {
-  const upperSlot = slotKey.toUpperCase();
-  if (!(Object.values(DocSlotType) as string[]).includes(upperSlot)) return null;
-  const slot = upperSlot as DocSlotType;
+  const slot = parseDocSlot(slotKey);
+  if (!slot) return null;
 
   const existing = await prisma.document.findUnique({ where: { projectId_slot: { projectId, slot } } });
   if (!existing || existing.filled) return null;

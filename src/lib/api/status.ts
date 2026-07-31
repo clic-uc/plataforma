@@ -69,6 +69,12 @@ export const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
   { value: "BAJA", label: "Baja" },
 ];
 
+export const priorityColor: Record<"alta" | "media" | "baja", string> = {
+  alta: "#dc4e2a",
+  media: "#d4a853",
+  baja: "#a09080",
+};
+
 export const taskTypeLabel: Record<TaskType, "feature" | "spike" | "fix" | "refactor" | "chore" | "docs"> = {
   FEATURE: "feature",
   SPIKE: "spike",

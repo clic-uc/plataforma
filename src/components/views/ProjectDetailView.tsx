@@ -18,7 +18,7 @@ import {
   KanbanTabIcon,
 } from "@/components/icons";
 import { ContextMenu } from "@/components/ui/ContextMenu";
-import { kanbanColumnValue } from "@/lib/api/status";
+import { kanbanColumnValue, priorityColor } from "@/lib/api/status";
 import {
   useCreateProjectDoc,
   useDeleteFeature,
@@ -40,8 +40,6 @@ const docIcon = {
   code: DocCodeIcon,
   decision: DocDecisionIcon,
 };
-
-const priorityColor = { alta: "#dc4e2a", media: "#d4a853", baja: "#a09080" };
 
 const kanbanColumns: { key: ProjectTask["column"]; label: string }[] = [
   { key: "pendiente", label: "PENDIENTE" },

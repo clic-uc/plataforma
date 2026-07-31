@@ -49,9 +49,11 @@ export interface ProjectTask {
   featureId: string | null;
   name: string;
   type: "feature" | "spike" | "fix" | "refactor" | "chore" | "docs";
+  typeValue: TaskType;
   done: boolean;
   hasAssignee: boolean;
   column: "pendiente" | "progreso" | "revisar" | "revision" | "listo";
+  columnValue: KanbanColumn;
 }
 
 export interface ProjectDetail extends ProjectListItem {

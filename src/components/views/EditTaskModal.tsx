@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { KanbanColumn, TaskType } from "@/generated/prisma/enums";
 import { Modal } from "@/components/ui/Modal";
-import { KANBAN_COLUMN_OPTIONS, TASK_TYPE_OPTIONS, kanbanColumnValue } from "@/lib/api/status";
+import { KANBAN_COLUMN_OPTIONS, TASK_TYPE_OPTIONS } from "@/lib/api/status";
 import { useUpdateTask, type ProjectFeature, type ProjectTask } from "@/lib/api/projects";
 
 export function EditTaskModal({
@@ -19,8 +19,8 @@ export function EditTaskModal({
 }) {
   const [featureId, setFeatureId] = useState(task.featureId ?? "");
   const [name, setName] = useState(task.name);
-  const [type, setType] = useState<TaskType>(task.type.toUpperCase() as TaskType);
-  const [column, setColumn] = useState<KanbanColumn>(kanbanColumnValue[task.column]);
+  const [type, setType] = useState<TaskType>(task.typeValue);
+  const [column, setColumn] = useState<KanbanColumn>(task.columnValue);
 
   const mutation = useUpdateTask(projectId);
 
