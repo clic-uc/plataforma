@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { BadgeColor } from "@/lib/types";
+import type { BadgeColor } from "@/lib/api/status";
 
 export type AchievementIcon = "star" | "speech" | "bolt" | "file" | "lock";
 

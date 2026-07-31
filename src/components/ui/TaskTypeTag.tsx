@@ -1,5 +1,5 @@
-import type { TaskType } from "@/lib/types";
+import type { ProjectTask } from "@/lib/api/projects";
 
-export function TaskTypeTag({ type }: { type: TaskType }) {
+export function TaskTypeTag({ type }: { type: ProjectTask["type"] }) {
   return <span className={`task-type tt-${type}`}>{type}</span>;
 }

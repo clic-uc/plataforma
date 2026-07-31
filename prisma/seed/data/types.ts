@@ -1,9 +1,4 @@
-export type BadgeColor = "green" | "amber" | "gray" | "blue";
-
-export interface TeamAvatar {
-  initials?: string;
-  accent?: boolean;
-}
+import type { BadgeColor } from "@/lib/api/status";
 
 export interface DocSlot {
   key: string;

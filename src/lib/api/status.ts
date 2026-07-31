@@ -7,7 +7,7 @@ import {
   ProjectStatus,
   TaskType,
 } from "@/generated/prisma/enums";
-import type { BadgeColor } from "@/lib/types";
+export type BadgeColor = "green" | "amber" | "gray" | "blue";
 
 export const memberStatusLabel: Record<MemberStatus, string> = {
   ACTIVO: "Activo",

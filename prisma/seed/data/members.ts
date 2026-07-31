@@ -1,4 +1,4 @@
-import type { Member } from "@/lib/types";
+import type { Member } from "./types";
 
 export const members: Member[] = [
   {
