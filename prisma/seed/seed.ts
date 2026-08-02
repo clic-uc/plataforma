@@ -220,12 +220,12 @@ async function main() {
       await prisma.task.create({
         data: {
           label: t.id,
+          projectId: project.id,
           featureId,
           name: t.name,
           type: taskTypeMap[t.type],
           // el mock no tiene asignación real, solo un flag visual (assigneeAccent)
           active: true,
-          done: t.done,
           column: kanbanColumnMap[t.column],
         },
       });

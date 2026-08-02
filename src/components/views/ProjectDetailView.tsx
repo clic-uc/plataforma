@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
 import { AvatarStack } from "@/components/ui/Avatar";
 import { TaskTypeTag } from "@/components/ui/TaskTypeTag";
@@ -16,7 +17,22 @@ import {
   TasksTabIcon,
   KanbanTabIcon,
 } from "@/components/icons";
-import type { KanbanColumn, Project } from "@/lib/types";
+import { ContextMenu } from "@/components/ui/ContextMenu";
+import { kanbanColumnValue, priorityColor } from "@/lib/api/status";
+import {
+  useCreateProjectDoc,
+  useDeleteFeature,
+  useDeleteTask,
+  useProject,
+  type ProjectFeature,
+  type ProjectTask,
+} from "@/lib/api/projects";
+import { EditProjectModal } from "@/components/views/EditProjectModal";
+import { CreateFeatureModal } from "@/components/views/CreateFeatureModal";
+import { EditFeatureModal } from "@/components/views/EditFeatureModal";
+import { CreateTaskModal } from "@/components/views/CreateTaskModal";
+import { EditTaskModal } from "@/components/views/EditTaskModal";
+import { CreateActaModal } from "@/components/views/CreateActaModal";
 
 const docIcon = {
   clock: DocClockIcon,
@@ -25,9 +41,7 @@ const docIcon = {
   decision: DocDecisionIcon,
 };
 
-const priorityColor = { alta: "#dc4e2a", media: "#d4a853", baja: "#a09080" };
-
-const kanbanColumns: { key: KanbanColumn; label: string }[] = [
+const kanbanColumns: { key: ProjectTask["column"]; label: string }[] = [
   { key: "pendiente", label: "PENDIENTE" },
   { key: "progreso", label: "EN PROGRESO" },
   { key: "revisar", label: "POR REVISAR" },
@@ -35,8 +49,27 @@ const kanbanColumns: { key: KanbanColumn; label: string }[] = [
   { key: "listo", label: "LISTO" },
 ];
 
-export function ProjectDetailView({ project }: { project: Project }) {
+export function ProjectDetailView({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const [tab, setTab] = useState<"backlog" | "tareas" | "kanban">("backlog");
+  const [editing, setEditing] = useState(false);
+  const [creatingFeature, setCreatingFeature] = useState(false);
+  const [editingFeature, setEditingFeature] = useState<ProjectFeature | null>(null);
+  const [featureMenu, setFeatureMenu] = useState<{ x: number; y: number; feature: ProjectFeature } | null>(null);
+  const [creatingTaskColumn, setCreatingTaskColumn] = useState<ProjectTask["column"] | null>(null);
+  const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
+  const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: ProjectTask } | null>(null);
+  const [creatingActa, setCreatingActa] = useState(false);
+  const { data: project } = useProject(projectId);
+  const createDoc = useCreateProjectDoc(projectId);
+  const deleteFeature = useDeleteFeature(projectId);
+  const deleteTask = useDeleteTask(projectId);
+  if (!project) return null;
+
+  function openTaskMenu(e: React.MouseEvent, task: ProjectTask) {
+    e.preventDefault();
+    setTaskMenu({ x: e.clientX, y: e.clientY, task });
+  }
 
   return (
     <section>
@@ -49,13 +82,9 @@ export function ProjectDetailView({ project }: { project: Project }) {
             </div>
             <div style={{ fontSize: 13, color: "var(--text-2)", maxWidth: 560 }}>{project.description}</div>
           </div>
-          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-            <div className="gh-pill" style={{ padding: "5px 11px", border: "1px solid var(--border)", borderRadius: 5, background: "var(--surface)" }}>
-              <div className="gh-dot" style={{ background: "var(--badge-green-fg)" }} />
-              <span style={{ fontSize: 10.5 }}>{project.prCount} PRs</span>
-            </div>
-            <button className="btn-primary" style={{ fontSize: 12 }}>Editar proyecto</button>
-          </div>
+          <button className="btn-primary" style={{ fontSize: 12, flexShrink: 0 }} onClick={() => setEditing(true)}>
+            Editar proyecto
+          </button>
         </div>
         <div className="pd-meta-row">
           <div className="pd-meta-item">{project.client}</div>
@@ -90,7 +119,22 @@ export function ProjectDetailView({ project }: { project: Project }) {
                     <div className="doc-fixed-name" style={{ color: "var(--text-3)" }}>{doc.name}</div>
                     <div className="doc-fixed-sub">Sin documento</div>
                   </div>
-                  <button className="btn-xs btn-xs-p" style={{ fontSize: 8.5, padding: "2px 7px" }}>Crear</button>
+                  <button
+                    className="btn-xs btn-xs-p"
+                    style={{ fontSize: 8.5, padding: "2px 7px" }}
+                    disabled={createDoc.isPending && createDoc.variables === doc.key}
+                    onClick={() =>
+                      createDoc.mutate(doc.key, {
+                        onSuccess: () => router.push(`/proyectos/${project.id}/docs/${doc.key}`),
+                      })
+                    }
+                  >
+                    {createDoc.isPending && createDoc.variables === doc.key
+                      ? "Creando…"
+                      : createDoc.isError && createDoc.variables === doc.key
+                        ? "Reintentar"
+                        : "Crear"}
+                  </button>
                 </div>
               );
             }
@@ -112,7 +156,7 @@ export function ProjectDetailView({ project }: { project: Project }) {
         <div className="card">
           <div className="sec-hrow" style={{ marginBottom: 10 }}>
             <div className="sec-htitle">Actas <span style={{ opacity: 0.5 }}>{project.actas.length}</span></div>
-            <button className="btn-xs btn-xs-g">+ Agregar acta</button>
+            <button className="btn-xs btn-xs-g" onClick={() => setCreatingActa(true)}>+ Agregar acta</button>
           </div>
           {project.actas.length === 0 ? (
             <div className="ph" style={{ height: 72 }}>
@@ -146,19 +190,18 @@ export function ProjectDetailView({ project }: { project: Project }) {
           </button>
           {tab === "backlog" && (
             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-              <button className="btn-xs btn-xs-g">+ Feature</button>
+              <button className="btn-xs btn-xs-g" onClick={() => setCreatingFeature(true)}>+ Feature</button>
             </div>
           )}
           {tab === "tareas" && (
             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
               <div className="select-mock" style={{ height: 26 }}><span style={{ fontSize: 9.5 }}>Feature ▾</span></div>
               <div className="select-mock" style={{ height: 26 }}><span style={{ fontSize: 9.5 }}>Estado ▾</span></div>
-              <button className="btn-xs btn-xs-g">+ Tarea</button>
+              <button className="btn-xs btn-xs-g" onClick={() => setCreatingTaskColumn("pendiente")}>+ Tarea</button>
             </div>
           )}
           {tab === "kanban" && (
             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-              <button className="btn-xs btn-xs-p">+ Columna</button>
             </div>
           )}
         </div>
@@ -166,7 +209,14 @@ export function ProjectDetailView({ project }: { project: Project }) {
         {tab === "backlog" && (
           <div>
             {project.features.map((f) => (
-              <div key={f.id} className="feat-row">
+              <div
+                key={f.id}
+                className="feat-row"
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setFeatureMenu({ x: e.clientX, y: e.clientY, feature: f });
+                }}
+              >
                 <div className="feat-prio" style={{ background: priorityColor[f.priority] }} title={f.priority} />
                 <div className="feat-id">{f.id}</div>
                 <div className="feat-name">{f.name}</div>
@@ -176,7 +226,10 @@ export function ProjectDetailView({ project }: { project: Project }) {
             ))}
             <div style={{ paddingTop: 10, borderTop: "1px solid var(--border)", marginTop: 2 }}>
               <div style={{ fontFamily: "var(--font-space-mono)", fontSize: 9, color: "var(--text-3)" }}>
-                ● Alta &nbsp;&nbsp; ● Media &nbsp;&nbsp; ● Baja — prioridad por color del indicador
+                Prioridad:{" "}
+                <span style={{ color: priorityColor.alta }}>●</span>{" "}Alta &nbsp;&nbsp;
+                <span style={{ color: priorityColor.media }}>●</span>{" "}Media &nbsp;&nbsp;
+                <span style={{ color: priorityColor.baja }}>●</span>{" "}Baja
               </div>
             </div>
           </div>
@@ -185,13 +238,12 @@ export function ProjectDetailView({ project }: { project: Project }) {
         {tab === "tareas" && (
           <div>
             {project.tasks.map((t) => (
-              <div key={t.id} className="task-row">
-                <div className={`task-cb${t.done ? " done" : ""}`} />
-                <span className="task-feat-tag">{t.featureId}</span>
+              <div key={t.id} className="task-row" onContextMenu={(e) => openTaskMenu(e, t)}>
+                {t.featureId && <span className="task-feat-tag">{t.featureId}</span>}
                 <div className="task-id">{t.id}</div>
                 <div className={`task-name${t.done ? " done" : ""}`}>{t.name}</div>
                 <TaskTypeTag type={t.type} />
-                <div className={`task-ava${t.assigneeAccent ? " accent-ava" : ""}`} />
+                <div className={`task-ava${t.hasAssignee ? " accent-ava" : ""}`} />
               </div>
             ))}
           </div>
@@ -208,22 +260,88 @@ export function ProjectDetailView({ project }: { project: Project }) {
                     <span className="kanban-col-count">{tasks.length}</span>
                   </div>
                   {tasks.map((t) => (
-                    <div key={t.id} className="kanban-card" style={col.key === "listo" ? { opacity: 0.65 } : undefined}>
-                      <div className="kanban-card-id">{t.id} · {t.featureId}</div>
+                    <div
+                      key={t.id}
+                      className="kanban-card"
+                      style={col.key === "listo" ? { opacity: 0.65 } : undefined}
+                      onContextMenu={(e) => openTaskMenu(e, t)}
+                    >
+                      <div className="kanban-card-id">{t.featureId ? `${t.id} · ${t.featureId}` : t.id}</div>
                       <div className="kanban-card-name">{t.name}</div>
                       <div className="kanban-card-foot">
                         <TaskTypeTag type={t.type} />
-                        <div className={`task-ava${t.assigneeAccent ? " accent-ava" : ""}`} />
+                        <div className={`task-ava${t.hasAssignee ? " accent-ava" : ""}`} />
                       </div>
                     </div>
                   ))}
-                  <div className="kanban-col-add">+ Tarea</div>
+                  <div className="kanban-col-add" onClick={() => setCreatingTaskColumn(col.key)}>+ Tarea</div>
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {editing && <EditProjectModal project={project} onClose={() => setEditing(false)} />}
+      {creatingFeature && <CreateFeatureModal projectId={project.id} onClose={() => setCreatingFeature(false)} />}
+      {editingFeature && (
+        <EditFeatureModal projectId={project.id} feature={editingFeature} onClose={() => setEditingFeature(null)} />
+      )}
+      {creatingTaskColumn && (
+        <CreateTaskModal
+          projectId={project.id}
+          features={project.features}
+          column={kanbanColumnValue[creatingTaskColumn]}
+          onClose={() => setCreatingTaskColumn(null)}
+        />
+      )}
+      {editingTask && (
+        <EditTaskModal
+          projectId={project.id}
+          task={editingTask}
+          features={project.features}
+          onClose={() => setEditingTask(null)}
+        />
+      )}
+      {creatingActa && <CreateActaModal projectId={project.id} onClose={() => setCreatingActa(false)} />}
+      {featureMenu && (
+        <ContextMenu
+          x={featureMenu.x}
+          y={featureMenu.y}
+          onClose={() => setFeatureMenu(null)}
+          items={[
+            { label: "Editar", onSelect: () => setEditingFeature(featureMenu.feature) },
+            {
+              label: "Eliminar",
+              danger: true,
+              onSelect: () => {
+                if (window.confirm(`¿Eliminar ${featureMenu.feature.id} y sus ${featureMenu.feature.taskCount} tareas?`)) {
+                  deleteFeature.mutate(featureMenu.feature.id);
+                }
+              },
+            },
+          ]}
+        />
+      )}
+      {taskMenu && (
+        <ContextMenu
+          x={taskMenu.x}
+          y={taskMenu.y}
+          onClose={() => setTaskMenu(null)}
+          items={[
+            { label: "Editar", onSelect: () => setEditingTask(taskMenu.task) },
+            {
+              label: "Eliminar",
+              danger: true,
+              onSelect: () => {
+                if (window.confirm(`¿Eliminar ${taskMenu.task.id}?`)) {
+                  deleteTask.mutate(taskMenu.task.id);
+                }
+              },
+            },
+          ]}
+        />
+      )}
     </section>
   );
 }

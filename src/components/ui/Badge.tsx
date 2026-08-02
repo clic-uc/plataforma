@@ -1,4 +1,4 @@
-import type { BadgeColor } from "@/lib/types";
+import type { BadgeColor } from "@/lib/api/status";
 
 export function Badge({
   color,

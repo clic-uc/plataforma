@@ -95,6 +95,7 @@ model Project {
 
   members   ProjectMember[]
   features  Feature[]
+  tasks     Task[]
   documents Document[]
   actas     Acta[]
 }
@@ -127,18 +128,19 @@ model Feature {
 model Task {
   id         String       @id @default(cuid())
   label      String
-  featureId  String
+  projectId  String
+  featureId  String?
   assigneeId String?
   name       String
   type       TaskType
   active     Boolean
-  done       Boolean      @default(false)
   column     KanbanColumn
 
-  feature  Feature @relation(fields: [featureId], references: [id])
-  assignee Member? @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  project  Project  @relation(fields: [projectId], references: [id])
+  feature  Feature? @relation(fields: [featureId], references: [id])
+  assignee Member?  @relation("TaskAssignee", fields: [assigneeId], references: [id])
 
-  @@unique([featureId, label])
+  @@unique([projectId, label])
 }
 
 /// content es texto plano por ahora. A futuro, cuando se hagan secciones dentro
@@ -150,7 +152,7 @@ model Task {
 model Document {
   id        String      @id @default(cuid())
   projectId String
-  authorId  String?
+  authorId  String?     /// autor debería ser última modificación en realidad, ya que son incrementales
   slot      DocSlotType
   filled    Boolean     @default(false)
   date      DateTime?

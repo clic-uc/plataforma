@@ -76,28 +76,28 @@ export function Sidebar() {
         <div className="logo-tagline">PLATAFORMA INTERNA</div>
       </div>
 
-      <div className="nav-section">
-        <div className="nav-section-label">Principal</div>
-        {principal.map((item) => (
-          <NavRow key={item.label} item={item} active={isActive(item)} />
-        ))}
-      </div>
+      <nav className="sidebar-nav">
+        <div className="nav-section">
+          <div className="nav-section-label">Principal</div>
+          {principal.map((item) => (
+            <NavRow key={item.label} item={item} active={isActive(item)} />
+          ))}
+        </div>
 
-      <div className="nav-section" style={{ marginTop: 14 }}>
-        <div className="nav-section-label">Comunidad</div>
-        {comunidad.map((item) => (
-          <NavRow key={item.label} item={item} active={isActive(item)} />
-        ))}
-      </div>
+        <div className="nav-section" style={{ marginTop: 14 }}>
+          <div className="nav-section-label">Comunidad</div>
+          {comunidad.map((item) => (
+            <NavRow key={item.label} item={item} active={isActive(item)} />
+          ))}
+        </div>
 
-      <div className="nav-section" style={{ marginTop: 14 }}>
-        <div className="nav-section-label">Org.</div>
-        {org.map((item) => (
-          <NavRow key={item.label} item={item} active={isActive(item)} />
-        ))}
-      </div>
-
-      <div className="sidebar-spacer" />
+        <div className="nav-section" style={{ marginTop: 14 }}>
+          <div className="nav-section-label">Org.</div>
+          {org.map((item) => (
+            <NavRow key={item.label} item={item} active={isActive(item)} />
+          ))}
+        </div>
+      </nav>
 
       <UserMenu />
     </aside>
