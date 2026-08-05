@@ -16,6 +16,7 @@ import {
 import type {
   CreateActaInput,
   CreateFeatureInput,
+  CreateProjectInput,
   CreateTaskInput,
   ProjectDetail,
   ProjectDocDetail,
@@ -141,6 +142,63 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
       columnValue: task.column,
     })),
   };
+}
+
+export function parseCreateProjectInput(body: unknown): CreateProjectInput | null {
+  if (typeof body !== "object" || body === null) return null;
+  const b = body as Record<string, unknown>;
+
+  const name = typeof b.name === "string" ? b.name.trim() : "";
+  const client = typeof b.client === "string" ? b.client.trim() : "";
+  const area = typeof b.area === "string" ? b.area.trim() : "";
+  const description = typeof b.description === "string" ? b.description.trim() : "";
+  if (!name || !client || !area || !description) return null;
+
+  const status = typeof b.status === "string" ? b.status : "";
+  if (!(Object.values(ProjectStatus) as string[]).includes(status)) return null;
+
+  const startDate = typeof b.startDate === "string" ? b.startDate : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return null;
+
+  return { name, client, area, description, status: status as ProjectStatus, startDate };
+}
+
+export async function createProject(input: CreateProjectInput): Promise<ProjectDetail> {
+  const project = await prisma.project.create({
+    data: {
+      name: input.name,
+      client: input.client,
+      area: input.area,
+      description: input.description,
+      status: input.status,
+      startDate: parseISODateInput(input.startDate),
+      archived: false,
+    },
+  });
+
+  await prisma.document.createMany({
+    data: SLOT_ORDER.map((slot) => ({ projectId: project.id, slot, filled: false })),
+  });
+
+  const detail = await getProject(project.id);
+  if (!detail) throw new Error("No se pudo cargar el proyecto recién creado");
+  return detail;
+}
+
+export async function deleteProject(id: string): Promise<boolean> {
+  const exists = await prisma.project.findUnique({ where: { id }, select: { id: true } });
+  if (!exists) return false;
+
+  await prisma.$transaction([
+    prisma.task.deleteMany({ where: { projectId: id } }),
+    prisma.feature.deleteMany({ where: { projectId: id } }),
+    prisma.document.deleteMany({ where: { projectId: id } }),
+    prisma.acta.deleteMany({ where: { projectId: id } }),
+    prisma.projectMember.deleteMany({ where: { projectId: id } }),
+    prisma.project.delete({ where: { id } }),
+  ]);
+
+  return true;
 }
 
 export function parseUpdateProjectInput(body: unknown): UpdateProjectInput | null {

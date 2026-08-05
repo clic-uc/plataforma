@@ -22,6 +22,7 @@ import { kanbanColumnValue, priorityColor } from "@/lib/api/status";
 import {
   useCreateProjectDoc,
   useDeleteFeature,
+  useDeleteProject,
   useDeleteTask,
   useProject,
   type ProjectFeature,
@@ -64,7 +65,13 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const createDoc = useCreateProjectDoc(projectId);
   const deleteFeature = useDeleteFeature(projectId);
   const deleteTask = useDeleteTask(projectId);
+  const deleteProject = useDeleteProject();
   if (!project) return null;
+
+  const handleDeleteProject = () => {
+    if (!window.confirm(`¿Eliminar el proyecto "${project.name}"? Esta acción no se puede deshacer.`)) return;
+    deleteProject.mutate(project.id, { onSuccess: () => router.push("/proyectos") });
+  };
 
   function openTaskMenu(e: React.MouseEvent, task: ProjectTask) {
     e.preventDefault();
@@ -82,9 +89,19 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             </div>
             <div style={{ fontSize: 13, color: "var(--text-2)", maxWidth: 560 }}>{project.description}</div>
           </div>
-          <button className="btn-primary" style={{ fontSize: 12, flexShrink: 0 }} onClick={() => setEditing(true)}>
-            Editar proyecto
-          </button>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <button
+              className="btn-ghost"
+              style={{ fontSize: 12, color: "#c0392b", borderColor: "#c0392b" }}
+              onClick={handleDeleteProject}
+              disabled={deleteProject.isPending}
+            >
+              {deleteProject.isPending ? "Eliminando…" : "Eliminar proyecto"}
+            </button>
+            <button className="btn-primary" style={{ fontSize: 12 }} onClick={() => setEditing(true)}>
+              Editar proyecto
+            </button>
+          </div>
         </div>
         <div className="pd-meta-row">
           <div className="pd-meta-item">{project.client}</div>

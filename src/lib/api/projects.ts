@@ -82,6 +82,15 @@ export interface UpdateProjectInput {
   archived: boolean;
 }
 
+export interface CreateProjectInput {
+  name: string;
+  client: string;
+  area: string;
+  description: string;
+  status: ProjectStatus;
+  startDate: string;
+}
+
 export interface CreateFeatureInput {
   name: string;
   priority: Priority;
@@ -134,6 +143,16 @@ async function fetchProjectDoc(id: string, docId: string): Promise<ProjectDocDet
   return res.json();
 }
 
+async function createProjectRequest(input: CreateProjectInput): Promise<ProjectDetail> {
+  const res = await fetch("/api/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error("No se pudo crear el proyecto");
+  return res.json();
+}
+
 async function updateProjectRequest(id: string, input: UpdateProjectInput): Promise<ProjectDetail> {
   const res = await fetch(`/api/projects/${id}`, {
     method: "PATCH",
@@ -142,6 +161,11 @@ async function updateProjectRequest(id: string, input: UpdateProjectInput): Prom
   });
   if (!res.ok) throw new Error("No se pudo guardar el proyecto");
   return res.json();
+}
+
+async function deleteProjectRequest(id: string): Promise<void> {
+  const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("No se pudo eliminar el proyecto");
 }
 
 async function updateProjectDocRequest(id: string, docId: string, content: string): Promise<ProjectDocDetail> {
@@ -234,12 +258,34 @@ export function useProjectDoc(id: string, docId: string) {
   return useQuery({ queryKey: projectsKeys.doc(id, docId), queryFn: () => fetchProjectDoc(id, docId) });
 }
 
+export function useCreateProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateProjectInput) => createProjectRequest(input),
+    onSuccess: (created) => {
+      queryClient.setQueryData(projectsKeys.detail(created.id), created);
+      queryClient.invalidateQueries({ queryKey: projectsKeys.list() });
+    },
+  });
+}
+
 export function useUpdateProject(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: UpdateProjectInput) => updateProjectRequest(id, input),
     onSuccess: (updated) => {
       queryClient.setQueryData(projectsKeys.detail(id), updated);
+      queryClient.invalidateQueries({ queryKey: projectsKeys.list() });
+    },
+  });
+}
+
+export function useDeleteProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteProjectRequest(id),
+    onSuccess: (_data, id) => {
+      queryClient.removeQueries({ queryKey: projectsKeys.detail(id) });
       queryClient.invalidateQueries({ queryKey: projectsKeys.list() });
     },
   });

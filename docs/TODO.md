@@ -25,14 +25,17 @@
 
 ## Proyectos
 
-- "+ Nuevo proyecto" en `ProyectosView` no hace nada — solo se puede editar un proyecto existente,
-  no crear uno desde cero.
-- Buscador de proyectos (`search-mock`) es decorativo.
 - `prCount` (contador de PRs) y `teamLabel` (pod/equipo interno a cargo, distinto de `area`) se
   descartaron al migrar — no hay integración con GitHub ni columna equivalente.
 - Color propio por proyecto se descartó (se usa el acento único de la app en todos lados). Si se
   quiere recuperar variedad de color, ver nota de Miembros arriba — mismo problema, misma solución
   pendiente.
+
+**Pendiente para dejar el tab 100% funcional:**
+- Buscador de proyectos (`search-mock` en `ProyectosView`) es decorativo, no filtra.
+- Formato enriquecido y metadatos editables del editor de documentos (`DocEditorView`) — detalle en
+  "Documentos y Actas" abajo.
+- Drag & drop de tarjetas en el Kanban — detalle en "Features y Tareas" abajo.
 
 ## Documentos y Actas
 
@@ -42,9 +45,6 @@
   - Metadatos editables (tipo, autor, fecha) — hoy son de solo lectura.
   - "Historial de versiones" es un placeholder.
   - "Compartir enlace" no hace nada.
-- Crear acta desde la UI: implementado (`CreateActaModal`, "+ Agregar acta" en `ProjectDetailView`,
-  POST `/api/projects/[id]/actas`). Se crea solo con título/fecha; el contenido se llena después
-  desde el editor, igual que antes.
 - El propio schema tiene esto documentado en comentarios (`Document` y `Acta`, en
   `prisma/schema.prisma`): `content` es texto plano por ahora; si en algún momento se necesitan
   secciones estructuradas o versionamiento real, `author`/`date` deberían pasar a vivir en un
@@ -52,10 +52,6 @@
 
 ## Features y Tareas
 
-- Edición y borrado de tareas: implementado (`EditTaskModal` + PATCH/DELETE
-  `/api/projects/[id]/tasks/[taskId]`). Reusa el mismo patrón de menú contextual (click derecho)
-  que ya existía para features, disponible tanto en la fila de la pestaña Tareas como en la card
-  de Kanban.
 - **`Task.done` se sacó del schema** (migración `20260730130000_task_done_from_column`): una tarea
   se considera "hecha" cuando `column === LISTO`, no por un toggle manual — se quitó el checkbox
   de la pestaña Tareas a propósito, para que solo quede lista después de vivir el ciclo completo

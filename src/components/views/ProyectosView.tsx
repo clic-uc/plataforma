@@ -7,9 +7,11 @@ import { AvatarStack } from "@/components/ui/Avatar";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { SearchIcon } from "@/components/icons";
 import { useProjects } from "@/lib/api/projects";
+import { CreateProjectModal } from "@/components/views/CreateProjectModal";
 
 export function ProyectosView() {
   const [tab, setTab] = useState<"activos" | "archivados">("activos");
+  const [creating, setCreating] = useState(false);
   const { data: projects = [] } = useProjects();
   const activos = projects.filter((p) => !p.archived);
   const archivados = projects.filter((p) => p.archived);
@@ -31,9 +33,11 @@ export function ProyectosView() {
           </div>
         </div>
         <div style={{ marginLeft: "auto" }}>
-          <button className="btn-primary">+ Nuevo proyecto</button>
+          <button className="btn-primary" onClick={() => setCreating(true)}>+ Nuevo proyecto</button>
         </div>
       </div>
+
+      {creating && <CreateProjectModal onClose={() => setCreating(false)} />}
 
       {shown.length === 0 ? (
         <div className="ph" style={{ minHeight: 160 }}>
