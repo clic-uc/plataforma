@@ -15,6 +15,7 @@ import {
   PostulacionesIcon,
 } from "@/components/icons";
 import { UserMenu } from "@/components/shell/UserMenu";
+import type { CurrentMember } from "@/lib/auth/current-member";
 
 interface NavItem {
   label: string;
@@ -61,7 +62,7 @@ function NavRow({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ member }: { member: CurrentMember }) {
   const pathname = usePathname();
 
   const isActive = (item: NavItem) =>
@@ -99,7 +100,7 @@ export function Sidebar() {
         </div>
       </nav>
 
-      <UserMenu />
+      <UserMenu member={member} />
     </aside>
   );
 }

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
 import type { BadgeColor } from "@/lib/api/status";
+import { assertOk } from "@/lib/api/http";
 
 export interface ProjectListItem {
   id: string;
@@ -125,21 +126,21 @@ export const projectsKeys = {
 
 async function fetchProjects(): Promise<ProjectListItem[]> {
   const res = await fetch("/api/projects");
-  if (!res.ok) throw new Error("No se pudo cargar la lista de proyectos");
+  await assertOk(res, "No se pudo cargar la lista de proyectos");
   return res.json();
 }
 
 async function fetchProject(id: string): Promise<ProjectDetail | null> {
   const res = await fetch(`/api/projects/${id}`);
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error("No se pudo cargar el proyecto");
+  await assertOk(res, "No se pudo cargar el proyecto");
   return res.json();
 }
 
 async function fetchProjectDoc(id: string, docId: string): Promise<ProjectDocDetail | null> {
   const res = await fetch(`/api/projects/${id}/docs/${docId}`);
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error("No se pudo cargar el documento");
+  await assertOk(res, "No se pudo cargar el documento");
   return res.json();
 }
 
@@ -149,7 +150,7 @@ async function createProjectRequest(input: CreateProjectInput): Promise<ProjectD
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error("No se pudo crear el proyecto");
+  await assertOk(res, "No se pudo crear el proyecto");
   return res.json();
 }
 
@@ -159,13 +160,13 @@ async function updateProjectRequest(id: string, input: UpdateProjectInput): Prom
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error("No se pudo guardar el proyecto");
+  await assertOk(res, "No se pudo guardar el proyecto");
   return res.json();
 }
 
 async function deleteProjectRequest(id: string): Promise<void> {
   const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error("No se pudo eliminar el proyecto");
+  await assertOk(res, "No se pudo eliminar el proyecto");
 }
 
 async function updateProjectDocRequest(id: string, docId: string, content: string): Promise<ProjectDocDetail> {
@@ -174,13 +175,13 @@ async function updateProjectDocRequest(id: string, docId: string, content: strin
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
   });
-  if (!res.ok) throw new Error("No se pudo guardar el documento");
+  await assertOk(res, "No se pudo guardar el documento");
   return res.json();
 }
 
 async function createProjectDocRequest(id: string, docId: string): Promise<ProjectDetail> {
   const res = await fetch(`/api/projects/${id}/docs/${docId}`, { method: "POST" });
-  if (!res.ok) throw new Error("No se pudo crear el documento");
+  await assertOk(res, "No se pudo crear el documento");
   return res.json();
 }
 
@@ -190,7 +191,7 @@ async function createFeatureRequest(id: string, input: CreateFeatureInput): Prom
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error("No se pudo crear la feature");
+  await assertOk(res, "No se pudo crear la feature");
   return res.json();
 }
 
@@ -200,13 +201,13 @@ async function updateFeatureRequest(id: string, featureId: string, input: Update
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error("No se pudo guardar la feature");
+  await assertOk(res, "No se pudo guardar la feature");
   return res.json();
 }
 
 async function deleteFeatureRequest(id: string, featureId: string): Promise<ProjectDetail> {
   const res = await fetch(`/api/projects/${id}/features/${featureId}`, { method: "DELETE" });
-  if (!res.ok) throw new Error("No se pudo eliminar la feature");
+  await assertOk(res, "No se pudo eliminar la feature");
   return res.json();
 }
 
@@ -216,7 +217,7 @@ async function createTaskRequest(id: string, input: CreateTaskInput): Promise<Pr
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error("No se pudo crear la tarea");
+  await assertOk(res, "No se pudo crear la tarea");
   return res.json();
 }
 
@@ -226,13 +227,13 @@ async function updateTaskRequest(id: string, taskId: string, input: UpdateTaskIn
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error("No se pudo guardar la tarea");
+  await assertOk(res, "No se pudo guardar la tarea");
   return res.json();
 }
 
 async function deleteTaskRequest(id: string, taskId: string): Promise<ProjectDetail> {
   const res = await fetch(`/api/projects/${id}/tasks/${taskId}`, { method: "DELETE" });
-  if (!res.ok) throw new Error("No se pudo eliminar la tarea");
+  await assertOk(res, "No se pudo eliminar la tarea");
   return res.json();
 }
 
@@ -242,7 +243,7 @@ async function createActaRequest(id: string, input: CreateActaInput): Promise<Pr
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error("No se pudo crear el acta");
+  await assertOk(res, "No se pudo crear el acta");
   return res.json();
 }
 
