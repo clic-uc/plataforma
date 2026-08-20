@@ -1,4 +1,5 @@
 import { DocSlotType, FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
+import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { formatDayMonth, formatDayMonthYear, formatMonthYear, parseISODateInput, toISODateInput } from "@/lib/api/format";
 import {
@@ -128,6 +129,7 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
       status: featureStatusLabel[feature.status],
       statusColor: featureStatusColor[feature.status],
       statusValue: feature.status,
+      description: feature.description,
       taskCount: taskCountByFeatureId.get(feature.id) ?? 0,
     })),
     tasks: project.tasks.map((task) => ({
@@ -140,6 +142,8 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
       hasAssignee: task.assigneeId !== null,
       column: kanbanColumnLabel[task.column],
       columnValue: task.column,
+      active: task.active,
+      description: task.description,
     })),
   };
 }
@@ -350,12 +354,26 @@ export function parseCreateFeatureInput(body: unknown): CreateFeatureInput | nul
   return { name, priority: priority as Priority };
 }
 
+function labelNumber(prefix: string, label: string): number {
+  const match = new RegExp(`^${prefix}-(\\d+)$`).exec(label);
+  return match ? Number(match[1]) : 0;
+}
+
 function nextFeatureLabel(existingLabels: string[]): string {
-  const nextNumber = existingLabels.reduce((max, label) => {
-    const match = /^F-(\d+)$/.exec(label);
-    return match ? Math.max(max, Number(match[1])) : max;
-  }, 0) + 1;
+  const nextNumber = existingLabels.reduce((max, label) => Math.max(max, labelNumber("F", label)), 0) + 1;
   return `F-${String(nextNumber).padStart(2, "0")}`;
+}
+
+async function renumberFeatureLabels(tx: Prisma.TransactionClient, projectId: string): Promise<void> {
+  const remaining = await tx.feature.findMany({ where: { projectId }, select: { id: true, label: true } });
+  remaining.sort((a, b) => labelNumber("F", a.label) - labelNumber("F", b.label));
+
+  for (let i = 0; i < remaining.length; i++) {
+    const label = `F-${String(i + 1).padStart(2, "0")}`;
+    if (remaining[i].label !== label) {
+      await tx.feature.update({ where: { id: remaining[i].id }, data: { label } });
+    }
+  }
 }
 
 export async function createFeature(projectId: string, input: CreateFeatureInput): Promise<ProjectDetail | null> {
@@ -385,7 +403,9 @@ export function parseUpdateFeatureInput(body: unknown): UpdateFeatureInput | nul
   const status = typeof b.status === "string" ? b.status : "";
   if (!(Object.values(FeatureStatus) as string[]).includes(status)) return null;
 
-  return { name, priority: priority as Priority, status: status as FeatureStatus };
+  const description = typeof b.description === "string" ? b.description.trim() || null : null;
+
+  return { name, priority: priority as Priority, status: status as FeatureStatus, description };
 }
 
 export async function updateFeature(projectId: string, label: string, input: UpdateFeatureInput): Promise<ProjectDetail | null> {
@@ -394,7 +414,7 @@ export async function updateFeature(projectId: string, label: string, input: Upd
 
   await prisma.feature.update({
     where: { projectId_label: { projectId, label } },
-    data: { name: input.name, priority: input.priority, status: input.status },
+    data: { name: input.name, priority: input.priority, status: input.status, description: input.description },
   });
 
   return getProject(projectId);
@@ -404,8 +424,12 @@ export async function deleteFeature(projectId: string, label: string): Promise<P
   const existing = await prisma.feature.findUnique({ where: { projectId_label: { projectId, label } } });
   if (!existing) return null;
 
-  await prisma.task.deleteMany({ where: { featureId: existing.id } });
-  await prisma.feature.delete({ where: { projectId_label: { projectId, label } } });
+  await prisma.$transaction(async (tx) => {
+    await tx.task.deleteMany({ where: { featureId: existing.id } });
+    await tx.feature.delete({ where: { projectId_label: { projectId, label } } });
+    await renumberTaskLabels(tx, projectId);
+    await renumberFeatureLabels(tx, projectId);
+  });
 
   return getProject(projectId);
 }
@@ -429,11 +453,20 @@ export function parseCreateTaskInput(body: unknown): CreateTaskInput | null {
 }
 
 function nextTaskLabel(existingLabels: string[]): string {
-  const nextNumber = existingLabels.reduce((max, label) => {
-    const match = /^T-(\d+)$/.exec(label);
-    return match ? Math.max(max, Number(match[1])) : max;
-  }, 0) + 1;
+  const nextNumber = existingLabels.reduce((max, label) => Math.max(max, labelNumber("T", label)), 0) + 1;
   return `T-${String(nextNumber).padStart(2, "0")}`;
+}
+
+async function renumberTaskLabels(tx: Prisma.TransactionClient, projectId: string): Promise<void> {
+  const remaining = await tx.task.findMany({ where: { projectId }, select: { id: true, label: true } });
+  remaining.sort((a, b) => labelNumber("T", a.label) - labelNumber("T", b.label));
+
+  for (let i = 0; i < remaining.length; i++) {
+    const label = `T-${String(i + 1).padStart(2, "0")}`;
+    if (remaining[i].label !== label) {
+      await tx.task.update({ where: { id: remaining[i].id }, data: { label } });
+    }
+  }
 }
 
 export async function createTask(projectId: string, input: CreateTaskInput): Promise<ProjectDetail | null> {
@@ -470,7 +503,16 @@ export async function createTask(projectId: string, input: CreateTaskInput): Pro
   return getProject(projectId);
 }
 
-export const parseUpdateTaskInput = parseCreateTaskInput;
+export function parseUpdateTaskInput(body: unknown): UpdateTaskInput | null {
+  const base = parseCreateTaskInput(body);
+  if (!base) return null;
+
+  const b = body as Record<string, unknown>;
+  const active = typeof b.active === "boolean" ? b.active : true;
+  const description = typeof b.description === "string" ? b.description.trim() || null : null;
+
+  return { ...base, active, description };
+}
 
 export async function updateTask(projectId: string, label: string, input: UpdateTaskInput): Promise<ProjectDetail | null> {
   const existing = await prisma.task.findUnique({ where: { projectId_label: { projectId, label } } });
@@ -487,7 +529,14 @@ export async function updateTask(projectId: string, label: string, input: Update
 
   await prisma.task.update({
     where: { projectId_label: { projectId, label } },
-    data: { featureId, name: input.name, type: input.type, column: input.column },
+    data: {
+      featureId,
+      name: input.name,
+      type: input.type,
+      column: input.column,
+      active: input.active,
+      description: input.description,
+    },
   });
 
   return getProject(projectId);
@@ -497,7 +546,10 @@ export async function deleteTask(projectId: string, label: string): Promise<Proj
   const existing = await prisma.task.findUnique({ where: { projectId_label: { projectId, label } } });
   if (!existing) return null;
 
-  await prisma.task.delete({ where: { projectId_label: { projectId, label } } });
+  await prisma.$transaction(async (tx) => {
+    await tx.task.delete({ where: { projectId_label: { projectId, label } } });
+    await renumberTaskLabels(tx, projectId);
+  });
 
   return getProject(projectId);
 }

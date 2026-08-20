@@ -21,13 +21,17 @@ export function EditTaskModal({
   const [name, setName] = useState(task.name);
   const [type, setType] = useState<TaskType>(task.typeValue);
   const [column, setColumn] = useState<KanbanColumn>(task.columnValue);
+  const [active, setActive] = useState(task.active);
 
   const mutation = useUpdateTask(projectId);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     mutation.mutate(
-      { taskId: task.id, input: { featureId: featureId || null, name, type, column } },
+      {
+        taskId: task.id,
+        input: { featureId: featureId || null, name, type, column, active, description: task.description },
+      },
       { onSuccess: onClose },
     );
   }
@@ -73,6 +77,16 @@ export function EditTaskModal({
               ))}
             </select>
           </div>
+        </div>
+
+        <div className="form-field field-checkbox-row">
+          <input
+            type="checkbox"
+            id="edit-task-active"
+            checked={active}
+            onChange={(e) => setActive(e.target.checked)}
+          />
+          <label htmlFor="edit-task-active">Activa</label>
         </div>
 
         {mutation.isError && <div className="modal-error">No se pudo guardar. Intenta de nuevo.</div>}

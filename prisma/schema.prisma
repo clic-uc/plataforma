@@ -64,23 +64,23 @@ enum DocSlotType {
 }
 
 model Member {
-  id        String       @id @default(cuid())
-  name      String
-  role      MemberRole
-  area      String
-  email     String       @unique
-  birthday  DateTime?
-  joinedAt  DateTime
-  status    MemberStatus
-  skills    String[]
-  level     Int
-  streak    Int
+  id       String       @id @default(cuid())
+  name     String
+  role     MemberRole
+  area     String
+  email    String       @unique
+  birthday DateTime?
+  joinedAt DateTime
+  status   MemberStatus
+  skills   String[]
+  level    Int
+  streak   Int
 
   projects          ProjectMember[]
-  assignedTasks     Task[]            @relation("TaskAssignee")
+  assignedTasks     Task[]              @relation("TaskAssignee")
   achievements      MemberAchievement[]
   standups          Standup[]
-  documentsAuthored Document[]        @relation("DocumentAuthor")
+  documentsAuthored Document[]          @relation("DocumentAuthor")
 }
 
 model Project {
@@ -112,12 +112,13 @@ model ProjectMember {
 }
 
 model Feature {
-  id        String        @id @default(cuid())
-  label     String
-  projectId String
-  name      String
-  priority  Priority
-  status    FeatureStatus
+  id          String        @id @default(cuid())
+  label       String
+  projectId   String
+  name        String
+  priority    Priority
+  status      FeatureStatus
+  description String?
 
   project Project @relation(fields: [projectId], references: [id])
   tasks   Task[]
@@ -126,15 +127,16 @@ model Feature {
 }
 
 model Task {
-  id         String       @id @default(cuid())
-  label      String
-  projectId  String
-  featureId  String?
-  assigneeId String?
-  name       String
-  type       TaskType
-  active     Boolean
-  column     KanbanColumn
+  id          String       @id @default(cuid())
+  label       String
+  projectId   String
+  featureId   String?
+  assigneeId  String?
+  name        String
+  type        TaskType
+  active      Boolean
+  column      KanbanColumn
+  description String?
 
   project  Project  @relation(fields: [projectId], references: [id])
   feature  Feature? @relation(fields: [featureId], references: [id])
@@ -152,14 +154,14 @@ model Task {
 model Document {
   id        String      @id @default(cuid())
   projectId String
-  authorId  String?     /// autor debería ser última modificación en realidad, ya que son incrementales
+  authorId  String? /// autor debería ser última modificación en realidad, ya que son incrementales
   slot      DocSlotType
   filled    Boolean     @default(false)
   date      DateTime?
   content   String?
 
   project Project @relation(fields: [projectId], references: [id])
-  author  Member?  @relation("DocumentAuthor", fields: [authorId], references: [id])
+  author  Member? @relation("DocumentAuthor", fields: [authorId], references: [id])
 
   @@unique([projectId, slot])
 }
