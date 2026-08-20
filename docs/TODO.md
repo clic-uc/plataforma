@@ -5,14 +5,6 @@
   en el schema para calendario, feed de actividad ni registro de horas. Para migrarlos habría que
   diseñar modelos nuevos (`CalendarEvent`, `ActivityFeedItem`, `TimeEntry` o similar) en Prisma.
 
-- **No hay autenticación ni sesión real.** `UserMenu` (`src/components/shell/UserMenu.tsx`) tiene
-  "Arturo Herreros" / iniciales "JP" / "Coordinación" hardcodeados en el componente — no viene de
-  un usuario loggeado. Esto también significa que no hay forma de saber "quién" crea/edita algo aún
-  (por eso `Document.authorId` queda `null` al crear un doc desde la UI, por ejemplo).
-  Decisión (2026-07-30): por ahora el equipo completo entra a la plataforma tal como está, sin
-  login — no es prioridad mientras se deja funcional el manejo de proyectos. Ligado a esto, la
-  asignación real de miembro a tarea también queda fuera por ahora (ver "Features y Tareas").
-
 ## Miembros
 
 - Sin edición: no existe UI para editar un miembro (nombre, área, skills, nivel, etc.), solo
@@ -60,8 +52,8 @@
   Atlassian vs. HTML5 DnD nativo). Mientras se decide, `EditTaskModal` permite cambiar la columna
   a mano como mecanismo interino para "mover" una tarea.
 - No hay asignación real de miembro a una tarea (`hasAssignee` sigue siendo solo
-  `assigneeId !== null`) — decisión explícita de dejarlo fuera por ahora junto con autenticación
-  (ver "Fuera de alcance mayor"), no un olvido.
+  `assigneeId !== null`). Nada lo bloquea ya: `getMembers()` da la lista para un selector y
+  `requireMember()` identifica a quien actúa.
 - Filtros "Feature ▾" / "Estado ▾" en la pestaña Tareas son decorativos — tampoco es prioridad
   por ahora.
 - **`Task.featureId` es opcional y `Task` tiene `projectId` propio** (migración
@@ -69,3 +61,54 @@
   El modal de creación permite "Sin feature" y `createTask`/`getProject` ya no dependen de la
   feature para saber a qué proyecto pertenece una tarea. El unique de label pasó de
   `[featureId, label]` a `[projectId, label]`.
+
+## Autenticación
+
+Better Auth con GitHub OAuth. `Member` es a la vez el perfil de dominio y la tabla de usuarios de la
+librería (`user.modelName`), porque todo miembro nace de un login. El acceso lo controla
+`Member.isVerifiedByCoordinator`, y los permisos se derivan de `MemberRole` mediante `requireMember()`
+y `requireCoordinacion()` en `src/lib/auth/guards.ts`.
+
+Pendiente:
+
+- **La autorización solo distingue proyectos.** Únicamente `COORDINACION` puede crear, editar o
+  borrar proyectos. Todo lo demás —tareas, features, actas, documentos— lo puede hacer cualquier
+  miembro aprobado sobre **cualquier** proyecto, sea o no parte de él: `ProjectMember` existe pero no
+  restringe nada. Si se quiere acotar, ese join table es la pieza natural.
+
+- **La UI no esconde las acciones de coordinación.** Un `EQUIPO` ve el botón "Nuevo proyecto" y
+  recibe un 403 al usarlo. El servidor rechaza correctamente, que es lo que importa, pero la
+  experiencia es pobre. Se arregla condicionando por `actor.role`.
+
+- **La aprobación de miembros es manual, por SQL.** Decisión explícita: con ~8 miembros no compensa
+  construir la UI todavía.
+
+  ```sql
+  -- cola de pendientes
+  SELECT name, email, "createdAt" FROM "Member" WHERE "isVerifiedByCoordinator" = false;
+  -- aprobar
+  UPDATE "Member" SET "isVerifiedByCoordinator" = true WHERE email = 'persona@ejemplo.com';
+  ```
+
+  Para construir la UI hay que estrenar la capa de escritura de miembros: `members.server.ts` es hoy
+  solo lectura (función server + `PATCH /api/members/[id]/verify` + hook de mutación + gate con
+  `requireCoordinacion()`).
+
+- **El registro es abierto.** Cualquiera con cuenta de GitHub puede crear una fila `Member`
+  pendiente. No accede a nada, pero escribe en la base. Mitigación más barata si molesta: un
+  allowlist de usuarios de GitHub en un `databaseHooks.user.create.before`, o `disableImplicitSignUp`
+  con flujo de invitación.
+
+- **No hay pre-registro.** El modelo asume que todo `Member` nace de un login. Si coordinación
+  necesitara crear miembros antes de que entren, hay que volver a separar la identidad o vincular por
+  usuario de GitHub (`githubLogin`), porque el correo de GitHub no tiene por qué coincidir con el que
+  tenga anotado coordinación.
+
+- **`isVerifiedByCoordinator` es un booleano**: no registra quién aprobó ni cuándo. Si se necesita
+  auditoría, migrar a `verifiedAt` + `verifiedById` — el histórico previo no se recupera.
+
+- **Sin auditoría de acciones.** `requireMember()` devuelve el `Member` que actúa, pero eso no se
+  registra en ninguna parte salvo `Document.authorId`.
+
+- **`proxy.ts` solo mira si la cookie existe**, no valida la sesión, y deja `/api` fuera del matcher.
+  Ambas cosas son deliberadas y están explicadas en el archivo. No mover chequeos de seguridad ahí.

@@ -63,24 +63,42 @@ enum DocSlotType {
   INFORME
 }
 
+/// Perfil de dominio e identidad de Better Auth en un mismo modelo
+/// (user.modelName = "member", en src/lib/auth.ts). Premisa: todo Member se
+/// origina en un login, no hay pre-registro.
+///
+/// Los campos de dominio requieren @default. Better Auth construye el INSERT
+/// únicamente con sus campos (name, email, emailVerified, image, createdAt,
+/// updatedAt); una columna NOT NULL sin default rompe el alta.
 model Member {
-  id        String       @id @default(cuid())
-  name      String
-  role      MemberRole
-  area      String
-  email     String       @unique
-  birthday  DateTime?
-  joinedAt  DateTime
-  status    MemberStatus
-  skills    String[]
-  level     Int
-  streak    Int
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
+  role     MemberRole   @default(ROOKIE)
+  area     String       @default("Sin asignar")
+  status   MemberStatus @default(ACTIVO)
+  joinedAt DateTime     @default(now())
+  birthday DateTime?
+  skills   String[]     @default([])
+  level    Int          @default(0)
+  streak   Int          @default(0)
+
+  /// Gate de acceso: nadie entra hasta que coordinación lo aprueba.
+  /// Se aprueba por SQL; ver docs/TODO.md.
+  isVerifiedByCoordinator Boolean @default(false)
+
+  sessions          Session[]
+  accounts          Account[]
   projects          ProjectMember[]
-  assignedTasks     Task[]            @relation("TaskAssignee")
+  assignedTasks     Task[]              @relation("TaskAssignee")
   achievements      MemberAchievement[]
   standups          Standup[]
-  documentsAuthored Document[]        @relation("DocumentAuthor")
+  documentsAuthored Document[]          @relation("DocumentAuthor")
 }
 
 model Project {
@@ -152,14 +170,14 @@ model Task {
 model Document {
   id        String      @id @default(cuid())
   projectId String
-  authorId  String?     /// autor debería ser última modificación en realidad, ya que son incrementales
+  authorId  String? /// autor debería ser última modificación en realidad, ya que son incrementales
   slot      DocSlotType
   filled    Boolean     @default(false)
   date      DateTime?
   content   String?
 
   project Project @relation(fields: [projectId], references: [id])
-  author  Member?  @relation("DocumentAuthor", fields: [authorId], references: [id])
+  author  Member? @relation("DocumentAuthor", fields: [authorId], references: [id])
 
   @@unique([projectId, slot])
 }
@@ -203,4 +221,51 @@ model Standup {
   text     String
 
   member Member @relation(fields: [memberId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// Modelos gestionados por Better Auth. El modelo de usuario es Member.
+// Session.userId y Account.userId referencian Member.id; el nombre del campo lo
+// impone la librería y no admite renombre. Los ids no llevan @default: los
+// genera Better Auth.
+// ---------------------------------------------------------------------------
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  member Member @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  member Member @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }

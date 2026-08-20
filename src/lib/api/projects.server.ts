@@ -1,5 +1,8 @@
+import "server-only";
+
 import { DocSlotType, FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { requireMember, requireCoordinacion } from "@/lib/auth/guards";
 import { formatDayMonth, formatDayMonthYear, formatMonthYear, parseISODateInput, toISODateInput } from "@/lib/api/format";
 import {
   docSlotBadgeColor,
@@ -46,6 +49,8 @@ function progressFromTasks(tasks: { column: KanbanColumn }[]): number {
 }
 
 export async function getProjects(): Promise<ProjectListItem[]> {
+  await requireMember();
+
   const projects = await prisma.project.findMany({
     orderBy: { startDate: "desc" },
     include: {
@@ -72,6 +77,8 @@ export async function getProjects(): Promise<ProjectListItem[]> {
 }
 
 export async function getProject(id: string): Promise<ProjectDetail | null> {
+  await requireMember();
+
   const project = await prisma.project.findUnique({
     where: { id },
     include: {
@@ -164,6 +171,8 @@ export function parseCreateProjectInput(body: unknown): CreateProjectInput | nul
 }
 
 export async function createProject(input: CreateProjectInput): Promise<ProjectDetail> {
+  await requireCoordinacion();
+
   const project = await prisma.project.create({
     data: {
       name: input.name,
@@ -186,6 +195,8 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectD
 }
 
 export async function deleteProject(id: string): Promise<boolean> {
+  await requireCoordinacion();
+
   const exists = await prisma.project.findUnique({ where: { id }, select: { id: true } });
   if (!exists) return false;
 
@@ -223,6 +234,8 @@ export function parseUpdateProjectInput(body: unknown): UpdateProjectInput | nul
 }
 
 export async function updateProject(id: string, input: UpdateProjectInput): Promise<ProjectDetail | null> {
+  await requireCoordinacion();
+
   const exists = await prisma.project.findUnique({ where: { id }, select: { id: true } });
   if (!exists) return null;
 
@@ -243,6 +256,8 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
 }
 
 export async function getProjectDoc(projectId: string, docId: string): Promise<ProjectDocDetail | null> {
+  await requireMember();
+
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { name: true } });
   if (!project) return null;
 
@@ -280,6 +295,8 @@ export async function getProjectDoc(projectId: string, docId: string): Promise<P
 }
 
 export async function updateProjectDoc(projectId: string, docId: string, content: string): Promise<ProjectDocDetail | null> {
+  await requireMember();
+
   const slot = parseDocSlot(docId);
   if (slot) {
     const existing = await prisma.document.findUnique({ where: { projectId_slot: { projectId, slot } } });
@@ -299,6 +316,8 @@ export async function updateProjectDoc(projectId: string, docId: string, content
 }
 
 export async function createProjectDoc(projectId: string, slotKey: string): Promise<ProjectDetail | null> {
+  const member = await requireMember();
+
   const slot = parseDocSlot(slotKey);
   if (!slot) return null;
 
@@ -307,7 +326,7 @@ export async function createProjectDoc(projectId: string, slotKey: string): Prom
 
   await prisma.document.update({
     where: { projectId_slot: { projectId, slot } },
-    data: { filled: true, date: new Date() },
+    data: { filled: true, date: new Date(), authorId: member.id },
   });
 
   return getProject(projectId);
@@ -327,6 +346,8 @@ export function parseCreateActaInput(body: unknown): CreateActaInput | null {
 }
 
 export async function createActa(projectId: string, input: CreateActaInput): Promise<ProjectDetail | null> {
+  await requireMember();
+
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
   if (!project) return null;
 
@@ -359,6 +380,8 @@ function nextFeatureLabel(existingLabels: string[]): string {
 }
 
 export async function createFeature(projectId: string, input: CreateFeatureInput): Promise<ProjectDetail | null> {
+  await requireMember();
+
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
   if (!project) return null;
 
@@ -389,6 +412,8 @@ export function parseUpdateFeatureInput(body: unknown): UpdateFeatureInput | nul
 }
 
 export async function updateFeature(projectId: string, label: string, input: UpdateFeatureInput): Promise<ProjectDetail | null> {
+  await requireMember();
+
   const existing = await prisma.feature.findUnique({ where: { projectId_label: { projectId, label } } });
   if (!existing) return null;
 
@@ -401,6 +426,8 @@ export async function updateFeature(projectId: string, label: string, input: Upd
 }
 
 export async function deleteFeature(projectId: string, label: string): Promise<ProjectDetail | null> {
+  await requireMember();
+
   const existing = await prisma.feature.findUnique({ where: { projectId_label: { projectId, label } } });
   if (!existing) return null;
 
@@ -437,6 +464,8 @@ function nextTaskLabel(existingLabels: string[]): string {
 }
 
 export async function createTask(projectId: string, input: CreateTaskInput): Promise<ProjectDetail | null> {
+  await requireMember();
+
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
   if (!project) return null;
 
@@ -473,6 +502,8 @@ export async function createTask(projectId: string, input: CreateTaskInput): Pro
 export const parseUpdateTaskInput = parseCreateTaskInput;
 
 export async function updateTask(projectId: string, label: string, input: UpdateTaskInput): Promise<ProjectDetail | null> {
+  await requireMember();
+
   const existing = await prisma.task.findUnique({ where: { projectId_label: { projectId, label } } });
   if (!existing) return null;
 
@@ -494,6 +525,8 @@ export async function updateTask(projectId: string, label: string, input: Update
 }
 
 export async function deleteTask(projectId: string, label: string): Promise<ProjectDetail | null> {
+  await requireMember();
+
   const existing = await prisma.task.findUnique({ where: { projectId_label: { projectId, label } } });
   if (!existing) return null;
 

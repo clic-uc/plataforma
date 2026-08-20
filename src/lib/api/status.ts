@@ -2,12 +2,19 @@ import {
   DocSlotType,
   FeatureStatus,
   KanbanColumn,
+  MemberRole,
   MemberStatus,
   Priority,
   ProjectStatus,
   TaskType,
 } from "@/generated/prisma/enums";
 export type BadgeColor = "green" | "amber" | "gray" | "blue";
+
+export const memberRoleLabel: Record<MemberRole, string> = {
+  COORDINACION: "Coordinación",
+  EQUIPO: "Equipo",
+  ROOKIE: "Rookie",
+};
 
 export const memberStatusLabel: Record<MemberStatus, string> = {
   ACTIVO: "Activo",
