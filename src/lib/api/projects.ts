@@ -42,6 +42,7 @@ export interface ProjectFeature {
   status: string;
   statusColor: BadgeColor;
   statusValue: FeatureStatus;
+  description: string | null;
   taskCount: number;
 }
 
@@ -55,6 +56,8 @@ export interface ProjectTask {
   hasAssignee: boolean;
   column: "pendiente" | "progreso" | "revisar" | "revision" | "listo";
   columnValue: KanbanColumn;
+  active: boolean;
+  description: string | null;
 }
 
 export interface ProjectDetail extends ProjectListItem {
@@ -101,6 +104,7 @@ export interface UpdateFeatureInput {
   name: string;
   priority: Priority;
   status: FeatureStatus;
+  description: string | null;
 }
 
 export interface CreateTaskInput {
@@ -110,7 +114,10 @@ export interface CreateTaskInput {
   column: KanbanColumn;
 }
 
-export type UpdateTaskInput = CreateTaskInput;
+export interface UpdateTaskInput extends CreateTaskInput {
+  active: boolean;
+  description: string | null;
+}
 
 export interface CreateActaInput {
   title: string;
@@ -375,6 +382,8 @@ export function useMoveTask(id: string) {
         name: task.name,
         type: task.typeValue,
         column,
+        active: task.active,
+        description: task.description,
       }),
     onMutate: async ({ task, column }) => {
       await queryClient.cancelQueries({ queryKey: key });

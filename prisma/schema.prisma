@@ -130,12 +130,13 @@ model ProjectMember {
 }
 
 model Feature {
-  id        String        @id @default(cuid())
-  label     String
-  projectId String
-  name      String
-  priority  Priority
-  status    FeatureStatus
+  id          String        @id @default(cuid())
+  label       String
+  projectId   String
+  name        String
+  priority    Priority
+  status      FeatureStatus
+  description String?
 
   project Project @relation(fields: [projectId], references: [id])
   tasks   Task[]
@@ -144,15 +145,16 @@ model Feature {
 }
 
 model Task {
-  id         String       @id @default(cuid())
-  label      String
-  projectId  String
-  featureId  String?
-  assigneeId String?
-  name       String
-  type       TaskType
-  active     Boolean
-  column     KanbanColumn
+  id          String       @id @default(cuid())
+  label       String
+  projectId   String
+  featureId   String?
+  assigneeId  String?
+  name        String
+  type        TaskType
+  active      Boolean
+  column      KanbanColumn
+  description String?
 
   project  Project  @relation(fields: [projectId], references: [id])
   feature  Feature? @relation(fields: [featureId], references: [id])
