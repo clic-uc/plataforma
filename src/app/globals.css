@@ -843,7 +843,7 @@ tbody tr:last-child td { border-bottom: none; }
 .proj-tab-count { font-size: 9px; background: var(--surface-2); border-radius: 3px; padding: 1px 5px; color: var(--text-3); }
 
 /* ─── BACKLOG ─── */
-.feat-row { display: flex; align-items: center; gap: 9px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.feat-row { display: flex; align-items: center; gap: 9px; padding: 9px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
 .feat-row:last-child { border-bottom: none; }
 .feat-prio { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .feat-id { font-family: var(--font-space-mono), monospace; font-size: 9.5px; color: var(--text-3); min-width: 28px; }
@@ -852,6 +852,7 @@ tbody tr:last-child td { border-bottom: none; }
 
 /* ─── TASKS ─── */
 .task-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.task-row.clickable { cursor: pointer; }
 .task-row:last-child { border-bottom: none; }
 .task-id { font-family: var(--font-space-mono), monospace; font-size: 9px; color: var(--text-3); min-width: 24px; }
 .task-name { font-size: 12px; color: var(--text-1); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -864,6 +865,9 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .task-ava { width: 18px; height: 18px; border-radius: 50%; background: var(--ph-fill); flex-shrink: 0; }
 .task-ava.accent-ava { background: var(--accent); opacity: 0.8; }
+
+.task-row.inactive { opacity: 0.55; }
+.task-check { flex-shrink: 0; cursor: pointer; accent-color: var(--accent); }
 
 .task-type {
   font-family: var(--font-space-mono), monospace; font-size: 8px;

@@ -25,14 +25,17 @@ import {
   useDeleteProject,
   useDeleteTask,
   useProject,
+  useUpdateTask,
   type ProjectFeature,
   type ProjectTask,
 } from "@/lib/api/projects";
 import { EditProjectModal } from "@/components/views/EditProjectModal";
 import { CreateFeatureModal } from "@/components/views/CreateFeatureModal";
 import { EditFeatureModal } from "@/components/views/EditFeatureModal";
+import { FeatureDetailModal } from "@/components/views/FeatureDetailModal";
 import { CreateTaskModal } from "@/components/views/CreateTaskModal";
 import { EditTaskModal } from "@/components/views/EditTaskModal";
+import { TaskDetailModal } from "@/components/views/TaskDetailModal";
 import { CreateActaModal } from "@/components/views/CreateActaModal";
 
 const docIcon = {
@@ -56,15 +59,18 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const [editing, setEditing] = useState(false);
   const [creatingFeature, setCreatingFeature] = useState(false);
   const [editingFeature, setEditingFeature] = useState<ProjectFeature | null>(null);
+  const [viewingFeature, setViewingFeature] = useState<ProjectFeature | null>(null);
   const [featureMenu, setFeatureMenu] = useState<{ x: number; y: number; feature: ProjectFeature } | null>(null);
   const [creatingTaskColumn, setCreatingTaskColumn] = useState<ProjectTask["column"] | null>(null);
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
+  const [viewingTask, setViewingTask] = useState<ProjectTask | null>(null);
   const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: ProjectTask } | null>(null);
   const [creatingActa, setCreatingActa] = useState(false);
   const { data: project } = useProject(projectId);
   const createDoc = useCreateProjectDoc(projectId);
   const deleteFeature = useDeleteFeature(projectId);
   const deleteTask = useDeleteTask(projectId);
+  const updateTask = useUpdateTask(projectId);
   const deleteProject = useDeleteProject();
   if (!project) return null;
 
@@ -72,6 +78,20 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
     if (!window.confirm(`¿Eliminar el proyecto "${project.name}"? Esta acción no se puede deshacer.`)) return;
     deleteProject.mutate(project.id, { onSuccess: () => router.push("/proyectos") });
   };
+
+  function toggleTaskActive(task: ProjectTask) {
+    updateTask.mutate({
+      taskId: task.id,
+      input: {
+        featureId: task.featureId,
+        name: task.name,
+        type: task.typeValue,
+        column: task.columnValue,
+        active: !task.active,
+        description: task.description,
+      },
+    });
+  }
 
   function openTaskMenu(e: React.MouseEvent, task: ProjectTask) {
     e.preventDefault();
@@ -229,6 +249,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
               <div
                 key={f.id}
                 className="feat-row"
+                onClick={() => setViewingFeature(f)}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setFeatureMenu({ x: e.clientX, y: e.clientY, feature: f });
@@ -255,7 +276,20 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
         {tab === "tareas" && (
           <div>
             {project.tasks.map((t) => (
-              <div key={t.id} className="task-row" onContextMenu={(e) => openTaskMenu(e, t)}>
+              <div
+                key={t.id}
+                className={`task-row clickable${t.active ? "" : " inactive"}`}
+                onClick={() => setViewingTask(t)}
+                onContextMenu={(e) => openTaskMenu(e, t)}
+              >
+                <input
+                  type="checkbox"
+                  className="task-check"
+                  checked={t.active}
+                  title={t.active ? "Ocultar del kanban" : "Mostrar en kanban"}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => toggleTaskActive(t)}
+                />
                 {t.featureId && <span className="task-feat-tag">{t.featureId}</span>}
                 <div className="task-id">{t.id}</div>
                 <div className={`task-name${t.done ? " done" : ""}`}>{t.name}</div>
@@ -269,7 +303,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
         {tab === "kanban" && (
           <div className="kanban-board">
             {kanbanColumns.map((col) => {
-              const tasks = project.tasks.filter((t) => t.column === col.key);
+              const tasks = project.tasks.filter((t) => t.column === col.key && t.active);
               return (
                 <div key={col.key}>
                   <div className="kanban-col-head">
@@ -281,6 +315,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                       key={t.id}
                       className="kanban-card"
                       style={col.key === "listo" ? { opacity: 0.65 } : undefined}
+                      onClick={() => setViewingTask(t)}
                       onContextMenu={(e) => openTaskMenu(e, t)}
                     >
                       <div className="kanban-card-id">{t.featureId ? `${t.id} · ${t.featureId}` : t.id}</div>
@@ -291,7 +326,9 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                       </div>
                     </div>
                   ))}
-                  <div className="kanban-col-add" onClick={() => setCreatingTaskColumn(col.key)}>+ Tarea</div>
+                  {col.key === "pendiente" && (
+                    <div className="kanban-col-add" onClick={() => setCreatingTaskColumn(col.key)}>+ Tarea</div>
+                  )}
                 </div>
               );
             })}
@@ -303,6 +340,14 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
       {creatingFeature && <CreateFeatureModal projectId={project.id} onClose={() => setCreatingFeature(false)} />}
       {editingFeature && (
         <EditFeatureModal projectId={project.id} feature={editingFeature} onClose={() => setEditingFeature(null)} />
+      )}
+      {viewingFeature && (
+        <FeatureDetailModal
+          projectId={project.id}
+          feature={project.features.find((f) => f.id === viewingFeature.id) ?? viewingFeature}
+          tasks={project.tasks.filter((t) => t.featureId === viewingFeature.id)}
+          onClose={() => setViewingFeature(null)}
+        />
       )}
       {creatingTaskColumn && (
         <CreateTaskModal
@@ -318,6 +363,13 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
           task={editingTask}
           features={project.features}
           onClose={() => setEditingTask(null)}
+        />
+      )}
+      {viewingTask && (
+        <TaskDetailModal
+          projectId={project.id}
+          task={project.tasks.find((t) => t.id === viewingTask.id) ?? viewingTask}
+          onClose={() => setViewingTask(null)}
         />
       )}
       {creatingActa && <CreateActaModal projectId={project.id} onClose={() => setCreatingActa(false)} />}
