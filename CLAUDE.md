@@ -118,5 +118,5 @@ Two consequences worth knowing:
 ## Known state
 
 `docs/TODO.md` is the source of truth for gaps and for decisions that were made deliberately (rather
-than forgotten). Notably, the Dashboard and Tiempo views plus `src/lib/breadcrumbs.ts` still import
-mock data directly from `prisma/seed/data/*`.
+than forgotten). Notably, the Dashboard and Tiempo views still import mock data directly from
+`prisma/seed/data/*`.

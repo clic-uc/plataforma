@@ -251,12 +251,12 @@ export function useProjects() {
   return useQuery({ queryKey: projectsKeys.list(), queryFn: fetchProjects });
 }
 
-export function useProject(id: string) {
-  return useQuery({ queryKey: projectsKeys.detail(id), queryFn: () => fetchProject(id) });
+export function useProject(id: string, options?: { enabled?: boolean }) {
+  return useQuery({ queryKey: projectsKeys.detail(id), queryFn: () => fetchProject(id), ...options });
 }
 
-export function useProjectDoc(id: string, docId: string) {
-  return useQuery({ queryKey: projectsKeys.doc(id, docId), queryFn: () => fetchProjectDoc(id, docId) });
+export function useProjectDoc(id: string, docId: string, options?: { enabled?: boolean }) {
+  return useQuery({ queryKey: projectsKeys.doc(id, docId), queryFn: () => fetchProjectDoc(id, docId), ...options });
 }
 
 export function useCreateProject() {

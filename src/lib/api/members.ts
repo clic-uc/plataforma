@@ -70,6 +70,6 @@ export function useMembers() {
   return useQuery({ queryKey: membersKeys.list(), queryFn: fetchMembers });
 }
 
-export function useMember(id: string) {
-  return useQuery({ queryKey: membersKeys.detail(id), queryFn: () => fetchMember(id) });
+export function useMember(id: string, options?: { enabled?: boolean }) {
+  return useQuery({ queryKey: membersKeys.detail(id), queryFn: () => fetchMember(id), ...options });
 }
