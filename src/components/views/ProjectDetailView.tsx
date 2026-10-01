@@ -24,6 +24,7 @@ import {
   useDeleteFeature,
   useDeleteProject,
   useDeleteTask,
+  useMoveTask,
   useProject,
   type ProjectFeature,
   type ProjectTask,
@@ -57,7 +58,9 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const [creatingFeature, setCreatingFeature] = useState(false);
   const [editingFeature, setEditingFeature] = useState<ProjectFeature | null>(null);
   const [featureMenu, setFeatureMenu] = useState<{ x: number; y: number; feature: ProjectFeature } | null>(null);
-  const [creatingTaskColumn, setCreatingTaskColumn] = useState<ProjectTask["column"] | null>(null);
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<ProjectTask["column"] | null>(null);
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
   const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: ProjectTask } | null>(null);
   const [creatingActa, setCreatingActa] = useState(false);
@@ -65,8 +68,21 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const createDoc = useCreateProjectDoc(projectId);
   const deleteFeature = useDeleteFeature(projectId);
   const deleteTask = useDeleteTask(projectId);
+  const moveTask = useMoveTask(projectId);
   const deleteProject = useDeleteProject();
   if (!project) return null;
+
+  function endDrag() {
+    setDraggingTaskId(null);
+    setDragOverColumn(null);
+  }
+
+  function handleDrop(column: ProjectTask["column"]) {
+    const task = project?.tasks.find((t) => t.id === draggingTaskId);
+    endDrag();
+    if (!task || task.column === column) return;
+    moveTask.mutate({ task, column: kanbanColumnValue[column] });
+  }
 
   const handleDeleteProject = () => {
     if (!window.confirm(`¿Eliminar el proyecto "${project.name}"? Esta acción no se puede deshacer.`)) return;
@@ -214,7 +230,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
               <div className="select-mock" style={{ height: 26 }}><span style={{ fontSize: 9.5 }}>Feature ▾</span></div>
               <div className="select-mock" style={{ height: 26 }}><span style={{ fontSize: 9.5 }}>Estado ▾</span></div>
-              <button className="btn-xs btn-xs-g" onClick={() => setCreatingTaskColumn("pendiente")}>+ Tarea</button>
+              <button className="btn-xs btn-xs-g" onClick={() => setCreatingTask(true)}>+ Tarea</button>
             </div>
           )}
           {tab === "kanban" && (
@@ -271,7 +287,23 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             {kanbanColumns.map((col) => {
               const tasks = project.tasks.filter((t) => t.column === col.key);
               return (
-                <div key={col.key}>
+                <div
+                  key={col.key}
+                  className={`kanban-col${dragOverColumn === col.key ? " drag-over" : ""}`}
+                  onDragOver={(e) => {
+                    if (!draggingTaskId) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setDragOverColumn(col.key);
+                  }}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOverColumn(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handleDrop(col.key);
+                  }}
+                >
                   <div className="kanban-col-head">
                     {col.label}
                     <span className="kanban-col-count">{tasks.length}</span>
@@ -279,8 +311,15 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                   {tasks.map((t) => (
                     <div
                       key={t.id}
-                      className="kanban-card"
+                      className={`kanban-card${draggingTaskId === t.id ? " dragging" : ""}`}
                       style={col.key === "listo" ? { opacity: 0.65 } : undefined}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", t.id);
+                        setDraggingTaskId(t.id);
+                      }}
+                      onDragEnd={endDrag}
                       onContextMenu={(e) => openTaskMenu(e, t)}
                     >
                       <div className="kanban-card-id">{t.featureId ? `${t.id} · ${t.featureId}` : t.id}</div>
@@ -291,7 +330,9 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                       </div>
                     </div>
                   ))}
-                  <div className="kanban-col-add" onClick={() => setCreatingTaskColumn(col.key)}>+ Tarea</div>
+                  {col.key === "pendiente" && (
+                    <div className="kanban-col-add" onClick={() => setCreatingTask(true)}>+ Tarea</div>
+                  )}
                 </div>
               );
             })}
@@ -304,13 +345,8 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
       {editingFeature && (
         <EditFeatureModal projectId={project.id} feature={editingFeature} onClose={() => setEditingFeature(null)} />
       )}
-      {creatingTaskColumn && (
-        <CreateTaskModal
-          projectId={project.id}
-          features={project.features}
-          column={kanbanColumnValue[creatingTaskColumn]}
-          onClose={() => setCreatingTaskColumn(null)}
-        />
+      {creatingTask && (
+        <CreateTaskModal projectId={project.id} features={project.features} onClose={() => setCreatingTask(false)} />
       )}
       {editingTask && (
         <EditTaskModal

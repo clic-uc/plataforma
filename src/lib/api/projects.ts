@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
-import type { BadgeColor } from "@/lib/api/status";
+import { kanbanColumnLabel, type BadgeColor } from "@/lib/api/status";
 import { assertOk } from "@/lib/api/http";
 
 export interface ProjectListItem {
@@ -360,6 +360,42 @@ export function useUpdateTask(id: string) {
       updateTaskRequest(id, taskId, input),
     onSuccess: (updated) => {
       queryClient.setQueryData(projectsKeys.detail(id), updated);
+    },
+  });
+}
+
+/** Moves a task between kanban columns, reflecting the change immediately and rolling back on failure. */
+export function useMoveTask(id: string) {
+  const queryClient = useQueryClient();
+  const key = projectsKeys.detail(id);
+  return useMutation({
+    mutationFn: ({ task, column }: { task: ProjectTask; column: KanbanColumn }) =>
+      updateTaskRequest(id, task.id, {
+        featureId: task.featureId,
+        name: task.name,
+        type: task.typeValue,
+        column,
+      }),
+    onMutate: async ({ task, column }) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<ProjectDetail | null>(key);
+      if (previous) {
+        queryClient.setQueryData<ProjectDetail>(key, {
+          ...previous,
+          tasks: previous.tasks.map((t) =>
+            t.id === task.id
+              ? { ...t, columnValue: column, column: kanbanColumnLabel[column], done: column === "LISTO" }
+              : t,
+          ),
+        });
+      }
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(key, context.previous);
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData(key, updated);
     },
   });
 }
