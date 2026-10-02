@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
 import { createProjectDoc, getProjectDoc, updateProjectDoc } from "@/lib/api/projects.server";
+import { withAuth } from "@/lib/api/route-handler";
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string; docId: string }> }) {
+type Context = { params: Promise<{ id: string; docId: string }> };
+
+async function getHandler(_request: Request, { params }: Context) {
   const { id, docId } = await params;
   const doc = await getProjectDoc(id, docId);
   if (!doc) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json(doc);
 }
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string; docId: string }> }) {
+async function patchHandler(request: Request, { params }: Context) {
   const { id, docId } = await params;
 
   const body = await request.json();
@@ -20,10 +23,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return NextResponse.json(doc);
 }
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string; docId: string }> }) {
+async function postHandler(_request: Request, { params }: Context) {
   const { id, docId } = await params;
 
   const project = await createProjectDoc(id, docId);
   if (!project) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json(project);
 }
+
+export const GET = withAuth(getHandler);
+export const PATCH = withAuth(patchHandler);
+export const POST = withAuth(postHandler);

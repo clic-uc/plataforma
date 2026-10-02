@@ -1,4 +1,7 @@
+import "server-only";
+
 import { prisma } from "@/lib/prisma";
+import { requireMember } from "@/lib/auth/guards";
 import { formatDayMonth, formatMonthYear, formatWeekdayDayMonthYear, getInitials } from "@/lib/api/format";
 import { memberStatusColor, memberStatusLabel, projectStatusColor, projectStatusLabel } from "@/lib/api/status";
 import type { AchievementIcon, MemberDetail, MemberListItem } from "@/lib/api/members";
@@ -14,6 +17,8 @@ function rankFromLevel(level: number): number {
 }
 
 export async function getMembers(): Promise<MemberListItem[]> {
+  await requireMember();
+
   const members = await prisma.member.findMany({
     orderBy: { name: "asc" },
     include: {
@@ -36,6 +41,8 @@ export async function getMembers(): Promise<MemberListItem[]> {
 }
 
 export async function getMember(id: string): Promise<MemberDetail | null> {
+  await requireMember();
+
   const member = await prisma.member.findUnique({
     where: { id },
     include: {

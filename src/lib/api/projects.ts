@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
-import type { BadgeColor } from "@/lib/api/status";
+import { kanbanColumnLabel, type BadgeColor } from "@/lib/api/status";
+import { assertOk } from "@/lib/api/http";
 
 export interface ProjectListItem {
   id: string;
@@ -41,6 +42,7 @@ export interface ProjectFeature {
   status: string;
   statusColor: BadgeColor;
   statusValue: FeatureStatus;
+  description: string | null;
   taskCount: number;
 }
 
@@ -54,6 +56,8 @@ export interface ProjectTask {
   hasAssignee: boolean;
   column: "pendiente" | "progreso" | "revisar" | "revision" | "listo";
   columnValue: KanbanColumn;
+  active: boolean;
+  description: string | null;
 }
 
 export interface ProjectDetail extends ProjectListItem {
@@ -82,6 +86,15 @@ export interface UpdateProjectInput {
   archived: boolean;
 }
 
+export interface CreateProjectInput {
+  name: string;
+  client: string;
+  area: string;
+  description: string;
+  status: ProjectStatus;
+  startDate: string;
+}
+
 export interface CreateFeatureInput {
   name: string;
   priority: Priority;
@@ -91,6 +104,7 @@ export interface UpdateFeatureInput {
   name: string;
   priority: Priority;
   status: FeatureStatus;
+  description: string | null;
 }
 
 export interface CreateTaskInput {
@@ -100,7 +114,10 @@ export interface CreateTaskInput {
   column: KanbanColumn;
 }
 
-export type UpdateTaskInput = CreateTaskInput;
+export interface UpdateTaskInput extends CreateTaskInput {
+  active: boolean;
+  description: string | null;
+}
 
 export interface CreateActaInput {
   title: string;
@@ -116,21 +133,31 @@ export const projectsKeys = {
 
 async function fetchProjects(): Promise<ProjectListItem[]> {
   const res = await fetch("/api/projects");
-  if (!res.ok) throw new Error("No se pudo cargar la lista de proyectos");
+  await assertOk(res, "No se pudo cargar la lista de proyectos");
   return res.json();
 }
 
 async function fetchProject(id: string): Promise<ProjectDetail | null> {
   const res = await fetch(`/api/projects/${id}`);
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error("No se pudo cargar el proyecto");
+  await assertOk(res, "No se pudo cargar el proyecto");
   return res.json();
 }
 
 async function fetchProjectDoc(id: string, docId: string): Promise<ProjectDocDetail | null> {
   const res = await fetch(`/api/projects/${id}/docs/${docId}`);
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error("No se pudo cargar el documento");
+  await assertOk(res, "No se pudo cargar el documento");
+  return res.json();
+}
+
+async function createProjectRequest(input: CreateProjectInput): Promise<ProjectDetail> {
+  const res = await fetch("/api/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  await assertOk(res, "No se pudo crear el proyecto");
   return res.json();
 }
 
@@ -140,8 +167,13 @@ async function updateProjectRequest(id: string, input: UpdateProjectInput): Prom
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error("No se pudo guardar el proyecto");
+  await assertOk(res, "No se pudo guardar el proyecto");
   return res.json();
+}
+
+async function deleteProjectRequest(id: string): Promise<void> {
+  const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+  await assertOk(res, "No se pudo eliminar el proyecto");
 }
 
 async function updateProjectDocRequest(id: string, docId: string, content: string): Promise<ProjectDocDetail> {
@@ -150,13 +182,13 @@ async function updateProjectDocRequest(id: string, docId: string, content: strin
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
   });
-  if (!res.ok) throw new Error("No se pudo guardar el documento");
+  await assertOk(res, "No se pudo guardar el documento");
   return res.json();
 }
 
 async function createProjectDocRequest(id: string, docId: string): Promise<ProjectDetail> {
   const res = await fetch(`/api/projects/${id}/docs/${docId}`, { method: "POST" });
-  if (!res.ok) throw new Error("No se pudo crear el documento");
+  await assertOk(res, "No se pudo crear el documento");
   return res.json();
 }
 
@@ -166,7 +198,7 @@ async function createFeatureRequest(id: string, input: CreateFeatureInput): Prom
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error("No se pudo crear la feature");
+  await assertOk(res, "No se pudo crear la feature");
   return res.json();
 }
 
@@ -176,13 +208,13 @@ async function updateFeatureRequest(id: string, featureId: string, input: Update
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error("No se pudo guardar la feature");
+  await assertOk(res, "No se pudo guardar la feature");
   return res.json();
 }
 
 async function deleteFeatureRequest(id: string, featureId: string): Promise<ProjectDetail> {
   const res = await fetch(`/api/projects/${id}/features/${featureId}`, { method: "DELETE" });
-  if (!res.ok) throw new Error("No se pudo eliminar la feature");
+  await assertOk(res, "No se pudo eliminar la feature");
   return res.json();
 }
 
@@ -192,7 +224,7 @@ async function createTaskRequest(id: string, input: CreateTaskInput): Promise<Pr
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error("No se pudo crear la tarea");
+  await assertOk(res, "No se pudo crear la tarea");
   return res.json();
 }
 
@@ -202,13 +234,13 @@ async function updateTaskRequest(id: string, taskId: string, input: UpdateTaskIn
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error("No se pudo guardar la tarea");
+  await assertOk(res, "No se pudo guardar la tarea");
   return res.json();
 }
 
 async function deleteTaskRequest(id: string, taskId: string): Promise<ProjectDetail> {
   const res = await fetch(`/api/projects/${id}/tasks/${taskId}`, { method: "DELETE" });
-  if (!res.ok) throw new Error("No se pudo eliminar la tarea");
+  await assertOk(res, "No se pudo eliminar la tarea");
   return res.json();
 }
 
@@ -218,7 +250,7 @@ async function createActaRequest(id: string, input: CreateActaInput): Promise<Pr
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error("No se pudo crear el acta");
+  await assertOk(res, "No se pudo crear el acta");
   return res.json();
 }
 
@@ -226,12 +258,23 @@ export function useProjects() {
   return useQuery({ queryKey: projectsKeys.list(), queryFn: fetchProjects });
 }
 
-export function useProject(id: string) {
-  return useQuery({ queryKey: projectsKeys.detail(id), queryFn: () => fetchProject(id) });
+export function useProject(id: string, options?: { enabled?: boolean }) {
+  return useQuery({ queryKey: projectsKeys.detail(id), queryFn: () => fetchProject(id), ...options });
 }
 
-export function useProjectDoc(id: string, docId: string) {
-  return useQuery({ queryKey: projectsKeys.doc(id, docId), queryFn: () => fetchProjectDoc(id, docId) });
+export function useProjectDoc(id: string, docId: string, options?: { enabled?: boolean }) {
+  return useQuery({ queryKey: projectsKeys.doc(id, docId), queryFn: () => fetchProjectDoc(id, docId), ...options });
+}
+
+export function useCreateProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateProjectInput) => createProjectRequest(input),
+    onSuccess: (created) => {
+      queryClient.setQueryData(projectsKeys.detail(created.id), created);
+      queryClient.invalidateQueries({ queryKey: projectsKeys.list() });
+    },
+  });
 }
 
 export function useUpdateProject(id: string) {
@@ -240,6 +283,17 @@ export function useUpdateProject(id: string) {
     mutationFn: (input: UpdateProjectInput) => updateProjectRequest(id, input),
     onSuccess: (updated) => {
       queryClient.setQueryData(projectsKeys.detail(id), updated);
+      queryClient.invalidateQueries({ queryKey: projectsKeys.list() });
+    },
+  });
+}
+
+export function useDeleteProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteProjectRequest(id),
+    onSuccess: (_data, id) => {
+      queryClient.removeQueries({ queryKey: projectsKeys.detail(id) });
       queryClient.invalidateQueries({ queryKey: projectsKeys.list() });
     },
   });
@@ -313,6 +367,44 @@ export function useUpdateTask(id: string) {
       updateTaskRequest(id, taskId, input),
     onSuccess: (updated) => {
       queryClient.setQueryData(projectsKeys.detail(id), updated);
+    },
+  });
+}
+
+/** Moves a task between kanban columns, reflecting the change immediately and rolling back on failure. */
+export function useMoveTask(id: string) {
+  const queryClient = useQueryClient();
+  const key = projectsKeys.detail(id);
+  return useMutation({
+    mutationFn: ({ task, column }: { task: ProjectTask; column: KanbanColumn }) =>
+      updateTaskRequest(id, task.id, {
+        featureId: task.featureId,
+        name: task.name,
+        type: task.typeValue,
+        column,
+        active: task.active,
+        description: task.description,
+      }),
+    onMutate: async ({ task, column }) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<ProjectDetail | null>(key);
+      if (previous) {
+        queryClient.setQueryData<ProjectDetail>(key, {
+          ...previous,
+          tasks: previous.tasks.map((t) =>
+            t.id === task.id
+              ? { ...t, columnValue: column, column: kanbanColumnLabel[column], done: column === "LISTO" }
+              : t,
+          ),
+        });
+      }
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(key, context.previous);
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData(key, updated);
     },
   });
 }

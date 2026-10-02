@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Plataforma CLIC
 
-## Getting Started
+Plataforma interna: proyectos, tareas, documentos y miembros.
 
-First, run the development server:
+Next.js 16 (App Router) · React 19 · Prisma 7 sobre PostgreSQL en Neon · TanStack Query ·
+Better Auth con GitHub OAuth · Tailwind v4.
+
+## Puesta en marcha
+
+Requiere **pnpm** (está pinneado en `packageManager`; no uses npm).
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
+cp .env.example .env.local   # y completa los valores
+pnpm exec prisma migrate deploy
+pnpm exec prisma db seed     # data de demo, opcional
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Variables de entorno
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`.env.example` lista todas. Las que hay que conseguir:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **`DATABASE_URL` / `DATABASE_URL_UNPOOLED`** — de la consola de Neon. La primera es la pooleada
+  (la usa la app), la segunda la directa (la usa el CLI de Prisma). Deben apuntar a la misma rama.
+- **`BETTER_AUTH_SECRET`** — `openssl rand -base64 32`.
+- **`BETTER_AUTH_URL`** — `http://localhost:3000` en local.
+- **`GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`** — de una OAuth App o GitHub App, con callback
+  `<BETTER_AUTH_URL>/api/auth/callback/github`. Si es una GitHub App, hay que darle permiso de
+  lectura sobre *Email addresses*, o el login falla con `email_not_found`.
 
-## Learn More
+Trabaja siempre contra una rama de Neon que no sea producción. `prisma.config.ts` lee **solo**
+`.env.local`, así que ese archivo determina a qué base van las migraciones.
 
-To learn more about Next.js, take a look at the following resources:
+## Primer acceso
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Cualquiera con cuenta de GitHub puede registrarse, pero nadie entra hasta que coordinación lo
+aprueba: el `Member` se crea con `isVerifiedByCoordinator = false` y la app lo deja en `/pendiente`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Como en una base nueva no existe ningún coordinador, el primero se promueve a mano después de
+iniciar sesión:
 
-## Deploy on Vercel
+```bash
+echo "UPDATE \"Member\"
+      SET \"isVerifiedByCoordinator\" = true, \"role\" = 'COORDINACION'
+      WHERE email = 'tu@correo.com';" | pnpm exec prisma db execute --stdin
+```
+Tambien se puede hacer directamente desde Neon o desde Prisma Studio
+## Más
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `CLAUDE.md` — arquitectura: la separación `.ts` / `.server.ts`, dónde se aplican los guards de
+  autenticación y por qué están donde están.
+- `docs/TODO.md` — qué falta y qué se dejó fuera a propósito.

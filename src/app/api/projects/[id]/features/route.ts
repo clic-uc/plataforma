@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createFeature, parseCreateFeatureInput } from "@/lib/api/projects.server";
+import { withAuth } from "@/lib/api/route-handler";
 
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function postHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
   const input = parseCreateFeatureInput(await request.json());
@@ -11,3 +12,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!project) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json(project);
 }
+
+export const POST = withAuth(postHandler);

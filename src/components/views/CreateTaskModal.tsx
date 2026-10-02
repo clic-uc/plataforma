@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { KanbanColumn, TaskType } from "@/generated/prisma/enums";
+import type { TaskType } from "@/generated/prisma/enums";
 import { Modal } from "@/components/ui/Modal";
 import { TASK_TYPE_OPTIONS } from "@/lib/api/status";
 import { useCreateTask, type ProjectFeature } from "@/lib/api/projects";
@@ -9,12 +9,10 @@ import { useCreateTask, type ProjectFeature } from "@/lib/api/projects";
 export function CreateTaskModal({
   projectId,
   features,
-  column,
   onClose,
 }: {
   projectId: string;
   features: ProjectFeature[];
-  column: KanbanColumn;
   onClose: () => void;
 }) {
   const [featureId, setFeatureId] = useState(features[0]?.id ?? "");
@@ -25,7 +23,7 @@ export function CreateTaskModal({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    mutation.mutate({ featureId: featureId || null, name, type, column }, { onSuccess: onClose });
+    mutation.mutate({ featureId: featureId || null, name, type, column: "PENDIENTE" }, { onSuccess: onClose });
   }
 
   return (

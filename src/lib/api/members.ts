@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { BadgeColor } from "@/lib/api/status";
+import { assertOk } from "@/lib/api/http";
 
 export type AchievementIcon = "star" | "speech" | "bolt" | "file" | "lock";
 
@@ -54,14 +55,14 @@ export const membersKeys = {
 
 async function fetchMembers(): Promise<MemberListItem[]> {
   const res = await fetch("/api/members");
-  if (!res.ok) throw new Error("No se pudo cargar la lista de miembros");
+  await assertOk(res, "No se pudo cargar la lista de miembros");
   return res.json();
 }
 
 async function fetchMember(id: string): Promise<MemberDetail | null> {
   const res = await fetch(`/api/members/${id}`);
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error("No se pudo cargar el miembro");
+  await assertOk(res, "No se pudo cargar el miembro");
   return res.json();
 }
 
@@ -69,6 +70,6 @@ export function useMembers() {
   return useQuery({ queryKey: membersKeys.list(), queryFn: fetchMembers });
 }
 
-export function useMember(id: string) {
-  return useQuery({ queryKey: membersKeys.detail(id), queryFn: () => fetchMember(id) });
+export function useMember(id: string, options?: { enabled?: boolean }) {
+  return useQuery({ queryKey: membersKeys.detail(id), queryFn: () => fetchMember(id), ...options });
 }

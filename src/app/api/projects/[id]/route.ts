@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
-import { getProject, parseUpdateProjectInput, updateProject } from "@/lib/api/projects.server";
+import { deleteProject, getProject, parseUpdateProjectInput, updateProject } from "@/lib/api/projects.server";
+import { withAuth } from "@/lib/api/route-handler";
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+type Context = { params: Promise<{ id: string }> };
+
+async function getHandler(_request: Request, { params }: Context) {
   const { id } = await params;
   const project = await getProject(id);
   if (!project) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json(project);
 }
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function patchHandler(request: Request, { params }: Context) {
   const { id } = await params;
 
   const input = parseUpdateProjectInput(await request.json());
@@ -18,3 +21,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!project) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json(project);
 }
+
+async function deleteHandler(_request: Request, { params }: Context) {
+  const { id } = await params;
+
+  const deleted = await deleteProject(id);
+  if (!deleted) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  return NextResponse.json({ ok: true });
+}
+
+export const GET = withAuth(getHandler);
+export const PATCH = withAuth(patchHandler);
+export const DELETE = withAuth(deleteHandler);

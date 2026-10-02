@@ -106,6 +106,9 @@ const docSlotMap: Record<
 };
 
 async function main() {
+  // Los Member con Account de OAuth se conservan: son cuentas reales y Member es
+  // también su identidad de auth, así que borrarlos eliminaría a la persona y sus
+  // sesiones (FK en cascada). El resto es data de demo.
   console.log("Limpiando datos existentes...");
   await prisma.standup.deleteMany();
   await prisma.memberAchievement.deleteMany();
@@ -116,29 +119,43 @@ async function main() {
   await prisma.feature.deleteMany();
   await prisma.projectMember.deleteMany();
   await prisma.project.deleteMany();
-  await prisma.member.deleteMany();
+  await prisma.member.deleteMany({ where: { accounts: { none: {} } } });
 
   console.log("Creando miembros...");
   const memberIdByMockId = new Map<string, string>();
   const memberIdByInitials = new Map<string, string>();
 
   for (const m of membersData) {
-    const created = await prisma.member.create({
-      data: {
-        name: m.name,
-        role: memberRoleMap[m.role] ?? "EQUIPO",
-        area: m.area,
-        email: m.email,
-        birthday: parseBirthday(m.bday),
-        joinedAt: parseMonthYear(m.joined),
-        status: memberStatusMap[m.status] ?? "ACTIVO",
-        skills: m.skills,
-        level: m.level,
-        streak: m.streak,
-      },
+    // Un Member con cuenta real puede conservar este mismo correo (email es
+    // @unique). Se reutiliza: insertar violaría el unique y actualizar
+    // sobrescribiría su rol con el de la data de demo.
+    const existing = await prisma.member.findUnique({
+      where: { email: m.email },
+      select: { id: true },
     });
-    memberIdByMockId.set(m.id, created.id);
-    memberIdByInitials.set(m.initials, created.id);
+
+    const member =
+      existing ??
+      (await prisma.member.create({
+        data: {
+          name: m.name,
+          role: memberRoleMap[m.role] ?? "EQUIPO",
+          area: m.area,
+          email: m.email,
+          birthday: parseBirthday(m.bday),
+          joinedAt: parseMonthYear(m.joined),
+          status: memberStatusMap[m.status] ?? "ACTIVO",
+          skills: m.skills,
+          level: m.level,
+          streak: m.streak,
+          // La data de demo se siembra ya aprobada; solo las altas por login
+          // parten en false.
+          isVerifiedByCoordinator: true,
+        },
+      }));
+
+    memberIdByMockId.set(m.id, member.id);
+    memberIdByInitials.set(m.initials, member.id);
   }
 
   console.log("Creando catálogo de logros...");
