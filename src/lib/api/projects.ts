@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
-import type { BadgeColor } from "@/lib/api/status";
+import { kanbanColumnLabel, type BadgeColor } from "@/lib/api/status";
 import { assertOk } from "@/lib/api/http";
 
 export interface ProjectListItem {
@@ -42,6 +42,7 @@ export interface ProjectFeature {
   status: string;
   statusColor: BadgeColor;
   statusValue: FeatureStatus;
+  description: string | null;
   taskCount: number;
 }
 
@@ -55,6 +56,8 @@ export interface ProjectTask {
   hasAssignee: boolean;
   column: "pendiente" | "progreso" | "revisar" | "revision" | "listo";
   columnValue: KanbanColumn;
+  active: boolean;
+  description: string | null;
 }
 
 export interface ProjectDetail extends ProjectListItem {
@@ -101,6 +104,7 @@ export interface UpdateFeatureInput {
   name: string;
   priority: Priority;
   status: FeatureStatus;
+  description: string | null;
 }
 
 export interface CreateTaskInput {
@@ -110,7 +114,10 @@ export interface CreateTaskInput {
   column: KanbanColumn;
 }
 
-export type UpdateTaskInput = CreateTaskInput;
+export interface UpdateTaskInput extends CreateTaskInput {
+  active: boolean;
+  description: string | null;
+}
 
 export interface CreateActaInput {
   title: string;
@@ -251,12 +258,12 @@ export function useProjects() {
   return useQuery({ queryKey: projectsKeys.list(), queryFn: fetchProjects });
 }
 
-export function useProject(id: string) {
-  return useQuery({ queryKey: projectsKeys.detail(id), queryFn: () => fetchProject(id) });
+export function useProject(id: string, options?: { enabled?: boolean }) {
+  return useQuery({ queryKey: projectsKeys.detail(id), queryFn: () => fetchProject(id), ...options });
 }
 
-export function useProjectDoc(id: string, docId: string) {
-  return useQuery({ queryKey: projectsKeys.doc(id, docId), queryFn: () => fetchProjectDoc(id, docId) });
+export function useProjectDoc(id: string, docId: string, options?: { enabled?: boolean }) {
+  return useQuery({ queryKey: projectsKeys.doc(id, docId), queryFn: () => fetchProjectDoc(id, docId), ...options });
 }
 
 export function useCreateProject() {
@@ -360,6 +367,44 @@ export function useUpdateTask(id: string) {
       updateTaskRequest(id, taskId, input),
     onSuccess: (updated) => {
       queryClient.setQueryData(projectsKeys.detail(id), updated);
+    },
+  });
+}
+
+/** Moves a task between kanban columns, reflecting the change immediately and rolling back on failure. */
+export function useMoveTask(id: string) {
+  const queryClient = useQueryClient();
+  const key = projectsKeys.detail(id);
+  return useMutation({
+    mutationFn: ({ task, column }: { task: ProjectTask; column: KanbanColumn }) =>
+      updateTaskRequest(id, task.id, {
+        featureId: task.featureId,
+        name: task.name,
+        type: task.typeValue,
+        column,
+        active: task.active,
+        description: task.description,
+      }),
+    onMutate: async ({ task, column }) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<ProjectDetail | null>(key);
+      if (previous) {
+        queryClient.setQueryData<ProjectDetail>(key, {
+          ...previous,
+          tasks: previous.tasks.map((t) =>
+            t.id === task.id
+              ? { ...t, columnValue: column, column: kanbanColumnLabel[column], done: column === "LISTO" }
+              : t,
+          ),
+        });
+      }
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(key, context.previous);
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData(key, updated);
     },
   });
 }

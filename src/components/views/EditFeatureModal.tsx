@@ -24,7 +24,7 @@ export function EditFeatureModal({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     mutation.mutate(
-      { featureId: feature.id, input: { name, priority, status } },
+      { featureId: feature.id, input: { name, priority, status, description: feature.description } },
       { onSuccess: onClose },
     );
   }

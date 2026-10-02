@@ -18,21 +18,26 @@ import {
   KanbanTabIcon,
 } from "@/components/icons";
 import { ContextMenu } from "@/components/ui/ContextMenu";
-import { kanbanColumnValue, priorityColor } from "@/lib/api/status";
+import type { KanbanColumn } from "@/generated/prisma/enums";
+import { KANBAN_COLUMN_OPTIONS, kanbanColumnValue, priorityColor } from "@/lib/api/status";
 import {
   useCreateProjectDoc,
   useDeleteFeature,
   useDeleteProject,
   useDeleteTask,
+  useMoveTask,
   useProject,
+  useUpdateTask,
   type ProjectFeature,
   type ProjectTask,
 } from "@/lib/api/projects";
 import { EditProjectModal } from "@/components/views/EditProjectModal";
 import { CreateFeatureModal } from "@/components/views/CreateFeatureModal";
 import { EditFeatureModal } from "@/components/views/EditFeatureModal";
+import { FeatureDetailModal } from "@/components/views/FeatureDetailModal";
 import { CreateTaskModal } from "@/components/views/CreateTaskModal";
 import { EditTaskModal } from "@/components/views/EditTaskModal";
+import { TaskDetailModal } from "@/components/views/TaskDetailModal";
 import { CreateActaModal } from "@/components/views/CreateActaModal";
 
 const docIcon = {
@@ -50,28 +55,72 @@ const kanbanColumns: { key: ProjectTask["column"]; label: string }[] = [
   { key: "listo", label: "LISTO" },
 ];
 
+const NO_FEATURE = "__none";
+
 export function ProjectDetailView({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [tab, setTab] = useState<"backlog" | "tareas" | "kanban">("backlog");
   const [editing, setEditing] = useState(false);
   const [creatingFeature, setCreatingFeature] = useState(false);
   const [editingFeature, setEditingFeature] = useState<ProjectFeature | null>(null);
+  const [viewingFeature, setViewingFeature] = useState<ProjectFeature | null>(null);
   const [featureMenu, setFeatureMenu] = useState<{ x: number; y: number; feature: ProjectFeature } | null>(null);
-  const [creatingTaskColumn, setCreatingTaskColumn] = useState<ProjectTask["column"] | null>(null);
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<ProjectTask["column"] | null>(null);
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
+  const [viewingTask, setViewingTask] = useState<ProjectTask | null>(null);
   const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: ProjectTask } | null>(null);
   const [creatingActa, setCreatingActa] = useState(false);
+  const [featureFilter, setFeatureFilter] = useState("");
+  const [columnFilter, setColumnFilter] = useState<KanbanColumn | "">("");
+  const [onlyActive, setOnlyActive] = useState(false);
   const { data: project } = useProject(projectId);
   const createDoc = useCreateProjectDoc(projectId);
   const deleteFeature = useDeleteFeature(projectId);
   const deleteTask = useDeleteTask(projectId);
+  const moveTask = useMoveTask(projectId);
+  const updateTask = useUpdateTask(projectId);
   const deleteProject = useDeleteProject();
   if (!project) return null;
+
+  const filteredTasks = project.tasks.filter(
+    (t) =>
+      (!featureFilter || (featureFilter === NO_FEATURE ? t.featureId === null : t.featureId === featureFilter)) &&
+      (!columnFilter || t.columnValue === columnFilter) &&
+      (!onlyActive || t.active),
+  );
+
+  function endDrag() {
+    setDraggingTaskId(null);
+    setDragOverColumn(null);
+  }
+
+  function handleDrop(column: ProjectTask["column"]) {
+    const task = project?.tasks.find((t) => t.id === draggingTaskId);
+    endDrag();
+    if (!task || task.column === column) return;
+    moveTask.mutate({ task, column: kanbanColumnValue[column] });
+  }
 
   const handleDeleteProject = () => {
     if (!window.confirm(`¿Eliminar el proyecto "${project.name}"? Esta acción no se puede deshacer.`)) return;
     deleteProject.mutate(project.id, { onSuccess: () => router.push("/proyectos") });
   };
+
+  function toggleTaskActive(task: ProjectTask) {
+    updateTask.mutate({
+      taskId: task.id,
+      input: {
+        featureId: task.featureId,
+        name: task.name,
+        type: task.typeValue,
+        column: task.columnValue,
+        active: !task.active,
+        description: task.description,
+      },
+    });
+  }
 
   function openTaskMenu(e: React.MouseEvent, task: ProjectTask) {
     e.preventDefault();
@@ -212,9 +261,39 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
           )}
           {tab === "tareas" && (
             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-              <div className="select-mock" style={{ height: 26 }}><span style={{ fontSize: 9.5 }}>Feature ▾</span></div>
-              <div className="select-mock" style={{ height: 26 }}><span style={{ fontSize: 9.5 }}>Estado ▾</span></div>
-              <button className="btn-xs btn-xs-g" onClick={() => setCreatingTaskColumn("pendiente")}>+ Tarea</button>
+              <select
+                className="filter-select"
+                value={featureFilter}
+                onChange={(e) => setFeatureFilter(e.target.value)}
+                aria-label="Filtrar por feature"
+              >
+                <option value="">Feature: todas</option>
+                <option value={NO_FEATURE}>Sin feature</option>
+                {project.features.map((f) => (
+                  <option key={f.id} value={f.id}>{f.id} — {f.name}</option>
+                ))}
+              </select>
+              <select
+                className="filter-select"
+                value={columnFilter}
+                onChange={(e) => setColumnFilter(e.target.value as KanbanColumn | "")}
+                aria-label="Filtrar por estado"
+              >
+                <option value="">Estado: todos</option>
+                {KANBAN_COLUMN_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              <label className="filter-check">
+                <input
+                  type="checkbox"
+                  className="task-check"
+                  checked={onlyActive}
+                  onChange={(e) => setOnlyActive(e.target.checked)}
+                />
+                Solo activas
+              </label>
+              <button className="btn-xs btn-xs-g" onClick={() => setCreatingTask(true)}>+ Tarea</button>
             </div>
           )}
           {tab === "kanban" && (
@@ -229,6 +308,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
               <div
                 key={f.id}
                 className="feat-row"
+                onClick={() => setViewingFeature(f)}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setFeatureMenu({ x: e.clientX, y: e.clientY, feature: f });
@@ -254,8 +334,26 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
 
         {tab === "tareas" && (
           <div>
-            {project.tasks.map((t) => (
-              <div key={t.id} className="task-row" onContextMenu={(e) => openTaskMenu(e, t)}>
+            {filteredTasks.length === 0 && (
+              <div className="ph" style={{ height: 72 }}>
+                <div className="ph-text">Ninguna tarea coincide con los filtros</div>
+              </div>
+            )}
+            {filteredTasks.map((t) => (
+              <div
+                key={t.id}
+                className={`task-row clickable${t.active ? "" : " inactive"}`}
+                onClick={() => setViewingTask(t)}
+                onContextMenu={(e) => openTaskMenu(e, t)}
+              >
+                <input
+                  type="checkbox"
+                  className="task-check"
+                  checked={t.active}
+                  title={t.active ? "Ocultar del kanban" : "Mostrar en kanban"}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => toggleTaskActive(t)}
+                />
                 {t.featureId && <span className="task-feat-tag">{t.featureId}</span>}
                 <div className="task-id">{t.id}</div>
                 <div className={`task-name${t.done ? " done" : ""}`}>{t.name}</div>
@@ -269,9 +367,25 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
         {tab === "kanban" && (
           <div className="kanban-board">
             {kanbanColumns.map((col) => {
-              const tasks = project.tasks.filter((t) => t.column === col.key);
+              const tasks = project.tasks.filter((t) => t.column === col.key && t.active);
               return (
-                <div key={col.key}>
+                <div
+                  key={col.key}
+                  className={`kanban-col${dragOverColumn === col.key ? " drag-over" : ""}`}
+                  onDragOver={(e) => {
+                    if (!draggingTaskId) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setDragOverColumn(col.key);
+                  }}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOverColumn(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handleDrop(col.key);
+                  }}
+                >
                   <div className="kanban-col-head">
                     {col.label}
                     <span className="kanban-col-count">{tasks.length}</span>
@@ -279,8 +393,16 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                   {tasks.map((t) => (
                     <div
                       key={t.id}
-                      className="kanban-card"
+                      className={`kanban-card${draggingTaskId === t.id ? " dragging" : ""}`}
                       style={col.key === "listo" ? { opacity: 0.65 } : undefined}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", t.id);
+                        setDraggingTaskId(t.id);
+                      }}
+                      onDragEnd={endDrag}
+                      onClick={() => setViewingTask(t)}
                       onContextMenu={(e) => openTaskMenu(e, t)}
                     >
                       <div className="kanban-card-id">{t.featureId ? `${t.id} · ${t.featureId}` : t.id}</div>
@@ -291,7 +413,9 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                       </div>
                     </div>
                   ))}
-                  <div className="kanban-col-add" onClick={() => setCreatingTaskColumn(col.key)}>+ Tarea</div>
+                  {col.key === "pendiente" && (
+                    <div className="kanban-col-add" onClick={() => setCreatingTask(true)}>+ Tarea</div>
+                  )}
                 </div>
               );
             })}
@@ -304,13 +428,16 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
       {editingFeature && (
         <EditFeatureModal projectId={project.id} feature={editingFeature} onClose={() => setEditingFeature(null)} />
       )}
-      {creatingTaskColumn && (
-        <CreateTaskModal
+      {viewingFeature && (
+        <FeatureDetailModal
           projectId={project.id}
-          features={project.features}
-          column={kanbanColumnValue[creatingTaskColumn]}
-          onClose={() => setCreatingTaskColumn(null)}
+          feature={project.features.find((f) => f.id === viewingFeature.id) ?? viewingFeature}
+          tasks={project.tasks.filter((t) => t.featureId === viewingFeature.id)}
+          onClose={() => setViewingFeature(null)}
         />
+      )}
+      {creatingTask && (
+        <CreateTaskModal projectId={project.id} features={project.features} onClose={() => setCreatingTask(false)} />
       )}
       {editingTask && (
         <EditTaskModal
@@ -318,6 +445,13 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
           task={editingTask}
           features={project.features}
           onClose={() => setEditingTask(null)}
+        />
+      )}
+      {viewingTask && (
+        <TaskDetailModal
+          projectId={project.id}
+          task={project.tasks.find((t) => t.id === viewingTask.id) ?? viewingTask}
+          onClose={() => setViewingTask(null)}
         />
       )}
       {creatingActa && <CreateActaModal projectId={project.id} onClose={() => setCreatingActa(false)} />}
