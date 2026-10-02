@@ -18,7 +18,8 @@ import {
   KanbanTabIcon,
 } from "@/components/icons";
 import { ContextMenu } from "@/components/ui/ContextMenu";
-import { kanbanColumnValue, priorityColor } from "@/lib/api/status";
+import type { KanbanColumn } from "@/generated/prisma/enums";
+import { KANBAN_COLUMN_OPTIONS, kanbanColumnValue, priorityColor } from "@/lib/api/status";
 import {
   useCreateProjectDoc,
   useDeleteFeature,
@@ -54,6 +55,8 @@ const kanbanColumns: { key: ProjectTask["column"]; label: string }[] = [
   { key: "listo", label: "LISTO" },
 ];
 
+const NO_FEATURE = "__none";
+
 export function ProjectDetailView({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [tab, setTab] = useState<"backlog" | "tareas" | "kanban">("backlog");
@@ -69,6 +72,9 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const [viewingTask, setViewingTask] = useState<ProjectTask | null>(null);
   const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: ProjectTask } | null>(null);
   const [creatingActa, setCreatingActa] = useState(false);
+  const [featureFilter, setFeatureFilter] = useState("");
+  const [columnFilter, setColumnFilter] = useState<KanbanColumn | "">("");
+  const [onlyActive, setOnlyActive] = useState(false);
   const { data: project } = useProject(projectId);
   const createDoc = useCreateProjectDoc(projectId);
   const deleteFeature = useDeleteFeature(projectId);
@@ -77,6 +83,13 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const updateTask = useUpdateTask(projectId);
   const deleteProject = useDeleteProject();
   if (!project) return null;
+
+  const filteredTasks = project.tasks.filter(
+    (t) =>
+      (!featureFilter || (featureFilter === NO_FEATURE ? t.featureId === null : t.featureId === featureFilter)) &&
+      (!columnFilter || t.columnValue === columnFilter) &&
+      (!onlyActive || t.active),
+  );
 
   function endDrag() {
     setDraggingTaskId(null);
@@ -248,8 +261,38 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
           )}
           {tab === "tareas" && (
             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-              <div className="select-mock" style={{ height: 26 }}><span style={{ fontSize: 9.5 }}>Feature ▾</span></div>
-              <div className="select-mock" style={{ height: 26 }}><span style={{ fontSize: 9.5 }}>Estado ▾</span></div>
+              <select
+                className="filter-select"
+                value={featureFilter}
+                onChange={(e) => setFeatureFilter(e.target.value)}
+                aria-label="Filtrar por feature"
+              >
+                <option value="">Feature: todas</option>
+                <option value={NO_FEATURE}>Sin feature</option>
+                {project.features.map((f) => (
+                  <option key={f.id} value={f.id}>{f.id} — {f.name}</option>
+                ))}
+              </select>
+              <select
+                className="filter-select"
+                value={columnFilter}
+                onChange={(e) => setColumnFilter(e.target.value as KanbanColumn | "")}
+                aria-label="Filtrar por estado"
+              >
+                <option value="">Estado: todos</option>
+                {KANBAN_COLUMN_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              <label className="filter-check">
+                <input
+                  type="checkbox"
+                  className="task-check"
+                  checked={onlyActive}
+                  onChange={(e) => setOnlyActive(e.target.checked)}
+                />
+                Solo activas
+              </label>
               <button className="btn-xs btn-xs-g" onClick={() => setCreatingTask(true)}>+ Tarea</button>
             </div>
           )}
@@ -291,7 +334,12 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
 
         {tab === "tareas" && (
           <div>
-            {project.tasks.map((t) => (
+            {filteredTasks.length === 0 && (
+              <div className="ph" style={{ height: 72 }}>
+                <div className="ph-text">Ninguna tarea coincide con los filtros</div>
+              </div>
+            )}
+            {filteredTasks.map((t) => (
               <div
                 key={t.id}
                 className={`task-row clickable${t.active ? "" : " inactive"}`}

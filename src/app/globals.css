@@ -868,6 +868,19 @@ tbody tr:last-child td { border-bottom: none; }
 
 .task-row.inactive { opacity: 0.55; }
 .task-check { flex-shrink: 0; cursor: pointer; accent-color: var(--accent); }
+.filter-select {
+  height: 26px; max-width: 170px; padding: 0 8px;
+  border-radius: 5px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-2);
+  font-family: var(--font-space-mono), monospace; font-size: 9.5px;
+  outline: none; cursor: pointer;
+}
+.filter-select:focus { border-color: var(--accent); }
+.filter-check {
+  display: flex; align-items: center; gap: 5px; height: 26px; padding: 0 4px;
+  font-family: var(--font-space-mono), monospace; font-size: 9.5px;
+  color: var(--text-2); cursor: pointer; user-select: none;
+}
 
 .task-type {
   font-family: var(--font-space-mono), monospace; font-size: 8px;
