@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
-import { createTask, parseCreateTaskInput } from "@/lib/api/projects.server";
+import { addProjectMember, parseAddProjectMemberInput } from "@/lib/api/projects.server";
 import { withAuth } from "@/lib/api/route-handler";
 
 async function postHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const input = parseCreateTaskInput(await request.json());
+  const input = parseAddProjectMemberInput(await request.json());
   if (!input) return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
 
-  const project = await createTask(id, input, request.headers.get("if-match"));
+  const project = await addProjectMember(id, input);
   if (!project) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json(project);
 }

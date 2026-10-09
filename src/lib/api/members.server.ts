@@ -19,7 +19,10 @@ function rankFromLevel(level: number): number {
 export async function getMembers(): Promise<MemberListItem[]> {
   await requireMember();
 
+  // Las cuentas pendientes de aprobación no son miembros todavía: no se listan ni
+  // se ofrecen en los selectores (equipo de proyecto, asignación).
   const members = await prisma.member.findMany({
+    where: { isVerifiedByCoordinator: true },
     orderBy: { name: "asc" },
     include: {
       projects: { include: { project: { select: { id: true, name: true } } } },
@@ -44,7 +47,7 @@ export async function getMember(id: string): Promise<MemberDetail | null> {
   await requireMember();
 
   const member = await prisma.member.findUnique({
-    where: { id },
+    where: { id, isVerifiedByCoordinator: true },
     include: {
       projects: { include: { project: true } },
       achievements: { include: { achievement: true } },

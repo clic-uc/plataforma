@@ -10,15 +10,15 @@ async function patchHandler(request: Request, { params }: Context) {
   const input = parseUpdateFeatureInput(await request.json());
   if (!input) return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
 
-  const project = await updateFeature(id, featureId, input);
+  const project = await updateFeature(id, featureId, input, request.headers.get("if-match"));
   if (!project) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json(project);
 }
 
-async function deleteHandler(_request: Request, { params }: Context) {
+async function deleteHandler(request: Request, { params }: Context) {
   const { id, featureId } = await params;
 
-  const project = await deleteFeature(id, featureId);
+  const project = await deleteFeature(id, featureId, request.headers.get("if-match"));
   if (!project) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json(project);
 }

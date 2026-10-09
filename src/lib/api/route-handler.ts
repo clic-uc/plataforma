@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { AuthError, requireMember } from "@/lib/auth/guards";
+import { ApiError } from "@/lib/api/errors";
 
 /**
- * Autentica y luego ejecuta el handler, mapeando AuthError a respuestas HTTP.
+ * Autentica y luego ejecuta el handler, mapeando AuthError y ApiError a respuestas HTTP.
  * El resto de errores se re-lanza para que Next los resuelva como 500.
  *
  * El orden importa: los handlers parsean el body antes de llamar a la capa
@@ -18,7 +19,7 @@ export function withAuth<A extends unknown[]>(fn: (...args: A) => Promise<Respon
       await requireMember();
       return await fn(...args);
     } catch (error) {
-      if (error instanceof AuthError) {
+      if (error instanceof AuthError || error instanceof ApiError) {
         return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
       }
       throw error;

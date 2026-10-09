@@ -11,6 +11,11 @@
   lectura. "Editar perfil" y "Enviar mensaje" en `MemberProfileView` son botones decorativos.
 - "+ Invitar miembro" en `MembersTableView` no hace nada.
 - Filtros "Área ▾" / "Estado ▾" en la tabla de miembros son mocks visuales, no filtran.
+- El buscador de la tabla de miembros sigue siendo `search-mock`. El de proyectos ya es real
+  (`.search-box` en `ProyectosView`) y sirve de modelo.
+- El contador "Miembros" del sidebar está fijo en 18; el de Proyectos ya cuenta los activos.
+- `getMembers()` / `getMember()` excluyen las cuentas con `isVerifiedByCoordinator = false`: una
+  cuenta pendiente no es miembro todavía y no debe aparecer en la tabla ni en los selectores.
 - Campos que existían en el mock original y no tienen columna en el schema: `telegram`, `rankNumber`/`ranking`
   (esto se pensaba calcular, no persistir), `areaLabel` (categoría corta tipo "PROYECTOS"/"WEB"/"LAB", distinta de
   `area`), color propio por miembro. Si se quieren recuperar, hay que agregar columnas reales.
@@ -23,11 +28,12 @@
   quiere recuperar variedad de color, ver nota de Miembros arriba — mismo problema, misma solución
   pendiente.
 
-**Pendiente para dejar el tab 100% funcional:**
-- Buscador de proyectos (`search-mock` en `ProyectosView`) es decorativo, no filtra.
-- Formato enriquecido y metadatos editables del editor de documentos (`DocEditorView`) — detalle en
+- **Equipo del proyecto**: se gestiona desde el contador de miembros del detalle
+  (`ProjectTeamModal`). Agregar, quitar o cambiar el rol de alguien es solo de `COORDINACION`, igual
+  que editar el proyecto; el resto ve el equipo en modo lectura. Quitar a alguien lo desasigna de las
+  tareas de ese proyecto. `ProjectMember.role` es texto libre (máx. 60 caracteres).
+- El editor de documentos queda como **feature aparte**, fuera del cierre del tab. Detalle en
   "Documentos y Actas" abajo.
-- Drag & drop de tarjetas en el Kanban — detalle en "Features y Tareas" abajo.
 
 ## Documentos y Actas
 
@@ -48,14 +54,22 @@
   se considera "hecha" cuando `column === LISTO`, no por un toggle manual — se quitó el checkbox
   de la pestaña Tareas a propósito, para que solo quede lista después de vivir el ciclo completo
   del kanban.
-- Sin drag & drop en el Kanban todavía — en evaluación (dnd-kit vs. Pragmatic drag-and-drop de
-  Atlassian vs. HTML5 DnD nativo). Mientras se decide, `EditTaskModal` permite cambiar la columna
-  a mano como mecanismo interino para "mover" una tarea.
-- No hay asignación real de miembro a una tarea (`hasAssignee` sigue siendo solo
-  `assigneeId !== null`). Nada lo bloquea ya: `getMembers()` da la lista para un selector y
-  `requireMember()` identifica a quien actúa.
-- Filtros "Feature ▾" / "Estado ▾" en la pestaña Tareas son decorativos — tampoco es prioridad
-  por ahora.
+- Drag & drop del Kanban con HTML5 DnD nativo, con actualización optimista y rollback
+  (`useMoveTask`). `EditTaskModal` sigue permitiendo cambiar la columna a mano.
+- **Asignación de tareas**: cualquier miembro puede asignar, pero solo a gente del equipo del
+  proyecto (`assertAssignable` en `projects.server.ts` responde 422 si no). Un proyecto sin equipo
+  no permite asignar hasta que coordinación lo arme. `assigneeId` es obligatorio en el body de
+  POST/PATCH de tareas, aunque sea `null`: así un cliente que no conoce el campo no desasigna sin
+  querer.
+- **Los labels se renumeran al borrar** (borrar T-03 convierte T-04 en T-03). Es una decisión
+  deliberada: los borrados son raros (sobre todo al corregir una planificación inicial) y se
+  prefieren labels contiguos. Para que eso no haga editar o borrar la entidad equivocada, cada
+  `ProjectDetail` trae un `labelsToken` (la huella de los pares label→id hasta el label más alto
+  que vio ese snapshot), y toda mutación que recibe labels (PATCH/DELETE de features y tareas,
+  POST de tarea con feature) lo exige en `If-Match`. Sin el encabezado responde 428; si algo que
+  el cliente vio se borró o se renumeró, 412 `LABELS_CHANGED` y el cliente recarga el proyecto.
+  Crear entidades no invalida el token. En el cliente, cada interacción (modal, menú contextual,
+  arrastre) fija el token al comenzar, no al enviar.
 - **`Task.featureId` es opcional y `Task` tiene `projectId` propio** (migración
   `20260730120000_task_project_relation`, sobre la base de `20260727214422_task_feature_optional`).
   El modal de creación permite "Sin feature" y `createTask`/`getProject` ya no dependen de la
@@ -72,13 +86,14 @@ y `requireCoordinacion()` en `src/lib/auth/guards.ts`.
 Pendiente:
 
 - **La autorización solo distingue proyectos.** Únicamente `COORDINACION` puede crear, editar o
-  borrar proyectos. Todo lo demás —tareas, features, actas, documentos— lo puede hacer cualquier
-  miembro aprobado sobre **cualquier** proyecto, sea o no parte de él: `ProjectMember` existe pero no
-  restringe nada. Si se quiere acotar, ese join table es la pieza natural.
+  borrar proyectos y componer su equipo. Todo lo demás —tareas, features, actas, documentos— lo
+  puede hacer cualquier miembro aprobado sobre **cualquier** proyecto, sea o no parte de él.
+  `ProjectMember` solo restringe a quién se le puede asignar una tarea. Si se quiere acotar más, ese
+  join table es la pieza natural.
 
-- **La UI no esconde las acciones de coordinación.** Un `EQUIPO` ve el botón "Nuevo proyecto" y
-  recibe un 403 al usarlo. El servidor rechaza correctamente, que es lo que importa, pero la
-  experiencia es pobre. Se arregla condicionando por `actor.role`.
+- **La UI esconde las acciones de coordinación** (nuevo/editar/eliminar proyecto, gestionar el
+  equipo) mediante `useIsCoordinacion()` de `CurrentMemberProvider`. Es solo presentación: el
+  servidor sigue siendo quien rechaza con 403.
 
 - **La aprobación de miembros es manual, por SQL.** Decisión explícita: con ~8 miembros no compensa
   construir la UI todavía.
