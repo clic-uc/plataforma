@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+
+# Un push nuevo a la misma rama o PR cancela la corrida anterior.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint, typecheck, tests y build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      # Toma la versión de pnpm del campo packageManager de package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # postinstall corre `prisma generate`; no necesita base de datos.
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      - run: pnpm build
+        env:
+          # Better Auth se inicializa durante el prerender y llena el log de
+          # errores si no tiene configuración. Son valores de relleno: el build
+          # no se conecta a nada, y DATABASE_URL no hace falta.
+          BETTER_AUTH_SECRET: ci-build-placeholder-not-a-real-secret
+          BETTER_AUTH_URL: http://localhost:3000
+          GITHUB_CLIENT_ID: ci-placeholder
+          GITHUB_CLIENT_SECRET: ci-placeholder

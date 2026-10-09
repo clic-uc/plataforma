@@ -1,11 +1,11 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
 import { DocSlotType, FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireMember, requireCoordinacion } from "@/lib/auth/guards";
 import { ApiError } from "@/lib/api/errors";
+import { formatLabel, labelNumber, labelsToken, matchesLabelsToken, nextLabel } from "@/lib/api/labels";
 import {
   formatDayMonth,
   formatDayMonthYear,
@@ -76,41 +76,7 @@ function toTeam(members: Prisma.ProjectMemberGetPayload<{ include: typeof teamIn
 
 // ─── Labels ───
 //
-// La API direcciona features y tareas por label (F-01, T-01), y esos labels se
-// renumeran al borrar. Para que un cliente con un snapshot viejo no edite o
-// borre la entidad equivocada, cada ProjectDetail lleva un labelsToken: la
-// huella de los pares label→id hasta el label más alto que vio ese snapshot.
-// Las mutaciones que reciben labels lo mandan en If-Match.
-//
-// Crear entidades no invalida el token (los labels nuevos quedan por encima del
-// máximo del snapshot); cualquier borrado de algo que el cliente vio, sí.
-
-type LabelledRow = { id: string; label: string };
-
-function labelNumber(prefix: string, label: string): number {
-  const match = new RegExp(`^${prefix}-(\\d+)$`).exec(label);
-  return match ? Number(match[1]) : 0;
-}
-
-function maxLabelNumber(prefix: string, rows: LabelledRow[]): number {
-  return rows.reduce((max, row) => Math.max(max, labelNumber(prefix, row.label)), 0);
-}
-
-function labelsDigest(features: LabelledRow[], tasks: LabelledRow[], maxFeature: number, maxTask: number): string {
-  const pairs = [
-    ...features.filter((f) => labelNumber("F", f.label) <= maxFeature),
-    ...tasks.filter((t) => labelNumber("T", t.label) <= maxTask),
-  ]
-    .map((row) => `${row.label}=${row.id}`)
-    .sort();
-  return createHash("sha256").update(pairs.join("\n")).digest("base64url").slice(0, 22);
-}
-
-function labelsToken(features: LabelledRow[], tasks: LabelledRow[]): string {
-  const maxFeature = maxLabelNumber("F", features);
-  const maxTask = maxLabelNumber("T", tasks);
-  return `${maxFeature}.${maxTask}.${labelsDigest(features, tasks, maxFeature, maxTask)}`;
-}
+// El porqué del labelsToken está en lib/api/labels.ts.
 
 interface ResolvedLabels {
   featureId: (label: string) => string | undefined;
@@ -133,8 +99,7 @@ async function resolveLabels(projectId: string, ifMatch: string | null): Promise
     prisma.task.findMany({ where: { projectId }, select: { id: true, label: true } }),
   ]);
 
-  const match = /^(\d+)\.(\d+)\.([\w-]+)$/.exec(ifMatch.trim().replace(/^(W\/)?"(.*)"$/, "$2"));
-  if (!match || labelsDigest(features, tasks, Number(match[1]), Number(match[2])) !== match[3]) {
+  if (!matchesLabelsToken(ifMatch, features, tasks)) {
     throw new ApiError(
       412,
       "LABELS_CHANGED",
@@ -494,17 +459,12 @@ export function parseCreateFeatureInput(body: unknown): CreateFeatureInput | nul
   return { name, priority: priority as Priority };
 }
 
-function nextFeatureLabel(existingLabels: string[]): string {
-  const nextNumber = existingLabels.reduce((max, label) => Math.max(max, labelNumber("F", label)), 0) + 1;
-  return `F-${String(nextNumber).padStart(2, "0")}`;
-}
-
 async function renumberFeatureLabels(tx: Prisma.TransactionClient, projectId: string): Promise<void> {
   const remaining = await tx.feature.findMany({ where: { projectId }, select: { id: true, label: true } });
   remaining.sort((a, b) => labelNumber("F", a.label) - labelNumber("F", b.label));
 
   for (let i = 0; i < remaining.length; i++) {
-    const label = `F-${String(i + 1).padStart(2, "0")}`;
+    const label = formatLabel("F", i + 1);
     if (remaining[i].label !== label) {
       await tx.feature.update({ where: { id: remaining[i].id }, data: { label } });
     }
@@ -518,7 +478,7 @@ export async function createFeature(projectId: string, input: CreateFeatureInput
   if (!project) return null;
 
   const existing = await prisma.feature.findMany({ where: { projectId }, select: { label: true } });
-  const label = nextFeatureLabel(existing.map((f) => f.label));
+  const label = nextLabel("F", existing.map((f) => f.label));
 
   await prisma.feature.create({
     data: { projectId, label, name: input.name, priority: input.priority, status: "PENDIENTE" },
@@ -608,17 +568,12 @@ export function parseCreateTaskInput(body: unknown): CreateTaskInput | null {
   return { featureId, assigneeId, name, type: type as TaskType, column: column as KanbanColumn };
 }
 
-function nextTaskLabel(existingLabels: string[]): string {
-  const nextNumber = existingLabels.reduce((max, label) => Math.max(max, labelNumber("T", label)), 0) + 1;
-  return `T-${String(nextNumber).padStart(2, "0")}`;
-}
-
 async function renumberTaskLabels(tx: Prisma.TransactionClient, projectId: string): Promise<void> {
   const remaining = await tx.task.findMany({ where: { projectId }, select: { id: true, label: true } });
   remaining.sort((a, b) => labelNumber("T", a.label) - labelNumber("T", b.label));
 
   for (let i = 0; i < remaining.length; i++) {
-    const label = `T-${String(i + 1).padStart(2, "0")}`;
+    const label = formatLabel("T", i + 1);
     if (remaining[i].label !== label) {
       await tx.task.update({ where: { id: remaining[i].id }, data: { label } });
     }
@@ -648,7 +603,7 @@ export async function createTask(
     where: { projectId },
     select: { label: true },
   });
-  const label = nextTaskLabel(existing.map((t) => t.label));
+  const label = nextLabel("T", existing.map((t) => t.label));
 
   await prisma.task.create({
     data: {
