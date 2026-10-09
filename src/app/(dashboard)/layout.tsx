@@ -3,6 +3,7 @@ import { ShellProvider } from "@/components/shell/ShellProvider";
 import { ShellGrid } from "@/components/shell/ShellGrid";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Topbar } from "@/components/shell/Topbar";
+import { CurrentMemberProvider } from "@/components/providers/CurrentMemberProvider";
 import { getCurrentMember } from "@/lib/auth/guards";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -13,14 +14,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!member.isVerified) redirect("/pendiente");
 
   return (
-    <ShellProvider>
-      <ShellGrid>
-        <Sidebar member={member} />
-        <div className="main">
-          <Topbar />
-          <div className="scroll-area">{children}</div>
-        </div>
-      </ShellGrid>
-    </ShellProvider>
+    <CurrentMemberProvider member={member}>
+      <ShellProvider>
+        <ShellGrid>
+          <Sidebar member={member} />
+          <div className="main">
+            <Topbar />
+            <div className="scroll-area">{children}</div>
+          </div>
+        </ShellGrid>
+      </ShellProvider>
+    </CurrentMemberProvider>
   );
 }

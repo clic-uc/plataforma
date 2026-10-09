@@ -66,8 +66,8 @@ async function fetchMember(id: string): Promise<MemberDetail | null> {
   return res.json();
 }
 
-export function useMembers() {
-  return useQuery({ queryKey: membersKeys.list(), queryFn: fetchMembers });
+export function useMembers(options?: { enabled?: boolean }) {
+  return useQuery({ queryKey: membersKeys.list(), queryFn: fetchMembers, ...options });
 }
 
 export function useMember(id: string, options?: { enabled?: boolean }) {

@@ -545,7 +545,7 @@ body {
   align-items: center;
   margin-bottom: 16px;
 }
-.search-mock {
+.search-mock, .search-box {
   flex: 1;
   max-width: 260px;
   height: 34px;
@@ -557,6 +557,13 @@ body {
   padding: 0 11px;
   color: var(--text-3);
 }
+.search-box:focus-within { border-color: var(--accent); }
+.search-box input {
+  flex: 1; min-width: 0; height: 100%;
+  border: none; outline: none; background: transparent;
+  font-family: var(--font-space-mono), monospace; font-size: 11px; color: var(--text-1);
+}
+.search-box input::placeholder { color: var(--text-3); }
 .search-mock span {
   font-family: var(--font-space-mono), monospace;
   font-size: 11px;
@@ -781,6 +788,14 @@ tbody tr:last-child td { border-bottom: none; }
   font-size: 9.5px; color: var(--text-3); display: flex; align-items: center; gap: 5px;
 }
 .pd-prog-wrap { display: flex; align-items: center; gap: 7px; }
+.pd-team-btn { background: none; border: none; padding: 0; cursor: pointer; }
+.pd-team-btn:hover { color: var(--accent); }
+.inline-error {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 14px; padding: 8px 12px; border-radius: 5px;
+  border: 1px solid #c0392b; color: #c0392b; font-size: 12px;
+}
+.inline-error button { background: none; border: none; color: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
 .pd-prog-bar { width: 90px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
 .pd-prog-fill { height: 100%; background: var(--accent); border-radius: 2px; }
 
@@ -863,8 +878,12 @@ tbody tr:last-child td { border-bottom: none; }
   background: var(--surface-2); border: 1px solid var(--border);
   color: var(--text-3); white-space: nowrap;
 }
-.task-ava { width: 18px; height: 18px; border-radius: 50%; background: var(--ph-fill); flex-shrink: 0; }
-.task-ava.accent-ava { background: var(--accent); opacity: 0.8; }
+.task-ava {
+  width: 18px; height: 18px; border-radius: 50%; background: var(--ph-fill); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-space-mono), monospace; font-size: 7px; color: var(--text-3);
+}
+.task-ava.accent-ava { background: var(--accent); opacity: 0.8; color: #fff; }
 
 .task-row.inactive { opacity: 0.55; }
 .task-check { flex-shrink: 0; cursor: pointer; accent-color: var(--accent); }
@@ -1120,6 +1139,7 @@ tbody tr:last-child td { border-bottom: none; }
 .field-textarea { resize: vertical; min-height: 64px; }
 .field-checkbox-row { display: flex; align-items: center; gap: 7px; }
 .field-checkbox-row label { font-size: 13px; color: var(--text-2); }
+.field-hint { font-size: 11px; color: var(--text-3); margin-top: 5px; }
 
 /* ─── CONTEXT MENU ─── */
 .context-menu {

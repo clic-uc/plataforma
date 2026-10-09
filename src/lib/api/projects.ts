@@ -1,7 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
 import { kanbanColumnLabel, type BadgeColor } from "@/lib/api/status";
-import { assertOk } from "@/lib/api/http";
+import { ApiRequestError, assertOk } from "@/lib/api/http";
+import { membersKeys } from "@/lib/api/members";
+
+export interface ProjectTeamMember {
+  id: string;
+  name: string;
+  initials: string;
+  role: string;
+}
 
 export interface ProjectListItem {
   id: string;
@@ -14,6 +22,7 @@ export interface ProjectListItem {
   statusValue: ProjectStatus;
   progress: number;
   teamSize: number;
+  team: ProjectTeamMember[];
   startDate: string;
   startDateISO: string;
   archived: boolean;
@@ -53,7 +62,7 @@ export interface ProjectTask {
   type: "feature" | "spike" | "fix" | "refactor" | "chore" | "docs";
   typeValue: TaskType;
   done: boolean;
-  hasAssignee: boolean;
+  assignee: { id: string; name: string; initials: string } | null;
   column: "pendiente" | "progreso" | "revisar" | "revision" | "listo";
   columnValue: KanbanColumn;
   active: boolean;
@@ -61,6 +70,12 @@ export interface ProjectTask {
 }
 
 export interface ProjectDetail extends ProjectListItem {
+  /**
+   * Huella de qué entidad hay detrás de cada label (F-01, T-01) en este snapshot.
+   * Los labels se renumeran al borrar, así que toda mutación que direcciona por
+   * label la manda en If-Match y el servidor responde 412 si ya no coincide.
+   */
+  labelsToken: string;
   docs: ProjectDoc[];
   actas: ProjectActa[];
   features: ProjectFeature[];
@@ -109,6 +124,8 @@ export interface UpdateFeatureInput {
 
 export interface CreateTaskInput {
   featureId: string | null;
+  /** Member.id; tiene que ser parte del equipo del proyecto. */
+  assigneeId: string | null;
   name: string;
   type: TaskType;
   column: KanbanColumn;
@@ -122,6 +139,24 @@ export interface UpdateTaskInput extends CreateTaskInput {
 export interface CreateActaInput {
   title: string;
   date: string;
+}
+
+export interface AddProjectMemberInput {
+  memberId: string;
+  role: string;
+}
+
+/** Input completo de PATCH para una tarea, partiendo de su estado actual. */
+export function taskToUpdateInput(task: ProjectTask): UpdateTaskInput {
+  return {
+    featureId: task.featureId,
+    assigneeId: task.assignee?.id ?? null,
+    name: task.name,
+    type: task.typeValue,
+    column: task.columnValue,
+    active: task.active,
+    description: task.description,
+  };
 }
 
 export const projectsKeys = {
@@ -202,45 +237,92 @@ async function createFeatureRequest(id: string, input: CreateFeatureInput): Prom
   return res.json();
 }
 
-async function updateFeatureRequest(id: string, featureId: string, input: UpdateFeatureInput): Promise<ProjectDetail> {
+/** Precondición de las mutaciones que direccionan por label; ver ProjectDetail.labelsToken. */
+function labelsHeaders(labelsToken: string): Record<string, string> {
+  return { "If-Match": `"${labelsToken}"` };
+}
+
+async function updateFeatureRequest(
+  id: string,
+  featureId: string,
+  input: UpdateFeatureInput,
+  labelsToken: string,
+): Promise<ProjectDetail> {
   const res = await fetch(`/api/projects/${id}/features/${featureId}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...labelsHeaders(labelsToken) },
     body: JSON.stringify(input),
   });
   await assertOk(res, "No se pudo guardar la feature");
   return res.json();
 }
 
-async function deleteFeatureRequest(id: string, featureId: string): Promise<ProjectDetail> {
-  const res = await fetch(`/api/projects/${id}/features/${featureId}`, { method: "DELETE" });
+async function deleteFeatureRequest(id: string, featureId: string, labelsToken: string): Promise<ProjectDetail> {
+  const res = await fetch(`/api/projects/${id}/features/${featureId}`, {
+    method: "DELETE",
+    headers: labelsHeaders(labelsToken),
+  });
   await assertOk(res, "No se pudo eliminar la feature");
   return res.json();
 }
 
-async function createTaskRequest(id: string, input: CreateTaskInput): Promise<ProjectDetail> {
+async function createTaskRequest(id: string, input: CreateTaskInput, labelsToken: string): Promise<ProjectDetail> {
   const res = await fetch(`/api/projects/${id}/tasks`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...labelsHeaders(labelsToken) },
     body: JSON.stringify(input),
   });
   await assertOk(res, "No se pudo crear la tarea");
   return res.json();
 }
 
-async function updateTaskRequest(id: string, taskId: string, input: UpdateTaskInput): Promise<ProjectDetail> {
+async function updateTaskRequest(
+  id: string,
+  taskId: string,
+  input: UpdateTaskInput,
+  labelsToken: string,
+): Promise<ProjectDetail> {
   const res = await fetch(`/api/projects/${id}/tasks/${taskId}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...labelsHeaders(labelsToken) },
     body: JSON.stringify(input),
   });
   await assertOk(res, "No se pudo guardar la tarea");
   return res.json();
 }
 
-async function deleteTaskRequest(id: string, taskId: string): Promise<ProjectDetail> {
-  const res = await fetch(`/api/projects/${id}/tasks/${taskId}`, { method: "DELETE" });
+async function deleteTaskRequest(id: string, taskId: string, labelsToken: string): Promise<ProjectDetail> {
+  const res = await fetch(`/api/projects/${id}/tasks/${taskId}`, {
+    method: "DELETE",
+    headers: labelsHeaders(labelsToken),
+  });
   await assertOk(res, "No se pudo eliminar la tarea");
+  return res.json();
+}
+
+async function addProjectMemberRequest(id: string, input: AddProjectMemberInput): Promise<ProjectDetail> {
+  const res = await fetch(`/api/projects/${id}/members`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  await assertOk(res, "No se pudo agregar al miembro");
+  return res.json();
+}
+
+async function updateProjectMemberRequest(id: string, memberId: string, role: string): Promise<ProjectDetail> {
+  const res = await fetch(`/api/projects/${id}/members/${memberId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role }),
+  });
+  await assertOk(res, "No se pudo guardar el rol");
+  return res.json();
+}
+
+async function removeProjectMemberRequest(id: string, memberId: string): Promise<ProjectDetail> {
+  const res = await fetch(`/api/projects/${id}/members/${memberId}`, { method: "DELETE" });
+  await assertOk(res, "No se pudo quitar al miembro");
   return res.json();
 }
 
@@ -319,6 +401,27 @@ export function useCreateProjectDoc(id: string) {
   });
 }
 
+/**
+ * Las mutaciones que direccionan features o tareas por label reciben el
+ * labelsToken del snapshot del que salieron esos labels, no el del cache al
+ * ejecutarse: un modal abierto antes de una renumeración tiene que fallar con
+ * 412, no escribir sobre la entidad que ahora ocupa ese label. Cuando el
+ * servidor responde LABELS_CHANGED se recarga el proyecto.
+ */
+function useLabelledMutationSupport(id: string) {
+  const queryClient = useQueryClient();
+  const key = projectsKeys.detail(id);
+  return {
+    queryClient,
+    key,
+    onLabelsError: (error: Error) => {
+      if (error instanceof ApiRequestError && error.code === "LABELS_CHANGED") {
+        queryClient.invalidateQueries({ queryKey: key });
+      }
+    },
+  };
+}
+
 export function useCreateFeature(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -330,61 +433,59 @@ export function useCreateFeature(id: string) {
 }
 
 export function useUpdateFeature(id: string) {
-  const queryClient = useQueryClient();
+  const { queryClient, key, onLabelsError } = useLabelledMutationSupport(id);
   return useMutation({
-    mutationFn: ({ featureId, input }: { featureId: string; input: UpdateFeatureInput }) =>
-      updateFeatureRequest(id, featureId, input),
+    mutationFn: ({ featureId, input, labelsToken }: { featureId: string; input: UpdateFeatureInput; labelsToken: string }) =>
+      updateFeatureRequest(id, featureId, input, labelsToken),
+    onError: onLabelsError,
     onSuccess: (updated) => {
-      queryClient.setQueryData(projectsKeys.detail(id), updated);
+      queryClient.setQueryData(key, updated);
     },
   });
 }
 
 export function useDeleteFeature(id: string) {
-  const queryClient = useQueryClient();
+  const { queryClient, key, onLabelsError } = useLabelledMutationSupport(id);
   return useMutation({
-    mutationFn: (featureId: string) => deleteFeatureRequest(id, featureId),
+    mutationFn: ({ featureId, labelsToken }: { featureId: string; labelsToken: string }) =>
+      deleteFeatureRequest(id, featureId, labelsToken),
+    onError: onLabelsError,
     onSuccess: (updated) => {
-      queryClient.setQueryData(projectsKeys.detail(id), updated);
+      queryClient.setQueryData(key, updated);
     },
   });
 }
 
 export function useCreateTask(id: string) {
-  const queryClient = useQueryClient();
+  const { queryClient, key, onLabelsError } = useLabelledMutationSupport(id);
   return useMutation({
-    mutationFn: (input: CreateTaskInput) => createTaskRequest(id, input),
+    mutationFn: ({ input, labelsToken }: { input: CreateTaskInput; labelsToken: string }) =>
+      createTaskRequest(id, input, labelsToken),
+    onError: onLabelsError,
     onSuccess: (updated) => {
-      queryClient.setQueryData(projectsKeys.detail(id), updated);
+      queryClient.setQueryData(key, updated);
     },
   });
 }
 
 export function useUpdateTask(id: string) {
-  const queryClient = useQueryClient();
+  const { queryClient, key, onLabelsError } = useLabelledMutationSupport(id);
   return useMutation({
-    mutationFn: ({ taskId, input }: { taskId: string; input: UpdateTaskInput }) =>
-      updateTaskRequest(id, taskId, input),
+    mutationFn: ({ taskId, input, labelsToken }: { taskId: string; input: UpdateTaskInput; labelsToken: string }) =>
+      updateTaskRequest(id, taskId, input, labelsToken),
+    onError: onLabelsError,
     onSuccess: (updated) => {
-      queryClient.setQueryData(projectsKeys.detail(id), updated);
+      queryClient.setQueryData(key, updated);
     },
   });
 }
 
 /** Moves a task between kanban columns, reflecting the change immediately and rolling back on failure. */
 export function useMoveTask(id: string) {
-  const queryClient = useQueryClient();
-  const key = projectsKeys.detail(id);
+  const { queryClient, key, onLabelsError } = useLabelledMutationSupport(id);
   return useMutation({
-    mutationFn: ({ task, column }: { task: ProjectTask; column: KanbanColumn }) =>
-      updateTaskRequest(id, task.id, {
-        featureId: task.featureId,
-        name: task.name,
-        type: task.typeValue,
-        column,
-        active: task.active,
-        description: task.description,
-      }),
+    mutationFn: ({ task, column, labelsToken }: { task: ProjectTask; column: KanbanColumn; labelsToken: string }) =>
+      updateTaskRequest(id, task.id, { ...taskToUpdateInput(task), column }, labelsToken),
     onMutate: async ({ task, column }) => {
       await queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient.getQueryData<ProjectDetail | null>(key);
@@ -400,8 +501,9 @@ export function useMoveTask(id: string) {
       }
       return { previous };
     },
-    onError: (_error, _vars, context) => {
+    onError: (error, _vars, context) => {
       if (context?.previous) queryClient.setQueryData(key, context.previous);
+      onLabelsError(error);
     },
     onSuccess: (updated) => {
       queryClient.setQueryData(key, updated);
@@ -410,12 +512,49 @@ export function useMoveTask(id: string) {
 }
 
 export function useDeleteTask(id: string) {
-  const queryClient = useQueryClient();
+  const { queryClient, key, onLabelsError } = useLabelledMutationSupport(id);
   return useMutation({
-    mutationFn: (taskId: string) => deleteTaskRequest(id, taskId),
+    mutationFn: ({ taskId, labelsToken }: { taskId: string; labelsToken: string }) =>
+      deleteTaskRequest(id, taskId, labelsToken),
+    onError: onLabelsError,
     onSuccess: (updated) => {
-      queryClient.setQueryData(projectsKeys.detail(id), updated);
+      queryClient.setQueryData(key, updated);
     },
+  });
+}
+
+/** El equipo también se muestra en la lista de proyectos y en el perfil de cada miembro. */
+function useTeamMutationSuccess(id: string) {
+  const queryClient = useQueryClient();
+  return (updated: ProjectDetail) => {
+    queryClient.setQueryData(projectsKeys.detail(id), updated);
+    queryClient.invalidateQueries({ queryKey: projectsKeys.list() });
+    queryClient.invalidateQueries({ queryKey: membersKeys.all });
+  };
+}
+
+export function useAddProjectMember(id: string) {
+  const onSuccess = useTeamMutationSuccess(id);
+  return useMutation({
+    mutationFn: (input: AddProjectMemberInput) => addProjectMemberRequest(id, input),
+    onSuccess,
+  });
+}
+
+export function useUpdateProjectMember(id: string) {
+  const onSuccess = useTeamMutationSuccess(id);
+  return useMutation({
+    mutationFn: ({ memberId, role }: { memberId: string; role: string }) =>
+      updateProjectMemberRequest(id, memberId, role),
+    onSuccess,
+  });
+}
+
+export function useRemoveProjectMember(id: string) {
+  const onSuccess = useTeamMutationSuccess(id);
+  return useMutation({
+    mutationFn: (memberId: string) => removeProjectMemberRequest(id, memberId),
+    onSuccess,
   });
 }
 

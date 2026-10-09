@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
-import { AvatarStack } from "@/components/ui/Avatar";
+import { AssigneeAvatar, AvatarStack } from "@/components/ui/Avatar";
 import { TaskTypeTag } from "@/components/ui/TaskTypeTag";
 import {
   DocClockIcon,
@@ -20,7 +20,9 @@ import {
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { KanbanColumn } from "@/generated/prisma/enums";
 import { KANBAN_COLUMN_OPTIONS, kanbanColumnValue, priorityColor } from "@/lib/api/status";
+import { errorMessage } from "@/lib/api/http";
 import {
+  taskToUpdateInput,
   useCreateProjectDoc,
   useDeleteFeature,
   useDeleteProject,
@@ -39,6 +41,8 @@ import { CreateTaskModal } from "@/components/views/CreateTaskModal";
 import { EditTaskModal } from "@/components/views/EditTaskModal";
 import { TaskDetailModal } from "@/components/views/TaskDetailModal";
 import { CreateActaModal } from "@/components/views/CreateActaModal";
+import { ProjectTeamModal } from "@/components/views/ProjectTeamModal";
+import { useIsCoordinacion } from "@/components/providers/CurrentMemberProvider";
 
 const docIcon = {
   clock: DocClockIcon,
@@ -64,14 +68,23 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const [creatingFeature, setCreatingFeature] = useState(false);
   const [editingFeature, setEditingFeature] = useState<ProjectFeature | null>(null);
   const [viewingFeature, setViewingFeature] = useState<ProjectFeature | null>(null);
-  const [featureMenu, setFeatureMenu] = useState<{ x: number; y: number; feature: ProjectFeature } | null>(null);
+  // Los menús y el arrastre guardan el labelsToken del momento en que empezaron;
+  // ver useLabelledMutationSupport en lib/api/projects.ts.
+  const [featureMenu, setFeatureMenu] = useState<{
+    x: number;
+    y: number;
+    feature: ProjectFeature;
+    labelsToken: string;
+  } | null>(null);
   const [creatingTask, setCreatingTask] = useState(false);
-  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<{ taskId: string; labelsToken: string } | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<ProjectTask["column"] | null>(null);
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
   const [viewingTask, setViewingTask] = useState<ProjectTask | null>(null);
-  const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: ProjectTask } | null>(null);
+  const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: ProjectTask; labelsToken: string } | null>(null);
   const [creatingActa, setCreatingActa] = useState(false);
+  const [managingTeam, setManagingTeam] = useState(false);
+  const isCoordinacion = useIsCoordinacion();
   const [featureFilter, setFeatureFilter] = useState("");
   const [columnFilter, setColumnFilter] = useState<KanbanColumn | "">("");
   const [onlyActive, setOnlyActive] = useState(false);
@@ -84,6 +97,18 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const deleteProject = useDeleteProject();
   if (!project) return null;
 
+  // Acciones sin modal propio: su error se muestra en un aviso sobre las pestañas.
+  const inlineMutations = [deleteProject, deleteFeature, deleteTask, moveTask, updateTask];
+  const inlineError = inlineMutations.find((m) => m.isError)?.error ?? null;
+
+  const teamSize = project.team.length;
+  const teamLabel =
+    teamSize === 0
+      ? isCoordinacion
+        ? "Sin equipo · asignar"
+        : "Sin equipo"
+      : `${teamSize} ${teamSize === 1 ? "miembro" : "miembros"}`;
+
   const filteredTasks = project.tasks.filter(
     (t) =>
       (!featureFilter || (featureFilter === NO_FEATURE ? t.featureId === null : t.featureId === featureFilter)) &&
@@ -92,15 +117,16 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   );
 
   function endDrag() {
-    setDraggingTaskId(null);
+    setDragging(null);
     setDragOverColumn(null);
   }
 
   function handleDrop(column: ProjectTask["column"]) {
-    const task = project?.tasks.find((t) => t.id === draggingTaskId);
+    const drag = dragging;
+    const task = project?.tasks.find((t) => t.id === drag?.taskId);
     endDrag();
-    if (!task || task.column === column) return;
-    moveTask.mutate({ task, column: kanbanColumnValue[column] });
+    if (!drag || !task || task.column === column) return;
+    moveTask.mutate({ task, column: kanbanColumnValue[column], labelsToken: drag.labelsToken });
   }
 
   const handleDeleteProject = () => {
@@ -108,23 +134,13 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
     deleteProject.mutate(project.id, { onSuccess: () => router.push("/proyectos") });
   };
 
-  function toggleTaskActive(task: ProjectTask) {
-    updateTask.mutate({
-      taskId: task.id,
-      input: {
-        featureId: task.featureId,
-        name: task.name,
-        type: task.typeValue,
-        column: task.columnValue,
-        active: !task.active,
-        description: task.description,
-      },
-    });
+  function toggleTaskActive(task: ProjectTask, labelsToken: string) {
+    updateTask.mutate({ taskId: task.id, input: { ...taskToUpdateInput(task), active: !task.active }, labelsToken });
   }
 
-  function openTaskMenu(e: React.MouseEvent, task: ProjectTask) {
+  function openTaskMenu(e: React.MouseEvent, task: ProjectTask, labelsToken: string) {
     e.preventDefault();
-    setTaskMenu({ x: e.clientX, y: e.clientY, task });
+    setTaskMenu({ x: e.clientX, y: e.clientY, task, labelsToken });
   }
 
   return (
@@ -138,19 +154,21 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             </div>
             <div style={{ fontSize: 13, color: "var(--text-2)", maxWidth: 560 }}>{project.description}</div>
           </div>
-          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-            <button
-              className="btn-ghost"
-              style={{ fontSize: 12, color: "#c0392b", borderColor: "#c0392b" }}
-              onClick={handleDeleteProject}
-              disabled={deleteProject.isPending}
-            >
-              {deleteProject.isPending ? "Eliminando…" : "Eliminar proyecto"}
-            </button>
-            <button className="btn-primary" style={{ fontSize: 12 }} onClick={() => setEditing(true)}>
-              Editar proyecto
-            </button>
-          </div>
+          {isCoordinacion && (
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <button
+                className="btn-ghost"
+                style={{ fontSize: 12, color: "#c0392b", borderColor: "#c0392b" }}
+                onClick={handleDeleteProject}
+                disabled={deleteProject.isPending}
+              >
+                {deleteProject.isPending ? "Eliminando…" : "Eliminar proyecto"}
+              </button>
+              <button className="btn-primary" style={{ fontSize: 12 }} onClick={() => setEditing(true)}>
+                Editar proyecto
+              </button>
+            </div>
+          )}
         </div>
         <div className="pd-meta-row">
           <div className="pd-meta-item">{project.client}</div>
@@ -160,10 +178,11 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
               <span>{project.progress}% completado</span>
             </div>
           </div>
-          <div className="pd-meta-item">
-            <AvatarStack count={project.teamSize} accentFirst />
-            &nbsp;{project.teamSize} miembros
-          </div>
+          <button type="button" className="pd-meta-item pd-team-btn" onClick={() => setManagingTeam(true)}>
+            <AvatarStack members={project.team} accentFirst />
+            &nbsp;
+            {teamLabel}
+          </button>
           <div className="pd-meta-item">Inicio: {project.startDate}</div>
         </div>
       </div>
@@ -240,6 +259,13 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
         </div>
       </div>
 
+      {inlineError && (
+        <div className="inline-error" role="alert">
+          <span>{errorMessage(inlineError, "No se pudo completar la acción. Intenta de nuevo.")}</span>
+          <button type="button" aria-label="Cerrar aviso" onClick={() => inlineMutations.forEach((m) => m.reset())}>×</button>
+        </div>
+      )}
+
       <div className="card">
         <div className="proj-tabs-bar">
           <button className={`proj-tab${tab === "backlog" ? " active" : ""}`} onClick={() => setTab("backlog")}>
@@ -296,10 +322,6 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
               <button className="btn-xs btn-xs-g" onClick={() => setCreatingTask(true)}>+ Tarea</button>
             </div>
           )}
-          {tab === "kanban" && (
-            <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-            </div>
-          )}
         </div>
 
         {tab === "backlog" && (
@@ -311,7 +333,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                 onClick={() => setViewingFeature(f)}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  setFeatureMenu({ x: e.clientX, y: e.clientY, feature: f });
+                  setFeatureMenu({ x: e.clientX, y: e.clientY, feature: f, labelsToken: project.labelsToken });
                 }}
               >
                 <div className="feat-prio" style={{ background: priorityColor[f.priority] }} title={f.priority} />
@@ -344,7 +366,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                 key={t.id}
                 className={`task-row clickable${t.active ? "" : " inactive"}`}
                 onClick={() => setViewingTask(t)}
-                onContextMenu={(e) => openTaskMenu(e, t)}
+                onContextMenu={(e) => openTaskMenu(e, t, project.labelsToken)}
               >
                 <input
                   type="checkbox"
@@ -352,13 +374,13 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                   checked={t.active}
                   title={t.active ? "Ocultar del kanban" : "Mostrar en kanban"}
                   onClick={(e) => e.stopPropagation()}
-                  onChange={() => toggleTaskActive(t)}
+                  onChange={() => toggleTaskActive(t, project.labelsToken)}
                 />
                 {t.featureId && <span className="task-feat-tag">{t.featureId}</span>}
                 <div className="task-id">{t.id}</div>
                 <div className={`task-name${t.done ? " done" : ""}`}>{t.name}</div>
                 <TaskTypeTag type={t.type} />
-                <div className={`task-ava${t.hasAssignee ? " accent-ava" : ""}`} />
+                <AssigneeAvatar assignee={t.assignee} />
               </div>
             ))}
           </div>
@@ -373,7 +395,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                   key={col.key}
                   className={`kanban-col${dragOverColumn === col.key ? " drag-over" : ""}`}
                   onDragOver={(e) => {
-                    if (!draggingTaskId) return;
+                    if (!dragging) return;
                     e.preventDefault();
                     e.dataTransfer.dropEffect = "move";
                     setDragOverColumn(col.key);
@@ -393,23 +415,23 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                   {tasks.map((t) => (
                     <div
                       key={t.id}
-                      className={`kanban-card${draggingTaskId === t.id ? " dragging" : ""}`}
+                      className={`kanban-card${dragging?.taskId === t.id ? " dragging" : ""}`}
                       style={col.key === "listo" ? { opacity: 0.65 } : undefined}
                       draggable
                       onDragStart={(e) => {
                         e.dataTransfer.effectAllowed = "move";
                         e.dataTransfer.setData("text/plain", t.id);
-                        setDraggingTaskId(t.id);
+                        setDragging({ taskId: t.id, labelsToken: project.labelsToken });
                       }}
                       onDragEnd={endDrag}
                       onClick={() => setViewingTask(t)}
-                      onContextMenu={(e) => openTaskMenu(e, t)}
+                      onContextMenu={(e) => openTaskMenu(e, t, project.labelsToken)}
                     >
                       <div className="kanban-card-id">{t.featureId ? `${t.id} · ${t.featureId}` : t.id}</div>
                       <div className="kanban-card-name">{t.name}</div>
                       <div className="kanban-card-foot">
                         <TaskTypeTag type={t.type} />
-                        <div className={`task-ava${t.hasAssignee ? " accent-ava" : ""}`} />
+                        <AssigneeAvatar assignee={t.assignee} />
                       </div>
                     </div>
                   ))}
@@ -426,24 +448,38 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
       {editing && <EditProjectModal project={project} onClose={() => setEditing(false)} />}
       {creatingFeature && <CreateFeatureModal projectId={project.id} onClose={() => setCreatingFeature(false)} />}
       {editingFeature && (
-        <EditFeatureModal projectId={project.id} feature={editingFeature} onClose={() => setEditingFeature(null)} />
+        <EditFeatureModal
+          projectId={project.id}
+          feature={editingFeature}
+          labelsToken={project.labelsToken}
+          onClose={() => setEditingFeature(null)}
+        />
       )}
       {viewingFeature && (
         <FeatureDetailModal
           projectId={project.id}
           feature={project.features.find((f) => f.id === viewingFeature.id) ?? viewingFeature}
           tasks={project.tasks.filter((t) => t.featureId === viewingFeature.id)}
+          labelsToken={project.labelsToken}
           onClose={() => setViewingFeature(null)}
         />
       )}
       {creatingTask && (
-        <CreateTaskModal projectId={project.id} features={project.features} onClose={() => setCreatingTask(false)} />
+        <CreateTaskModal
+          projectId={project.id}
+          features={project.features}
+          team={project.team}
+          labelsToken={project.labelsToken}
+          onClose={() => setCreatingTask(false)}
+        />
       )}
       {editingTask && (
         <EditTaskModal
           projectId={project.id}
           task={editingTask}
           features={project.features}
+          team={project.team}
+          labelsToken={project.labelsToken}
           onClose={() => setEditingTask(null)}
         />
       )}
@@ -451,10 +487,12 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
         <TaskDetailModal
           projectId={project.id}
           task={project.tasks.find((t) => t.id === viewingTask.id) ?? viewingTask}
+          labelsToken={project.labelsToken}
           onClose={() => setViewingTask(null)}
         />
       )}
       {creatingActa && <CreateActaModal projectId={project.id} onClose={() => setCreatingActa(false)} />}
+      {managingTeam && <ProjectTeamModal project={project} onClose={() => setManagingTeam(false)} />}
       {featureMenu && (
         <ContextMenu
           x={featureMenu.x}
@@ -467,7 +505,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
               danger: true,
               onSelect: () => {
                 if (window.confirm(`¿Eliminar ${featureMenu.feature.id} y sus ${featureMenu.feature.taskCount} tareas?`)) {
-                  deleteFeature.mutate(featureMenu.feature.id);
+                  deleteFeature.mutate({ featureId: featureMenu.feature.id, labelsToken: featureMenu.labelsToken });
                 }
               },
             },
@@ -486,7 +524,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
               danger: true,
               onSelect: () => {
                 if (window.confirm(`¿Eliminar ${taskMenu.task.id}?`)) {
-                  deleteTask.mutate(taskMenu.task.id);
+                  deleteTask.mutate({ taskId: taskMenu.task.id, labelsToken: taskMenu.labelsToken });
                 }
               },
             },
