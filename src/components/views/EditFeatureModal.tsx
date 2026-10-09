@@ -3,18 +3,23 @@
 import { useState } from "react";
 import type { FeatureStatus, Priority } from "@/generated/prisma/enums";
 import { Modal } from "@/components/ui/Modal";
+import { errorMessage } from "@/lib/api/http";
 import { FEATURE_STATUS_OPTIONS, PRIORITY_OPTIONS } from "@/lib/api/status";
 import { useUpdateFeature, type ProjectFeature } from "@/lib/api/projects";
 
 export function EditFeatureModal({
   projectId,
   feature,
+  labelsToken: openedLabelsToken,
   onClose,
 }: {
   projectId: string;
   feature: ProjectFeature;
+  labelsToken: string;
   onClose: () => void;
 }) {
+  // Se fija al abrir el modal: los labels que se editan acá salen de ese snapshot.
+  const [labelsToken] = useState(openedLabelsToken);
   const [name, setName] = useState(feature.name);
   const [priority, setPriority] = useState<Priority>(feature.priorityValue);
   const [status, setStatus] = useState<FeatureStatus>(feature.statusValue);
@@ -24,7 +29,7 @@ export function EditFeatureModal({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     mutation.mutate(
-      { featureId: feature.id, input: { name, priority, status, description: feature.description } },
+      { featureId: feature.id, input: { name, priority, status, description: feature.description }, labelsToken },
       { onSuccess: onClose },
     );
   }
@@ -70,7 +75,9 @@ export function EditFeatureModal({
           </div>
         </div>
 
-        {mutation.isError && <div className="modal-error">No se pudo guardar. Intenta de nuevo.</div>}
+        {mutation.isError && (
+          <div className="modal-error">{errorMessage(mutation.error, "No se pudo guardar. Intenta de nuevo.")}</div>
+        )}
 
         <div className="modal-footer" style={{ padding: 0, border: "none", marginTop: 4 }}>
           <button type="button" className="btn-ghost" onClick={onClose}>Cancelar</button>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ProjectStatus } from "@/generated/prisma/enums";
 import { Modal } from "@/components/ui/Modal";
+import { errorMessage } from "@/lib/api/http";
 import { toISODateInput } from "@/lib/api/format";
 import { PROJECT_STATUS_OPTIONS } from "@/lib/api/status";
 import { useCreateProject } from "@/lib/api/projects";
@@ -81,7 +82,11 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        {mutation.isError && <div className="modal-error">No se pudo crear el proyecto. Intenta de nuevo.</div>}
+        {mutation.isError && (
+          <div className="modal-error">
+            {errorMessage(mutation.error, "No se pudo crear el proyecto. Intenta de nuevo.")}
+          </div>
+        )}
 
         <div className="modal-footer" style={{ padding: 0, border: "none", marginTop: 4 }}>
           <button type="button" className="btn-ghost" onClick={onClose}>Cancelar</button>

@@ -1,10 +1,19 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { DocSlotType, FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireMember, requireCoordinacion } from "@/lib/auth/guards";
-import { formatDayMonth, formatDayMonthYear, formatMonthYear, parseISODateInput, toISODateInput } from "@/lib/api/format";
+import { ApiError } from "@/lib/api/errors";
+import {
+  formatDayMonth,
+  formatDayMonthYear,
+  formatMonthYear,
+  getInitials,
+  parseISODateInput,
+  toISODateInput,
+} from "@/lib/api/format";
 import {
   docSlotBadgeColor,
   docSlotIcon,
@@ -18,6 +27,7 @@ import {
   taskTypeLabel,
 } from "@/lib/api/status";
 import type {
+  AddProjectMemberInput,
   CreateActaInput,
   CreateFeatureInput,
   CreateProjectInput,
@@ -25,6 +35,7 @@ import type {
   ProjectDetail,
   ProjectDocDetail,
   ProjectListItem,
+  ProjectTeamMember,
   UpdateFeatureInput,
   UpdateProjectInput,
   UpdateTaskInput,
@@ -49,13 +60,116 @@ function progressFromTasks(tasks: { column: KanbanColumn }[]): number {
   return Math.round((done / tasks.length) * 100);
 }
 
+const teamInclude = {
+  orderBy: { member: { name: "asc" } },
+  include: { member: { select: { id: true, name: true } } },
+} satisfies Prisma.Project$membersArgs;
+
+function toTeam(members: Prisma.ProjectMemberGetPayload<{ include: typeof teamInclude.include }>[]): ProjectTeamMember[] {
+  return members.map((pm) => ({
+    id: pm.member.id,
+    name: pm.member.name,
+    initials: getInitials(pm.member.name),
+    role: pm.role,
+  }));
+}
+
+// ─── Labels ───
+//
+// La API direcciona features y tareas por label (F-01, T-01), y esos labels se
+// renumeran al borrar. Para que un cliente con un snapshot viejo no edite o
+// borre la entidad equivocada, cada ProjectDetail lleva un labelsToken: la
+// huella de los pares label→id hasta el label más alto que vio ese snapshot.
+// Las mutaciones que reciben labels lo mandan en If-Match.
+//
+// Crear entidades no invalida el token (los labels nuevos quedan por encima del
+// máximo del snapshot); cualquier borrado de algo que el cliente vio, sí.
+
+type LabelledRow = { id: string; label: string };
+
+function labelNumber(prefix: string, label: string): number {
+  const match = new RegExp(`^${prefix}-(\\d+)$`).exec(label);
+  return match ? Number(match[1]) : 0;
+}
+
+function maxLabelNumber(prefix: string, rows: LabelledRow[]): number {
+  return rows.reduce((max, row) => Math.max(max, labelNumber(prefix, row.label)), 0);
+}
+
+function labelsDigest(features: LabelledRow[], tasks: LabelledRow[], maxFeature: number, maxTask: number): string {
+  const pairs = [
+    ...features.filter((f) => labelNumber("F", f.label) <= maxFeature),
+    ...tasks.filter((t) => labelNumber("T", t.label) <= maxTask),
+  ]
+    .map((row) => `${row.label}=${row.id}`)
+    .sort();
+  return createHash("sha256").update(pairs.join("\n")).digest("base64url").slice(0, 22);
+}
+
+function labelsToken(features: LabelledRow[], tasks: LabelledRow[]): string {
+  const maxFeature = maxLabelNumber("F", features);
+  const maxTask = maxLabelNumber("T", tasks);
+  return `${maxFeature}.${maxTask}.${labelsDigest(features, tasks, maxFeature, maxTask)}`;
+}
+
+interface ResolvedLabels {
+  featureId: (label: string) => string | undefined;
+  taskId: (label: string) => string | undefined;
+}
+
+/**
+ * Verifica el If-Match de una mutación y devuelve la resolución label→id vigente.
+ * Quien llama debe escribir por id, no por label: así, si otro borrado renumera
+ * entre esta lectura y la escritura, la escritura sigue cayendo en la entidad
+ * que el cliente vio.
+ */
+async function resolveLabels(projectId: string, ifMatch: string | null): Promise<ResolvedLabels> {
+  if (!ifMatch) {
+    throw new ApiError(428, "PRECONDITION_REQUIRED", "Falta el encabezado If-Match con el labelsToken del proyecto");
+  }
+
+  const [features, tasks] = await Promise.all([
+    prisma.feature.findMany({ where: { projectId }, select: { id: true, label: true } }),
+    prisma.task.findMany({ where: { projectId }, select: { id: true, label: true } }),
+  ]);
+
+  const match = /^(\d+)\.(\d+)\.([\w-]+)$/.exec(ifMatch.trim().replace(/^(W\/)?"(.*)"$/, "$2"));
+  if (!match || labelsDigest(features, tasks, Number(match[1]), Number(match[2])) !== match[3]) {
+    throw new ApiError(
+      412,
+      "LABELS_CHANGED",
+      "Alguien eliminó features o tareas y sus identificadores cambiaron. Se recargó el proyecto: vuelve a abrir lo que estabas editando e inténtalo de nuevo.",
+    );
+  }
+
+  const featureIds = new Map(features.map((f) => [f.label, f.id]));
+  const taskIds = new Map(tasks.map((t) => [t.label, t.id]));
+  return { featureId: (label) => featureIds.get(label), taskId: (label) => taskIds.get(label) };
+}
+
+/**
+ * Las tareas solo se asignan a miembros del equipo del proyecto. Se valida al
+ * asignar, no en cada edición: una asignación previa a esta regla no debe
+ * bloquear, por ejemplo, mover la tarea en el kanban.
+ */
+async function assertAssignable(projectId: string, assigneeId: string | null): Promise<void> {
+  if (!assigneeId) return;
+  const membership = await prisma.projectMember.findUnique({
+    where: { projectId_memberId: { projectId, memberId: assigneeId } },
+    select: { memberId: true },
+  });
+  if (!membership) {
+    throw new ApiError(422, "NOT_PROJECT_MEMBER", "Solo se puede asignar a miembros del equipo del proyecto");
+  }
+}
+
 export async function getProjects(): Promise<ProjectListItem[]> {
   await requireMember();
 
   const projects = await prisma.project.findMany({
     orderBy: { startDate: "desc" },
     include: {
-      members: true,
+      members: teamInclude,
       tasks: true,
     },
   });
@@ -71,6 +185,7 @@ export async function getProjects(): Promise<ProjectListItem[]> {
     statusValue: project.status,
     progress: progressFromTasks(project.tasks),
     teamSize: project.members.length,
+    team: toTeam(project.members),
     startDate: formatMonthYear(project.startDate),
     startDateISO: toISODateInput(project.startDate),
     archived: project.archived,
@@ -83,9 +198,9 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
   const project = await prisma.project.findUnique({
     where: { id },
     include: {
-      members: true,
+      members: teamInclude,
       features: { orderBy: { label: "asc" } },
-      tasks: { orderBy: { label: "asc" } },
+      tasks: { orderBy: { label: "asc" }, include: { assignee: { select: { id: true, name: true } } } },
       documents: { include: { author: true } },
       actas: { orderBy: { date: "asc" } },
     },
@@ -110,9 +225,11 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
     statusValue: project.status,
     progress: progressFromTasks(project.tasks),
     teamSize: project.members.length,
+    team: toTeam(project.members),
     startDate: formatMonthYear(project.startDate),
     startDateISO: toISODateInput(project.startDate),
     archived: project.archived,
+    labelsToken: labelsToken(project.features, project.tasks),
     docs: [...project.documents]
       .sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot))
       .map((doc) => ({
@@ -146,7 +263,9 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
       type: taskTypeLabel[task.type],
       typeValue: task.type,
       done: task.column === "LISTO",
-      hasAssignee: task.assigneeId !== null,
+      assignee: task.assignee
+        ? { id: task.assignee.id, name: task.assignee.name, initials: getInitials(task.assignee.name) }
+        : null,
       column: kanbanColumnLabel[task.column],
       columnValue: task.column,
       active: task.active,
@@ -375,11 +494,6 @@ export function parseCreateFeatureInput(body: unknown): CreateFeatureInput | nul
   return { name, priority: priority as Priority };
 }
 
-function labelNumber(prefix: string, label: string): number {
-  const match = new RegExp(`^${prefix}-(\\d+)$`).exec(label);
-  return match ? Number(match[1]) : 0;
-}
-
 function nextFeatureLabel(existingLabels: string[]): string {
   const nextNumber = existingLabels.reduce((max, label) => Math.max(max, labelNumber("F", label)), 0) + 1;
   return `F-${String(nextNumber).padStart(2, "0")}`;
@@ -431,32 +545,41 @@ export function parseUpdateFeatureInput(body: unknown): UpdateFeatureInput | nul
   return { name, priority: priority as Priority, status: status as FeatureStatus, description };
 }
 
-export async function updateFeature(projectId: string, label: string, input: UpdateFeatureInput): Promise<ProjectDetail | null> {
+export async function updateFeature(
+  projectId: string,
+  label: string,
+  input: UpdateFeatureInput,
+  ifMatch: string | null,
+): Promise<ProjectDetail | null> {
   await requireMember();
 
-  const existing = await prisma.feature.findUnique({ where: { projectId_label: { projectId, label } } });
-  if (!existing) return null;
+  const id = (await resolveLabels(projectId, ifMatch)).featureId(label);
+  if (!id) return null;
 
-  await prisma.feature.update({
-    where: { projectId_label: { projectId, label } },
+  const { count } = await prisma.feature.updateMany({
+    where: { id },
     data: { name: input.name, priority: input.priority, status: input.status, description: input.description },
   });
+  if (count === 0) return null;
 
   return getProject(projectId);
 }
 
-export async function deleteFeature(projectId: string, label: string): Promise<ProjectDetail | null> {
+export async function deleteFeature(projectId: string, label: string, ifMatch: string | null): Promise<ProjectDetail | null> {
   await requireMember();
 
-  const existing = await prisma.feature.findUnique({ where: { projectId_label: { projectId, label } } });
-  if (!existing) return null;
+  const id = (await resolveLabels(projectId, ifMatch)).featureId(label);
+  if (!id) return null;
 
-  await prisma.$transaction(async (tx) => {
-    await tx.task.deleteMany({ where: { featureId: existing.id } });
-    await tx.feature.delete({ where: { projectId_label: { projectId, label } } });
+  const deleted = await prisma.$transaction(async (tx) => {
+    await tx.task.deleteMany({ where: { featureId: id } });
+    const { count } = await tx.feature.deleteMany({ where: { id } });
+    if (count === 0) return false;
     await renumberTaskLabels(tx, projectId);
     await renumberFeatureLabels(tx, projectId);
+    return true;
   });
+  if (!deleted) return null;
 
   return getProject(projectId);
 }
@@ -467,6 +590,12 @@ export function parseCreateTaskInput(body: unknown): CreateTaskInput | null {
 
   const featureId = typeof b.featureId === "string" ? b.featureId.trim() || null : null;
 
+  // Obligatorio aunque sea null: un PATCH de un cliente que no conoce el campo
+  // desasignaría la tarea sin querer.
+  const rawAssigneeId = b.assigneeId;
+  if (rawAssigneeId !== null && typeof rawAssigneeId !== "string") return null;
+  const assigneeId = rawAssigneeId?.trim() || null;
+
   const name = typeof b.name === "string" ? b.name.trim() : "";
   if (!name) return null;
 
@@ -476,7 +605,7 @@ export function parseCreateTaskInput(body: unknown): CreateTaskInput | null {
   const column = typeof b.column === "string" ? b.column : "";
   if (!(Object.values(KanbanColumn) as string[]).includes(column)) return null;
 
-  return { featureId, name, type: type as TaskType, column: column as KanbanColumn };
+  return { featureId, assigneeId, name, type: type as TaskType, column: column as KanbanColumn };
 }
 
 function nextTaskLabel(existingLabels: string[]): string {
@@ -496,20 +625,24 @@ async function renumberTaskLabels(tx: Prisma.TransactionClient, projectId: strin
   }
 }
 
-export async function createTask(projectId: string, input: CreateTaskInput): Promise<ProjectDetail | null> {
+export async function createTask(
+  projectId: string,
+  input: CreateTaskInput,
+  ifMatch: string | null,
+): Promise<ProjectDetail | null> {
   await requireMember();
 
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
   if (!project) return null;
 
+  // Solo una tarea con feature referencia un label; sin feature no hay nada que validar.
   let featureId: string | null = null;
   if (input.featureId) {
-    const feature = await prisma.feature.findUnique({
-      where: { projectId_label: { projectId, label: input.featureId } },
-    });
-    if (!feature) return null;
-    featureId = feature.id;
+    const resolved = (await resolveLabels(projectId, ifMatch)).featureId(input.featureId);
+    if (!resolved) return null;
+    featureId = resolved;
   }
+  await assertAssignable(projectId, input.assigneeId);
 
   const existing = await prisma.task.findMany({
     where: { projectId },
@@ -522,6 +655,7 @@ export async function createTask(projectId: string, input: CreateTaskInput): Pro
       label,
       projectId,
       featureId,
+      assigneeId: input.assigneeId,
       name: input.name,
       type: input.type,
       active: true,
@@ -543,25 +677,34 @@ export function parseUpdateTaskInput(body: unknown): UpdateTaskInput | null {
   return { ...base, active, description };
 }
 
-export async function updateTask(projectId: string, label: string, input: UpdateTaskInput): Promise<ProjectDetail | null> {
+export async function updateTask(
+  projectId: string,
+  label: string,
+  input: UpdateTaskInput,
+  ifMatch: string | null,
+): Promise<ProjectDetail | null> {
   await requireMember();
 
-  const existing = await prisma.task.findUnique({ where: { projectId_label: { projectId, label } } });
-  if (!existing) return null;
+  const labels = await resolveLabels(projectId, ifMatch);
+  const id = labels.taskId(label);
+  if (!id) return null;
 
   let featureId: string | null = null;
   if (input.featureId) {
-    const feature = await prisma.feature.findUnique({
-      where: { projectId_label: { projectId, label: input.featureId } },
-    });
-    if (!feature) return null;
-    featureId = feature.id;
+    const resolved = labels.featureId(input.featureId);
+    if (!resolved) return null;
+    featureId = resolved;
   }
 
-  await prisma.task.update({
-    where: { projectId_label: { projectId, label } },
+  const current = await prisma.task.findUnique({ where: { id }, select: { assigneeId: true } });
+  if (!current) return null;
+  if (input.assigneeId !== current.assigneeId) await assertAssignable(projectId, input.assigneeId);
+
+  const { count } = await prisma.task.updateMany({
+    where: { id },
     data: {
       featureId,
+      assigneeId: input.assigneeId,
       name: input.name,
       type: input.type,
       column: input.column,
@@ -569,20 +712,107 @@ export async function updateTask(projectId: string, label: string, input: Update
       description: input.description,
     },
   });
+  if (count === 0) return null;
 
   return getProject(projectId);
 }
 
-export async function deleteTask(projectId: string, label: string): Promise<ProjectDetail | null> {
+export async function deleteTask(projectId: string, label: string, ifMatch: string | null): Promise<ProjectDetail | null> {
   await requireMember();
 
-  const existing = await prisma.task.findUnique({ where: { projectId_label: { projectId, label } } });
-  if (!existing) return null;
+  const id = (await resolveLabels(projectId, ifMatch)).taskId(label);
+  if (!id) return null;
 
-  await prisma.$transaction(async (tx) => {
-    await tx.task.delete({ where: { projectId_label: { projectId, label } } });
+  const deleted = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.task.deleteMany({ where: { id } });
+    if (count === 0) return false;
     await renumberTaskLabels(tx, projectId);
+    return true;
   });
+  if (!deleted) return null;
+
+  return getProject(projectId);
+}
+
+// ─── Equipo ───
+//
+// Componer el equipo es una decisión de proyecto, igual que editarlo: solo
+// coordinación. La asignación de tareas, en cambio, la puede hacer cualquier
+// miembro, pero restringida a quienes están en el equipo (assertAssignable).
+
+const MAX_ROLE_LENGTH = 60;
+
+function parseRole(value: unknown): string | null {
+  const role = typeof value === "string" ? value.trim() : "";
+  return role && role.length <= MAX_ROLE_LENGTH ? role : null;
+}
+
+export function parseAddProjectMemberInput(body: unknown): AddProjectMemberInput | null {
+  if (typeof body !== "object" || body === null) return null;
+  const b = body as Record<string, unknown>;
+
+  const memberId = typeof b.memberId === "string" ? b.memberId.trim() : "";
+  const role = parseRole(b.role);
+  if (!memberId || !role) return null;
+
+  return { memberId, role };
+}
+
+export function parseUpdateProjectMemberInput(body: unknown): { role: string } | null {
+  if (typeof body !== "object" || body === null) return null;
+  const role = parseRole((body as Record<string, unknown>).role);
+  return role ? { role } : null;
+}
+
+export async function addProjectMember(projectId: string, input: AddProjectMemberInput): Promise<ProjectDetail | null> {
+  await requireCoordinacion();
+
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) return null;
+
+  const member = await prisma.member.findUnique({
+    where: { id: input.memberId },
+    select: { isVerifiedByCoordinator: true },
+  });
+  if (!member?.isVerifiedByCoordinator) {
+    throw new ApiError(422, "INVALID_MEMBER", "El miembro no existe o su cuenta no está aprobada");
+  }
+
+  const existing = await prisma.projectMember.findUnique({
+    where: { projectId_memberId: { projectId, memberId: input.memberId } },
+    select: { memberId: true },
+  });
+  if (existing) throw new ApiError(409, "ALREADY_PROJECT_MEMBER", "Esa persona ya es parte del equipo");
+
+  await prisma.projectMember.create({ data: { projectId, memberId: input.memberId, role: input.role } });
+
+  return getProject(projectId);
+}
+
+export async function updateProjectMemberRole(
+  projectId: string,
+  memberId: string,
+  role: string,
+): Promise<ProjectDetail | null> {
+  await requireCoordinacion();
+
+  const { count } = await prisma.projectMember.updateMany({ where: { projectId, memberId }, data: { role } });
+  if (count === 0) return null;
+
+  return getProject(projectId);
+}
+
+/** Quitar a alguien del equipo también lo desasigna de las tareas de ese proyecto. */
+export async function removeProjectMember(projectId: string, memberId: string): Promise<ProjectDetail | null> {
+  await requireCoordinacion();
+
+  const removed = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.projectMember.deleteMany({ where: { projectId, memberId } });
+    if (count === 0) return false;
+    await tx.task.updateMany({ where: { projectId, assigneeId: memberId }, data: { assigneeId: null } });
+    return true;
+  });
+  if (!removed) return null;
 
   return getProject(projectId);
 }

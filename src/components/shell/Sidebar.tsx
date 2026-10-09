@@ -16,6 +16,7 @@ import {
 } from "@/components/icons";
 import { UserMenu } from "@/components/shell/UserMenu";
 import type { CurrentMember } from "@/lib/auth/current-member";
+import { useProjects } from "@/lib/api/projects";
 
 interface NavItem {
   label: string;
@@ -27,7 +28,7 @@ interface NavItem {
 
 const principal: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: <HomeIcon className="nav-icon" /> },
-  { label: "Proyectos", href: "/proyectos", icon: <FolderIcon className="nav-icon" />, count: 4, matchPrefix: "/proyectos" },
+  { label: "Proyectos", href: "/proyectos", icon: <FolderIcon className="nav-icon" />, matchPrefix: "/proyectos" },
   { label: "Reporte", href: "/tiempo", icon: <ClockIcon className="nav-icon" /> },
   { label: "Analíticas", icon: <AnalyticsIcon className="nav-icon" /> },
 ];
@@ -64,6 +65,8 @@ function NavRow({ item, active }: { item: NavItem; active: boolean }) {
 
 export function Sidebar({ member }: { member: CurrentMember }) {
   const pathname = usePathname();
+  const { data: projects } = useProjects();
+  const activeProjects = projects?.filter((p) => !p.archived).length;
 
   const isActive = (item: NavItem) =>
     !!item.matchPrefix && pathname.startsWith(item.matchPrefix);
@@ -81,7 +84,11 @@ export function Sidebar({ member }: { member: CurrentMember }) {
         <div className="nav-section">
           <div className="nav-section-label">Principal</div>
           {principal.map((item) => (
-            <NavRow key={item.label} item={item} active={isActive(item)} />
+            <NavRow
+              key={item.label}
+              item={item.href === "/proyectos" ? { ...item, count: activeProjects } : item}
+              active={isActive(item)}
+            />
           ))}
         </div>
 

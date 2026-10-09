@@ -2,21 +2,27 @@
 
 import { useState } from "react";
 import { Modal } from "@/components/ui/Modal";
+import { errorMessage } from "@/lib/api/http";
 import { Badge } from "@/components/ui/Badge";
 import { TaskTypeTag } from "@/components/ui/TaskTypeTag";
+import { AssigneeAvatar } from "@/components/ui/Avatar";
 import { useUpdateFeature, type ProjectFeature, type ProjectTask } from "@/lib/api/projects";
 
 export function FeatureDetailModal({
   projectId,
   feature,
   tasks,
+  labelsToken: openedLabelsToken,
   onClose,
 }: {
   projectId: string;
   feature: ProjectFeature;
   tasks: ProjectTask[];
+  labelsToken: string;
   onClose: () => void;
 }) {
+  // Se fija al abrir el modal: los labels que se editan acá salen de ese snapshot.
+  const [labelsToken] = useState(openedLabelsToken);
   const [description, setDescription] = useState(feature.description ?? "");
 
   const mutation = useUpdateFeature(projectId);
@@ -31,6 +37,7 @@ export function FeatureDetailModal({
         status: feature.statusValue,
         description: description.trim() || null,
       },
+      labelsToken,
     });
   }
 
@@ -54,6 +61,7 @@ export function FeatureDetailModal({
                 <div className="task-id">{t.id}</div>
                 <div className={`task-name${t.done ? " done" : ""}`}>{t.name}</div>
                 <TaskTypeTag type={t.type} />
+                <AssigneeAvatar assignee={t.assignee} />
               </div>
             ))}
           </div>
@@ -71,7 +79,9 @@ export function FeatureDetailModal({
           />
         </div>
 
-        {mutation.isError && <div className="modal-error">No se pudo guardar. Intenta de nuevo.</div>}
+        {mutation.isError && (
+          <div className="modal-error">{errorMessage(mutation.error, "No se pudo guardar. Intenta de nuevo.")}</div>
+        )}
 
         <div className="modal-footer" style={{ padding: 0, border: "none", marginTop: 4 }}>
           <button type="submit" className="btn-primary" disabled={mutation.isPending}>

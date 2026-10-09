@@ -4,26 +4,40 @@ import { useState } from "react";
 import type { TaskType } from "@/generated/prisma/enums";
 import { Modal } from "@/components/ui/Modal";
 import { TASK_TYPE_OPTIONS } from "@/lib/api/status";
-import { useCreateTask, type ProjectFeature } from "@/lib/api/projects";
+import { errorMessage } from "@/lib/api/http";
+import { useCreateTask, type ProjectFeature, type ProjectTeamMember } from "@/lib/api/projects";
 
 export function CreateTaskModal({
   projectId,
   features,
+  team,
+  labelsToken: openedLabelsToken,
   onClose,
 }: {
   projectId: string;
   features: ProjectFeature[];
+  team: ProjectTeamMember[];
+  labelsToken: string;
   onClose: () => void;
 }) {
+  // Se fija al abrir el modal: los labels que se editan acá salen de ese snapshot.
+  const [labelsToken] = useState(openedLabelsToken);
   const [featureId, setFeatureId] = useState(features[0]?.id ?? "");
   const [name, setName] = useState("");
   const [type, setType] = useState<TaskType>("FEATURE");
+  const [assigneeId, setAssigneeId] = useState("");
 
   const mutation = useCreateTask(projectId);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    mutation.mutate({ featureId: featureId || null, name, type, column: "PENDIENTE" }, { onSuccess: onClose });
+    mutation.mutate(
+      {
+        input: { featureId: featureId || null, assigneeId: assigneeId || null, name, type, column: "PENDIENTE" },
+        labelsToken,
+      },
+      { onSuccess: onClose },
+    );
   }
 
   return (
@@ -59,7 +73,22 @@ export function CreateTaskModal({
           </select>
         </div>
 
-        {mutation.isError && <div className="modal-error">No se pudo crear la tarea. Intenta de nuevo.</div>}
+        <div className="form-field">
+          <div className="f-label">Asignada a</div>
+          <select className="field-select" value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
+            <option value="">Sin asignar</option>
+            {team.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+          {team.length === 0 && (
+            <div className="field-hint">Agrega personas al equipo del proyecto para poder asignar tareas.</div>
+          )}
+        </div>
+
+        {mutation.isError && (
+          <div className="modal-error">{errorMessage(mutation.error, "No se pudo crear la tarea. Intenta de nuevo.")}</div>
+        )}
 
         <div className="modal-footer" style={{ padding: 0, border: "none", marginTop: 4 }}>
           <button type="button" className="btn-ghost" onClick={onClose}>Cancelar</button>
