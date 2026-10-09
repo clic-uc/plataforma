@@ -12,6 +12,8 @@ tree that does not match `pnpm-lock.yaml`.
 pnpm dev                    # Dev server at http://localhost:3000
 pnpm build                  # Production build
 pnpm lint                   # ESLint
+pnpm typecheck              # next typegen + tsc --noEmit
+pnpm test                   # Vitest, single run (pnpm test:watch for watch mode)
 pnpm exec prisma generate   # Regenerate the Prisma client into src/generated/prisma
 pnpm exec prisma migrate dev --name <name>
 pnpm exec prisma db seed    # Wipes and reseeds demo data (see the caveat below)
@@ -26,7 +28,15 @@ for one-off tools).
 `prisma db seed` deletes only members with no OAuth `Account` — the demo ones. A real account's row
 is its identity, so deleting it would delete the person and their sessions.
 
-There is no test suite configured yet.
+Tests are **Vitest**, colocated as `src/**/*.test.ts`, running in a Node environment. They are
+unit tests: there is no test database. `server-only` is aliased to an empty stub in
+`vitest.config.mts`, so `.server.ts` modules can be imported directly; mock `@/lib/prisma` and
+`@/lib/auth/guards` with `vi.mock` (see `src/lib/api/projects.server.test.ts`). Prefer pulling pure
+logic into its own module, as with `src/lib/api/labels.ts`, over mocking Prisma.
+
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, tests and build on every PR and push to `dev`
+and `main`. It needs no secrets: the build does not touch the database, and the Better Auth variables
+it sets are placeholders.
 
 ## Stack
 

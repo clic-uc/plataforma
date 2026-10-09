@@ -46,6 +46,18 @@ echo "UPDATE \"Member\"
       WHERE email = 'tu@correo.com';" | pnpm exec prisma db execute --stdin
 ```
 Tambien se puede hacer directamente desde Neon o desde Prisma Studio
+
+## Tests y CI
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+```
+
+GitHub Actions corre esos tres comandos y `pnpm build` en cada PR y en cada push a `dev` y `main`
+(`.github/workflows/ci.yml`). No usa secrets ni toca la base de datos.
+
 ## Más
 
 - `CLAUDE.md` — arquitectura: la separación `.ts` / `.server.ts`, dónde se aplican los guards de
