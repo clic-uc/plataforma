@@ -68,10 +68,11 @@ one `useState` per field. Follow those conventions rather than introducing depen
 
 Each domain has two files in `src/lib/api/`:
 
-- `projects.ts`, `members.ts`, `events.ts` — client-safe. Types, `fetch()` wrappers, TanStack Query
-  hooks and query-key factories.
-- `projects.server.ts`, `members.server.ts`, `events.server.ts` — the **only** three files that
-  import `@/lib/prisma`. Prisma queries plus mapping to view models. All carry `import "server-only"`.
+- `projects.ts`, `members.ts`, `events.ts`, `tiempo.ts` — client-safe. Types, `fetch()` wrappers,
+  TanStack Query hooks and query-key factories.
+- `projects.server.ts`, `members.server.ts`, `events.server.ts`, `tiempo.server.ts` — the **only**
+  files in `src/lib/api` that import `@/lib/prisma` (besides `src/lib/auth*`). Prisma queries plus
+  mapping to view models. All carry `import "server-only"`.
 
 Route handlers in `src/app/api/**` are thin: they parse params and delegate. Server pages prefetch
 with the `.server.ts` function and ship a dehydrated cache through `<HydrationBoundary>`; the client
@@ -87,6 +88,10 @@ Calendar events (`/calendario`) keep timed events as UTC instants shown in the b
 and all-day events as dates at midnight UTC read with UTC getters, so they do not slip a day in
 Chile. That rule and the rest of the date math live in `src/lib/calendar.ts`, which is pure and
 tested; anything that depends on the browser's time zone renders after hydration.
+
+StandUps and logged hours (`/tiempo`) are per person and per week (Monday–Sunday in
+`America/Santiago`); `Standup.weekStart` and `TimeEntry.date` follow the same midnight-UTC rule as
+all-day events. Week math and the hours chart aggregation live in `src/lib/tiempo.ts`.
 
 ### Authentication and authorization
 
@@ -141,5 +146,5 @@ Two consequences worth knowing:
 ## Known state
 
 `docs/TODO.md` is the source of truth for gaps and for decisions that were made deliberately (rather
-than forgotten). Notably, the Dashboard and Tiempo views still import mock data directly from
+than forgotten). Notably, the Dashboard view still imports mock data directly from
 `prisma/seed/data/*`.

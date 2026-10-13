@@ -1,10 +1,9 @@
 ## Fuera de alcance mayor
 
-- **Dashboard y Tiempo siguen 100% hardcodeados** (`prisma/seed/data/dashboard.ts` y `tiempo.ts`,
-  importados directo por `DashboardView`, `DashboardCalendarCard` y `TiempoView`). No hay modelos
-  en el schema para feed de actividad ni registro de horas (`ActivityFeedItem`, `TimeEntry` o
-  similar). El calendario ya tiene modelo y vista propia (`/calendario`, ver abajo), pero la tarjeta
-  `DashboardCalendarCard` sigue mostrando el mock: conectarla a `useEvents` queda pendiente.
+- **El Dashboard sigue 100% hardcodeado** (`prisma/seed/data/dashboard.ts`, importado directo por
+  `DashboardView` y `DashboardCalendarCard`). No hay modelo para el feed de actividad
+  (`ActivityFeedItem` o similar). El calendario y las horas ya tienen modelo y vista propia
+  (`/calendario` y `/tiempo`, ver abajo), pero las tarjetas del dashboard siguen mostrando el mock.
 
 ## Calendario
 
@@ -35,6 +34,45 @@ Pendiente:
 - Filtros por proyecto o tipo (el `projectId` ya está para eso).
 - Asistentes y RSVP, recordatorios, exportar `.ics` o sincronizar con Google Calendar.
 - Conectar `DashboardCalendarCard` a datos reales y agregarle un link "Ver calendario →".
+
+## Tiempo y StandUp
+
+Vista `/tiempo`: StandUp semanal, gráfico de horas de la semana e historial de horas.
+
+Decisiones:
+
+- **Un StandUp por persona y semana** (`@@unique([memberId, weekStart])`), lunes a domingo en
+  `America/Santiago`. Reenviarlo en la misma semana lo reemplaza. Se acepta la semana en curso y la
+  anterior (para un formulario abierto el domingo que se envía pasada la medianoche); cualquier otra
+  responde 422 `WEEK_CLOSED`. Lleva "¿Qué hice?" (`text`, obligatorio) y "¿Qué aprendí?" (`learned`,
+  opcional). El perfil muestra los 6 más recientes.
+- **Las horas son personales.** `TimeEntry` (fecha, proyecto, minutos, descripción) solo lo ve,
+  edita o borra quien lo registró; uno ajeno responde 404 igual que uno inexistente. Coordinación no
+  ve las horas del equipo (pendiente, abajo).
+- **Minutos en tramos de 15**, de 15 min a 24 h por registro. No se valida que la suma de un día
+  no pase de 24 h. No se registran horas a futuro (según el "hoy" de Chile).
+- **Cualquier proyecto existente**: no hace falta ser parte del equipo, en línea con el resto de la
+  autorización (ver Autenticación). El formulario no ofrece los archivados.
+- **Borrar un proyecto borra sus horas** (`deleteProject`), igual que sus tareas. Para conservarlas,
+  archivarlo.
+- **Fechas**: `Standup.weekStart` y `TimeEntry.date` son fechas sin hora a medianoche UTC, como los
+  eventos de día completo; en la API viajan como `"YYYY-MM-DD"`. La regla vive en `src/lib/tiempo.ts`.
+- **Gráfico**: columnas apiladas por día y proyecto, colores `--series-1…6` (paleta categórica
+  validada para daltonismo en claro y oscuro). El color se asigna por nombre de proyecto, no por
+  horas, y del séptimo proyecto en adelante se agrupan en "Otros". La leyenda lleva el total por
+  proyecto y el historial es la vista de tabla.
+- El historial sin filtro de semana muestra los 200 registros más recientes; el filtro de semana
+  ofrece las últimas 12.
+- La migración `20261014120000_standup_week_time_entries` convirtió la fecha de los standups
+  existentes en el lunes de su semana y, si alguien tenía dos en la misma, dejó el más reciente.
+
+Pendiente:
+
+- Vista de coordinación: horas y StandUps del equipo por persona o proyecto, y quién está pendiente.
+- Recordatorio del StandUp (notificación o correo) y badge en el sidebar.
+- Vincular horas a tareas del kanban (hoy solo proyecto + descripción).
+- Exportar horas (CSV) para informes a clientes.
+- La racha (`Member.streak`) podría derivarse de semanas consecutivas con StandUp; hoy no se calcula.
 
 ## Miembros
 
