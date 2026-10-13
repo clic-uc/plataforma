@@ -289,6 +289,7 @@ export async function deleteProject(id: string): Promise<boolean> {
   if (!exists) return false;
 
   await prisma.$transaction([
+    prisma.timeEntry.deleteMany({ where: { projectId: id } }),
     prisma.task.deleteMany({ where: { projectId: id } }),
     prisma.feature.deleteMany({ where: { projectId: id } }),
     prisma.document.deleteMany({ where: { projectId: id } }),

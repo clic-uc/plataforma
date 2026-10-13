@@ -39,8 +39,10 @@ export interface MemberAchievementView {
 }
 
 export interface MemberStandupView {
-  date: string;
+  /** "12 – 18 oct 2026" */
+  week: string;
   text: string;
+  learned: string | null;
 }
 
 export interface MemberDetail extends MemberListItem {
