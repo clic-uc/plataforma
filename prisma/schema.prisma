@@ -109,6 +109,7 @@ model Member {
   assignedTasks     Task[]              @relation("TaskAssignee")
   achievements      MemberAchievement[]
   standups          Standup[]
+  timeEntries       TimeEntry[]
   documentsAuthored Document[]          @relation("DocumentAuthor")
   eventsCreated     CalendarEvent[]     @relation("EventCreator")
 }
@@ -127,8 +128,9 @@ model Project {
   features  Feature[]
   tasks     Task[]
   documents Document[]
-  actas     Acta[]
-  events    CalendarEvent[]
+  actas       Acta[]
+  events      CalendarEvent[]
+  timeEntries TimeEntry[]
 }
 
 model ProjectMember {
@@ -229,13 +231,43 @@ model MemberAchievement {
   @@id([memberId, achievementId])
 }
 
+/// Uno por persona y semana (lunes a domingo en America/Santiago); reenviarlo
+/// en la misma semana lo reemplaza. weekStart es el lunes como fecha sin hora a
+/// medianoche UTC, leída con getters UTC (mismo criterio que los eventos de día
+/// completo). La regla vive en src/lib/tiempo.ts.
 model Standup {
-  id       String   @id @default(cuid())
-  memberId String
-  date     DateTime
-  text     String
+  id        String   @id @default(cuid())
+  memberId  String
+  weekStart DateTime
+  text      String /// ¿Qué hice esta semana?
+  learned   String? /// ¿Qué aprendí?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, weekStart])
+}
+
+/// Horas que una persona registra contra un proyecto. Son personales: solo quien
+/// las registró las ve, edita o borra. date es una fecha sin hora a medianoche
+/// UTC, como Standup.weekStart. minutes va en múltiplos de 15.
+///
+/// Borrar el proyecto borra sus registros (deleteProject), igual que sus tareas.
+model TimeEntry {
+  id          String   @id @default(cuid())
+  memberId    String
+  projectId   String
+  date        DateTime
+  minutes     Int
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([memberId, date])
 }
 
 /// Fechas: los eventos con hora guardan instantes UTC y el cliente los muestra en

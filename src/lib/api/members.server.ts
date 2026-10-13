@@ -4,7 +4,8 @@ import { MemberRole, MemberStatus } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { AuthError, requireCoordinacion, requireMember } from "@/lib/auth/guards";
 import { ApiError } from "@/lib/api/errors";
-import { formatDayMonthYear, formatMonthYear, formatWeekdayDayMonthYear, getInitials } from "@/lib/api/format";
+import { formatDayMonthYear, formatMonthYear, getInitials } from "@/lib/api/format";
+import { dateToDayKey, formatWeek } from "@/lib/tiempo";
 import {
   MAX_AREA_LENGTH,
   MAX_LEVEL,
@@ -38,6 +39,9 @@ const ACHIEVEMENT_ICONS: readonly string[] = ["star", "speech", "bolt", "file", 
 function toAchievementIcon(icon: string): AchievementIcon {
   return (ACHIEVEMENT_ICONS.includes(icon) ? icon : "lock") as AchievementIcon;
 }
+
+/** Standups que muestra el perfil. */
+const RECENT_STANDUPS = 6;
 
 function rankFromLevel(level: number): number {
   return Math.min(4, Math.max(0, level));
@@ -80,7 +84,7 @@ export async function getMember(id: string): Promise<MemberDetail | null> {
     include: {
       projects: { include: { project: true } },
       achievements: { include: { achievement: true } },
-      standups: { orderBy: { date: "desc" } },
+      standups: { orderBy: { weekStart: "desc" }, take: RECENT_STANDUPS },
     },
   });
   if (!member) return null;
@@ -118,7 +122,7 @@ export async function getMember(id: string): Promise<MemberDetail | null> {
       icon: toAchievementIcon(ma.achievement.icon),
       unlocked: ma.unlockedAt !== null,
     })),
-    standups: member.standups.map((s) => ({ date: formatWeekdayDayMonthYear(s.date), text: s.text })),
+    standups: member.standups.map((s) => ({ week: formatWeek(dateToDayKey(s.weekStart)), text: s.text, learned: s.learned })),
   };
 }
 

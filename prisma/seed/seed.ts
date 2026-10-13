@@ -4,6 +4,7 @@ dotenv.config({ path: ".env.local" });
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { addDays, allDayToISO, startOfWeek, toDayKey, weeklyOccurrences } from "@/lib/calendar";
+import { dayKeyToDate, weekStartOf } from "@/lib/tiempo";
 import { projects as projectsData } from "./data/projects";
 import { members as membersData } from "./data/members";
 
@@ -118,6 +119,7 @@ async function main() {
   // sesiones (FK en cascada). El resto es data de demo.
   console.log("Limpiando datos existentes...");
   await prisma.calendarEvent.deleteMany();
+  await prisma.timeEntry.deleteMany();
   await prisma.standup.deleteMany();
   await prisma.memberAchievement.deleteMany();
   await prisma.achievement.deleteMany();
@@ -210,7 +212,7 @@ async function main() {
       await prisma.standup.create({
         data: {
           memberId,
-          date: parseWeekdayDayMonthYear(s.date),
+          weekStart: dayKeyToDate(weekStartOf(toDayKey(parseWeekdayDayMonthYear(s.date)))),
           text: s.text,
         },
       });

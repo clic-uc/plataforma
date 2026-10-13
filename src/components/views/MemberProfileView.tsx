@@ -190,8 +190,13 @@ export function MemberProfileView({ memberId }: { memberId: string }) {
           {member.standups.length === 0 && <EmptyCardText>Sin standups registrados.</EmptyCardText>}
           {member.standups.map((s, i) => (
             <div key={i} className="perfil-standup-item">
-              <div className="perfil-standup-date">{s.date}</div>
+              <div className="perfil-standup-date">{s.week}</div>
               <div className="perfil-standup-text">{s.text}</div>
+              {s.learned && (
+                <div className="perfil-standup-text perfil-standup-learned">
+                  <span>Aprendí:</span> {s.learned}
+                </div>
+              )}
             </div>
           ))}
         </div>
