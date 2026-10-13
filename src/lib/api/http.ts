@@ -1,4 +1,11 @@
 /**
+ * Encabezado con el labelsToken del proyecto en las mutaciones que direccionan por
+ * label. No es If-Match a propósito: Vercel evalúa If-Match como precondición HTTP
+ * contra el ETag de la respuesta y devuelve 412 aunque la escritura ya se haya hecho.
+ */
+export const LABELS_TOKEN_HEADER = "X-Labels-Token";
+
+/**
  * Error de una respuesta de /api. `code` viene del body ({ error, code }) cuando el
  * servidor rechazó por una regla de dominio o de rol; en ese caso `message` es el
  * texto del servidor, pensado para mostrarse tal cual.

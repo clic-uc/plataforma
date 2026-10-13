@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 // renumeran al borrar. Para que un cliente con un snapshot viejo no edite o
 // borre la entidad equivocada, cada ProjectDetail lleva un labelsToken: la
 // huella de los pares label→id hasta el label más alto que vio ese snapshot.
-// Las mutaciones que reciben labels lo mandan en If-Match.
+// Las mutaciones que reciben labels lo mandan en LABELS_TOKEN_HEADER (ver http.ts).
 //
 // Crear entidades no invalida el token (los labels nuevos quedan por encima del
 // máximo del snapshot); cualquier borrado de algo que el cliente vio, sí.
@@ -56,9 +56,9 @@ export function labelsToken(features: LabelledRow[], tasks: LabelledRow[]): stri
 
 /**
  * true si los labels que vio el snapshot del token siguen apuntando a las mismas
- * entidades. Acepta el valor crudo de If-Match: con o sin comillas, y como ETag débil.
+ * entidades. Acepta el valor crudo del encabezado: con o sin comillas, y como ETag débil.
  */
-export function matchesLabelsToken(ifMatch: string, features: LabelledRow[], tasks: LabelledRow[]): boolean {
-  const match = /^(\d+)\.(\d+)\.([\w-]+)$/.exec(ifMatch.trim().replace(/^(W\/)?"(.*)"$/, "$2"));
+export function matchesLabelsToken(token: string, features: LabelledRow[], tasks: LabelledRow[]): boolean {
+  const match = /^(\d+)\.(\d+)\.([\w-]+)$/.exec(token.trim().replace(/^(W\/)?"(.*)"$/, "$2"));
   return !!match && labelsDigest(features, tasks, Number(match[1]), Number(match[2])) === match[3];
 }

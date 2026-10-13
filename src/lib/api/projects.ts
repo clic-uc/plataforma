@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
 import { kanbanColumnLabel, type BadgeColor } from "@/lib/api/status";
-import { ApiRequestError, assertOk } from "@/lib/api/http";
+import { ApiRequestError, assertOk, LABELS_TOKEN_HEADER } from "@/lib/api/http";
 import { membersKeys } from "@/lib/api/members";
 
 export interface ProjectTeamMember {
@@ -73,7 +73,7 @@ export interface ProjectDetail extends ProjectListItem {
   /**
    * Huella de qué entidad hay detrás de cada label (F-01, T-01) en este snapshot.
    * Los labels se renumeran al borrar, así que toda mutación que direcciona por
-   * label la manda en If-Match y el servidor responde 412 si ya no coincide.
+   * label la manda en X-Labels-Token y el servidor responde 412 si ya no coincide.
    */
   labelsToken: string;
   docs: ProjectDoc[];
@@ -239,7 +239,7 @@ async function createFeatureRequest(id: string, input: CreateFeatureInput): Prom
 
 /** Precondición de las mutaciones que direccionan por label; ver ProjectDetail.labelsToken. */
 function labelsHeaders(labelsToken: string): Record<string, string> {
-  return { "If-Match": `"${labelsToken}"` };
+  return { [LABELS_TOKEN_HEADER]: labelsToken };
 }
 
 async function updateFeatureRequest(

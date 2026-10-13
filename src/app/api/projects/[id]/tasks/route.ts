@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createTask, parseCreateTaskInput } from "@/lib/api/projects.server";
+import { LABELS_TOKEN_HEADER } from "@/lib/api/http";
 import { withAuth } from "@/lib/api/route-handler";
 
 async function postHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -8,7 +9,7 @@ async function postHandler(request: Request, { params }: { params: Promise<{ id:
   const input = parseCreateTaskInput(await request.json());
   if (!input) return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
 
-  const project = await createTask(id, input, request.headers.get("if-match"));
+  const project = await createTask(id, input, request.headers.get(LABELS_TOKEN_HEADER));
   if (!project) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json(project);
 }

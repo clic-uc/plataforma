@@ -22,7 +22,7 @@ Decisiones:
   Todo lo que depende de la zona del navegador se pinta después de hidratar. El servidor usa
   `America/Santiago` solo para el "hoy" cuando la URL no trae fecha y para generar series. La regla
   vive en `src/lib/calendar.ts`.
-- **Sin `If-Match`**: no hay labels, así que las mutaciones son last-write-wins.
+- **Sin `X-Labels-Token`**: no hay labels, así que las mutaciones son last-write-wins.
 - `CalendarEvent.createdById` es opcional con `ON DELETE SET NULL`: borrar a un miembro conserva
   los eventos que creó (los muestra como "Ex miembro" y solo coordinación puede tocarlos).
 - El color lo decide el tipo (`eventKindColor`), sin color libre, igual que proyectos.
@@ -114,7 +114,7 @@ Pendiente:
   prefieren labels contiguos. Para que eso no haga editar o borrar la entidad equivocada, cada
   `ProjectDetail` trae un `labelsToken` (la huella de los pares label→id hasta el label más alto
   que vio ese snapshot), y toda mutación que recibe labels (PATCH/DELETE de features y tareas,
-  POST de tarea con feature) lo exige en `If-Match`. Sin el encabezado responde 428; si algo que
+  POST de tarea con feature) lo exige en `X-Labels-Token`. Sin el encabezado responde 428; si algo que
   el cliente vio se borró o se renumeró, 412 `LABELS_CHANGED` y el cliente recarga el proyecto.
   Crear entidades no invalida el token. En el cliente, cada interacción (modal, menú contextual,
   arrastre) fija el token al comenzar, no al enviar.

@@ -81,7 +81,7 @@ Rutas (delgadas, envueltas en `withAuth`):
 - `POST /api/events` → devuelve el/los eventos creados
 - `PATCH /api/events/[id]`, `DELETE /api/events/[id]` (404 si no existe)
 
-No hay labels, así que no aplica `If-Match`: last-write-wins.
+No hay labels, así que no aplica `X-Labels-Token`: last-write-wins.
 
 ## Capa cliente
 

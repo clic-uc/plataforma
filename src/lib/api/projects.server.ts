@@ -84,14 +84,14 @@ interface ResolvedLabels {
 }
 
 /**
- * Verifica el If-Match de una mutación y devuelve la resolución label→id vigente.
+ * Verifica el token de labels (encabezado X-Labels-Token) de una mutación y devuelve la resolución label→id vigente.
  * Quien llama debe escribir por id, no por label: así, si otro borrado renumera
  * entre esta lectura y la escritura, la escritura sigue cayendo en la entidad
  * que el cliente vio.
  */
-async function resolveLabels(projectId: string, ifMatch: string | null): Promise<ResolvedLabels> {
-  if (!ifMatch) {
-    throw new ApiError(428, "PRECONDITION_REQUIRED", "Falta el encabezado If-Match con el labelsToken del proyecto");
+async function resolveLabels(projectId: string, token: string | null): Promise<ResolvedLabels> {
+  if (!token) {
+    throw new ApiError(428, "PRECONDITION_REQUIRED", "Falta el encabezado X-Labels-Token con el labelsToken del proyecto");
   }
 
   const [features, tasks] = await Promise.all([
@@ -99,7 +99,7 @@ async function resolveLabels(projectId: string, ifMatch: string | null): Promise
     prisma.task.findMany({ where: { projectId }, select: { id: true, label: true } }),
   ]);
 
-  if (!matchesLabelsToken(ifMatch, features, tasks)) {
+  if (!matchesLabelsToken(token, features, tasks)) {
     throw new ApiError(
       412,
       "LABELS_CHANGED",
@@ -509,11 +509,11 @@ export async function updateFeature(
   projectId: string,
   label: string,
   input: UpdateFeatureInput,
-  ifMatch: string | null,
+  token: string | null,
 ): Promise<ProjectDetail | null> {
   await requireMember();
 
-  const id = (await resolveLabels(projectId, ifMatch)).featureId(label);
+  const id = (await resolveLabels(projectId, token)).featureId(label);
   if (!id) return null;
 
   const { count } = await prisma.feature.updateMany({
@@ -525,10 +525,10 @@ export async function updateFeature(
   return getProject(projectId);
 }
 
-export async function deleteFeature(projectId: string, label: string, ifMatch: string | null): Promise<ProjectDetail | null> {
+export async function deleteFeature(projectId: string, label: string, token: string | null): Promise<ProjectDetail | null> {
   await requireMember();
 
-  const id = (await resolveLabels(projectId, ifMatch)).featureId(label);
+  const id = (await resolveLabels(projectId, token)).featureId(label);
   if (!id) return null;
 
   const deleted = await prisma.$transaction(async (tx) => {
@@ -583,7 +583,7 @@ async function renumberTaskLabels(tx: Prisma.TransactionClient, projectId: strin
 export async function createTask(
   projectId: string,
   input: CreateTaskInput,
-  ifMatch: string | null,
+  token: string | null,
 ): Promise<ProjectDetail | null> {
   await requireMember();
 
@@ -593,7 +593,7 @@ export async function createTask(
   // Solo una tarea con feature referencia un label; sin feature no hay nada que validar.
   let featureId: string | null = null;
   if (input.featureId) {
-    const resolved = (await resolveLabels(projectId, ifMatch)).featureId(input.featureId);
+    const resolved = (await resolveLabels(projectId, token)).featureId(input.featureId);
     if (!resolved) return null;
     featureId = resolved;
   }
@@ -636,11 +636,11 @@ export async function updateTask(
   projectId: string,
   label: string,
   input: UpdateTaskInput,
-  ifMatch: string | null,
+  token: string | null,
 ): Promise<ProjectDetail | null> {
   await requireMember();
 
-  const labels = await resolveLabels(projectId, ifMatch);
+  const labels = await resolveLabels(projectId, token);
   const id = labels.taskId(label);
   if (!id) return null;
 
@@ -672,10 +672,10 @@ export async function updateTask(
   return getProject(projectId);
 }
 
-export async function deleteTask(projectId: string, label: string, ifMatch: string | null): Promise<ProjectDetail | null> {
+export async function deleteTask(projectId: string, label: string, token: string | null): Promise<ProjectDetail | null> {
   await requireMember();
 
-  const id = (await resolveLabels(projectId, ifMatch)).taskId(label);
+  const id = (await resolveLabels(projectId, token)).taskId(label);
   if (!id) return null;
 
   const deleted = await prisma.$transaction(async (tx) => {

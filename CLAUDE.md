@@ -80,7 +80,7 @@ component then reads the same query key.
 Domain rules that live in code, not the schema: `Task.done` is derived (`column === "LISTO"`), and
 feature/task labels (`F-01`, `T-01`) are generated server-side. The API addresses features and tasks
 by **label**, not by cuid. Labels are renumbered on delete, so every mutation that takes a label must
-send the project's `labelsToken` in `If-Match` (412 `LABELS_CHANGED` if it went stale, 428 if
+send the project's `labelsToken` in the `X-Labels-Token` header (412 `LABELS_CHANGED` if it went stale, 428 if
 missing); `docs/TODO.md` explains the mechanism.
 
 Calendar events (`/calendario`) keep timed events as UTC instants shown in the browser's local time,

@@ -126,7 +126,7 @@ describe("mutaciones direccionadas por label", () => {
     prisma.project.findUnique.mockResolvedValue(null);
   });
 
-  it("responde 428 si falta If-Match", async () => {
+  it("responde 428 si falta el token", async () => {
     await expect(updateTask("p1", "T-02", input, null)).rejects.toMatchObject({ status: 428 });
     expect(prisma.task.updateMany).not.toHaveBeenCalled();
   });
