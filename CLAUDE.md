@@ -87,7 +87,8 @@ tested; anything that depends on the browser's time zone renders after hydration
 
 `src/lib/auth.ts` holds the Better Auth instance (GitHub only, no domain restriction — anyone with a
 GitHub account can sign up, and `Member.isVerifiedByCoordinator` is the only thing gating access).
-Approval is manual via SQL; see `docs/TODO.md`.
+Coordination approves or rejects pending accounts from the "Pendientes" tab in `/miembros`; see
+`docs/TODO.md`.
 `src/lib/auth/guards.ts` is the enforcement point:
 
 - `getCurrentMember()` — the `Member` behind the session, or `null`. Wrapped in React `cache()`. It rereads
