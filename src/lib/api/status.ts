@@ -27,6 +27,16 @@ export const memberStatusColor: Record<MemberStatus, BadgeColor> = {
   HIATUS: "gray",
 };
 
+export const MEMBER_ROLE_OPTIONS: { value: MemberRole; label: string }[] = [
+  { value: "ROOKIE", label: "Rookie" },
+  { value: "EQUIPO", label: "Equipo" },
+  { value: "COORDINACION", label: "Coordinación" },
+];
+
+export const MEMBER_STATUS_OPTIONS: { value: MemberStatus; label: string }[] = (
+  Object.entries(memberStatusLabel) as [MemberStatus, string][]
+).map(([value, label]) => ({ value, label }));
+
 export const projectStatusLabel: Record<ProjectStatus, string> = {
   ACTIVO: "Activo",
   EN_PAUSA: "En pausa",

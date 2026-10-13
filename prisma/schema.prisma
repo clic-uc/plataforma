@@ -93,10 +93,14 @@ model Member {
   birthday DateTime?
   skills   String[]     @default([])
   level    Int          @default(0)
+
+  /// Bloques de la semana en que la persona declara estar disponible, como
+  /// "LUN_MANANA". Los valores válidos viven en src/lib/api/member-fields.ts.
+  availability String[] @default([])
   streak   Int          @default(0)
 
-  /// Gate de acceso: nadie entra hasta que coordinación lo aprueba.
-  /// Se aprueba por SQL; ver docs/TODO.md.
+  /// Gate de acceso: nadie entra hasta que coordinación lo aprueba desde la
+  /// pestaña "Pendientes" de /miembros.
   isVerifiedByCoordinator Boolean @default(false)
 
   sessions          Session[]

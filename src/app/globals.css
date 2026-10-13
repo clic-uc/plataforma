@@ -144,6 +144,16 @@ body {
   font-size: 10px;
   opacity: 0.5;
 }
+/* Solicitudes de acceso esperando a coordinación. */
+.nav-count-alert {
+  opacity: 1;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  padding: 0 5px;
+}
+.nav-count + .nav-count-alert { margin-left: 6px; }
+.nav-item.active .nav-count-alert { background: #fff; color: var(--accent); }
 
 .sidebar-nav { flex: 1; min-height: 0; overflow-y: auto; }
 .sidebar-nav::-webkit-scrollbar { width: 4px; }
@@ -1224,6 +1234,61 @@ tbody tr:last-child td { border-bottom: none; }
 .perfil-standup-item:last-child { border-bottom: none; }
 .perfil-standup-date { font-family: var(--font-space-mono), monospace; font-size: 9.5px; color: var(--text-3); margin-bottom: 4px; }
 .perfil-standup-text { font-size: 12.5px; color: var(--text-2); line-height: 1.45; }
+.perfil-avatar-lg .user-avatar-img, .dir-avatar .user-avatar-img { display: block; }
+.perfil-section-label {
+  font-family: var(--font-space-mono), monospace; font-size: 9.5px;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3);
+  margin: 6px 0 10px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+
+/* Filtros reales (select nativo) con el aspecto de .select-mock. */
+.filter-select {
+  height: 34px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0 8px;
+  font-family: var(--font-space-mono), monospace;
+  font-size: 11px;
+  color: var(--text-2);
+  cursor: pointer;
+  outline: none;
+}
+.filter-select:focus { border-color: var(--accent); }
+
+.btn-danger {
+  padding: 6px 13px;
+  background: transparent;
+  color: #c0392b;
+  border: 1px solid #c0392b;
+  border-radius: 5px;
+  font-family: var(--font-barlow), sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-danger:disabled { opacity: 0.55; cursor: default; }
+
+/* ─── DISPONIBILIDAD SEMANAL ─── */
+.avail-grid {
+  display: grid;
+  grid-template-columns: 58px repeat(5, 1fr);
+  gap: 4px;
+  align-items: center;
+}
+.avail-head, .avail-row-label {
+  font-family: var(--font-space-mono), monospace; font-size: 9px;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3);
+}
+.avail-head { text-align: center; }
+.avail-cell {
+  height: 22px; padding: 0;
+  border-radius: 4px;
+  background: var(--ph-fill);
+  border: 1px solid var(--border);
+}
+.avail-cell.on { background: var(--accent); border-color: var(--accent); }
+button.avail-cell { cursor: pointer; }
+button.avail-cell:hover { border-color: var(--accent); }
 
 /* ─── USER DROPDOWN ─── */
 .user-dropdown {
