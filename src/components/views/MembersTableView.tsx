@@ -10,6 +10,7 @@ import { RankStars } from "@/components/ui/RankStars";
 import { SearchIcon } from "@/components/icons";
 import { InviteMemberModal } from "@/components/views/InviteMemberModal";
 import { PendingMembersTable } from "@/components/views/PendingMembersTable";
+import { PlaceholderBox } from "@/components/ui/PlaceholderBox";
 import { useIsCoordinacion } from "@/components/providers/CurrentMemberProvider";
 import { useMembers, usePendingMembers, type MemberListItem } from "@/lib/api/members";
 import { DEFAULT_ACCENT_COLOR, normalizeSearch } from "@/lib/api/format";
@@ -28,7 +29,7 @@ export function MembersTableView() {
   const { data: members = [] } = useMembers();
   const { data: pending = [] } = usePendingMembers({ enabled: isCoordinacion });
 
-  const [tab, setTab] = useState<"miembros" | "pendientes">("miembros");
+  const [tab, setTab] = useState<"miembros" | "equipos" | "pendientes">("miembros");
   const [search, setSearch] = useState("");
   const [area, setArea] = useState("");
   const [status, setStatus] = useState<MemberStatus | "">("");
@@ -75,16 +76,19 @@ export function MembersTableView() {
             </select>
           </>
         )}
-        {isCoordinacion && (
-          <div className="tabs" style={{ margin: 0 }}>
-            <div className={`tab-item${tab === "miembros" ? " active" : ""}`} onClick={() => setTab("miembros")}>
-              Miembros <span>{members.length}</span>
-            </div>
+        <div className="tabs" style={{ margin: 0 }}>
+          <div className={`tab-item${tab === "miembros" ? " active" : ""}`} onClick={() => setTab("miembros")}>
+            Lista completa <span>{members.length}</span>
+          </div>
+          <div className={`tab-item${tab === "equipos" ? " active" : ""}`} onClick={() => setTab("equipos")}>
+            Gestionar equipos
+          </div>
+          {isCoordinacion && (
             <div className={`tab-item${tab === "pendientes" ? " active" : ""}`} onClick={() => setTab("pendientes")}>
               Pendientes <span>{pending.length}</span>
             </div>
-          </div>
-        )}
+          )}
+        </div>
         <div style={{ marginLeft: "auto" }}>
           <button className="btn-primary" onClick={() => setInviting(true)}>+ Invitar miembro</button>
         </div>
@@ -94,6 +98,8 @@ export function MembersTableView() {
 
       {tab === "pendientes" ? (
         <PendingMembersTable pending={pending} />
+      ) : tab === "equipos" ? (
+        <PlaceholderBox text={<>Gestión de equipos<br />Próximamente</>} style={{ minHeight: 160 }} />
       ) : shown.length === 0 ? (
         <div className="ph" style={{ minHeight: 160 }}>
           <div className="ph-text">
