@@ -35,7 +35,6 @@ const principal: NavItem[] = [
   { label: "Proyectos", href: "/proyectos", icon: <FolderIcon className="nav-icon" />, matchPrefix: "/proyectos" },
   { label: "Calendario", href: "/calendario", icon: <CalendarIcon className="nav-icon" />, matchPrefix: "/calendario" },
   { label: "Reporte", href: "/tiempo", icon: <ClockIcon className="nav-icon" /> },
-  { label: "Analíticas", icon: <AnalyticsIcon className="nav-icon" /> },
 ];
 
 const comunidad: NavItem[] = [
@@ -43,10 +42,11 @@ const comunidad: NavItem[] = [
   { label: "Portafolio", icon: <BriefcaseIcon className="nav-icon" /> },
   { label: "Equipos", icon: <TeamsIcon className="nav-icon" /> },
   { label: "Reuniones", icon: <MeetingIcon className="nav-icon" /> },
+  { label: "Recursos", icon: <BookIcon className="nav-icon" /> },
 ];
 
-const org: NavItem[] = [
-  { label: "Recursos", icon: <BookIcon className="nav-icon" /> },
+const coordinacion: NavItem[] = [
+  { label: "Analíticas", icon: <AnalyticsIcon className="nav-icon" /> },
   { label: "Postulaciones", icon: <PostulacionesIcon className="nav-icon" />, count: 3 },
 ];
 
@@ -118,8 +118,8 @@ export function Sidebar({ member }: { member: CurrentMember }) {
         </div>
 
         <div className="nav-section" style={{ marginTop: 14 }}>
-          <div className="nav-section-label">Org.</div>
-          {org.map((item) => (
+          <div className="nav-section-label">Coordinación</div>
+          {coordinacion.map((item) => (
             <NavRow key={item.label} item={item} active={isActive(item)} />
           ))}
         </div>
