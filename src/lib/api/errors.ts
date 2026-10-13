@@ -5,7 +5,8 @@ export type ApiErrorCode =
   | "LABELS_CHANGED"
   | "INVALID_MEMBER"
   | "NOT_PROJECT_MEMBER"
-  | "ALREADY_PROJECT_MEMBER";
+  | "ALREADY_PROJECT_MEMBER"
+  | "INVALID_PROJECT";
 
 /**
  * Rechazo de dominio que la capa .server.ts no puede expresar devolviendo null
