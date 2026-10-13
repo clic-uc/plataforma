@@ -133,7 +133,7 @@ model ProjectMember {
   role      String
 
   project Project @relation(fields: [projectId], references: [id])
-  member  Member  @relation(fields: [memberId], references: [id])
+  member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@id([projectId, memberId])
 }
@@ -167,7 +167,7 @@ model Task {
 
   project  Project  @relation(fields: [projectId], references: [id])
   feature  Feature? @relation(fields: [featureId], references: [id])
-  assignee Member?  @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  assignee Member?  @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 
   @@unique([projectId, label])
 }
@@ -188,7 +188,7 @@ model Document {
   content   String?
 
   project Project @relation(fields: [projectId], references: [id])
-  author  Member? @relation("DocumentAuthor", fields: [authorId], references: [id])
+  author  Member? @relation("DocumentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@unique([projectId, slot])
 }
@@ -219,7 +219,7 @@ model MemberAchievement {
   achievementId String
   unlockedAt    DateTime?
 
-  member      Member      @relation(fields: [memberId], references: [id])
+  member      Member      @relation(fields: [memberId], references: [id], onDelete: Cascade)
   achievement Achievement @relation(fields: [achievementId], references: [id])
 
   @@id([memberId, achievementId])
@@ -231,7 +231,7 @@ model Standup {
   date     DateTime
   text     String
 
-  member Member @relation(fields: [memberId], references: [id])
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
 }
 
 /// Fechas: los eventos con hora guardan instantes UTC y el cliente los muestra en
