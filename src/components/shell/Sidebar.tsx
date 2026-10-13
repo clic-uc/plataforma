@@ -117,12 +117,15 @@ export function Sidebar({ member }: { member: CurrentMember }) {
           ))}
         </div>
 
-        <div className="nav-section" style={{ marginTop: 14 }}>
-          <div className="nav-section-label">Coordinación</div>
-          {coordinacion.map((item) => (
-            <NavRow key={item.label} item={item} active={isActive(item)} />
-          ))}
-        </div>
+        {/* Solo presentación: lo que haya detrás lo sigue protegiendo el servidor. */}
+        {isCoordinacion && (
+          <div className="nav-section" style={{ marginTop: 14 }}>
+            <div className="nav-section-label">Coordinación</div>
+            {coordinacion.map((item) => (
+              <NavRow key={item.label} item={item} active={isActive(item)} />
+            ))}
+          </div>
+        )}
       </nav>
 
       <UserMenu member={member} />
