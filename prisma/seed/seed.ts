@@ -38,6 +38,11 @@ function parseWeekdayDayMonthYear(s: string): Date {
   return new Date(Number(year), MONTHS[mon.toLowerCase()], Number(day));
 }
 
+const pendingMembersData = [
+  { name: "Tomás Fuentes", email: "t.fuentes@uc.cl" },
+  { name: "Isidora Contreras", email: "i.contreras@uc.cl" },
+];
+
 const memberRoleMap: Record<string, "COORDINACION" | "EQUIPO" | "ROOKIE"> = {
   Coordinador: "COORDINACION",
   Equipo: "EQUIPO",
@@ -159,6 +164,15 @@ async function main() {
 
     memberIdByMockId.set(m.id, member.id);
     memberIdByInitials.set(m.initials, member.id);
+  }
+
+  // Cuentas que "entraron con GitHub" y esperan aprobación, para probar la
+  // pestaña Pendientes de /miembros. Sin Account, así que el próximo seed las
+  // vuelve a borrar y crear.
+  console.log("Creando solicitudes pendientes...");
+  for (const p of pendingMembersData) {
+    const existing = await prisma.member.findUnique({ where: { email: p.email }, select: { id: true } });
+    if (!existing) await prisma.member.create({ data: { ...p, isVerifiedByCoordinator: false } });
   }
 
   console.log("Creando catálogo de logros...");
