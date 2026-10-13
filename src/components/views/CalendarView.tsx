@@ -15,6 +15,7 @@ import {
   type CalendarViewMode,
 } from "@/lib/calendar";
 import { CalendarMonth } from "@/components/views/CalendarMonth";
+import { CalendarWeek } from "@/components/views/CalendarWeek";
 
 // ─── Hora actual ───
 //
@@ -78,9 +79,10 @@ export function CalendarView({ defaultDate }: { defaultDate: string }) {
     navigate(view, toDayKey(new Date()));
   }
 
-  function openCreate(day: string) {
+  function openCreate(day: string, minutes?: number) {
     // Los modales llegan en el paso siguiente.
     void day;
+    void minutes;
   }
 
   useEffect(() => {
@@ -128,14 +130,25 @@ export function CalendarView({ defaultDate }: { defaultDate: string }) {
         </div>
       )}
 
-      <CalendarMonth
-        date={date}
-        events={shownEvents}
-        today={today}
-        onSelectEvent={() => {}}
-        onCreateAt={openCreate}
-        onOpenWeek={(day) => navigate("semana", day)}
-      />
+      {view === "mes" ? (
+        <CalendarMonth
+          date={date}
+          events={shownEvents}
+          today={today}
+          onSelectEvent={() => {}}
+          onCreateAt={openCreate}
+          onOpenWeek={(day) => navigate("semana", day)}
+        />
+      ) : (
+        <CalendarWeek
+          date={date}
+          events={shownEvents}
+          today={today}
+          nowMinutes={now ? now.getHours() * 60 + now.getMinutes() : null}
+          onSelectEvent={() => {}}
+          onCreateAt={openCreate}
+        />
+      )}
     </section>
   );
 }
