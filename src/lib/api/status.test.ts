@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
+import { EventKind, FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
 import {
+  EVENT_KIND_OPTIONS,
   FEATURE_STATUS_OPTIONS,
   KANBAN_COLUMN_OPTIONS,
   PRIORITY_OPTIONS,
@@ -21,6 +22,7 @@ describe("opciones de los selects", () => {
     ["Priority", PRIORITY_OPTIONS, Priority],
     ["TaskType", TASK_TYPE_OPTIONS, TaskType],
     ["KanbanColumn", KANBAN_COLUMN_OPTIONS, KanbanColumn],
+    ["EventKind", EVENT_KIND_OPTIONS, EventKind],
   ] as const)("%s: cada valor del enum aparece una sola vez", (_name, options, enumObject) => {
     const values = options.map((o) => o.value);
     expect([...values].sort()).toEqual(Object.values(enumObject).sort());
