@@ -2,20 +2,68 @@
 
 - **Dashboard y Tiempo siguen 100% hardcodeados** (`prisma/seed/data/dashboard.ts` y `tiempo.ts`,
   importados directo por `DashboardView`, `DashboardCalendarCard` y `TiempoView`). No hay modelos
-  en el schema para calendario, feed de actividad ni registro de horas. Para migrarlos habría que
-  diseñar modelos nuevos (`CalendarEvent`, `ActivityFeedItem`, `TimeEntry` o similar) en Prisma.
+  en el schema para feed de actividad ni registro de horas (`ActivityFeedItem`, `TimeEntry` o
+  similar). El calendario ya tiene modelo y vista propia (`/calendario`, ver abajo), pero la tarjeta
+  `DashboardCalendarCard` sigue mostrando el mock: conectarla a `useEvents` queda pendiente.
+
+## Calendario
+
+Vista `/calendario` con modos mes y semana; el plan original está en `docs/CALENDARIO.md`.
+
+Decisiones:
+
+- **Permisos**: cualquier miembro aprobado crea eventos. Editar y borrar es de quien lo creó o de
+  `COORDINACION` (403 `FORBIDDEN_ROLE` si no). `CalendarEventView.canEdit` solo esconde botones.
+- **Sin recurrencia real.** "Repetir semanalmente hasta…" crea copias (máx. 26 semanas) que comparten
+  `seriesId`; editar o borrar actúa sobre una sola ocurrencia. Las copias conservan la hora de reloj
+  en `America/Santiago` al cruzar un cambio de horario.
+- **Zona horaria**: los eventos con hora son instantes UTC y se muestran en la hora local del
+  navegador. Los de día completo son fechas a medianoche UTC (fin exclusivo) leídas con getters UTC.
+  Todo lo que depende de la zona del navegador se pinta después de hidratar. El servidor usa
+  `America/Santiago` solo para el "hoy" cuando la URL no trae fecha y para generar series. La regla
+  vive en `src/lib/calendar.ts`.
+- **Sin `If-Match`**: no hay labels, así que las mutaciones son last-write-wins.
+- `CalendarEvent.createdById` es opcional con `ON DELETE SET NULL`: borrar a un miembro conserva
+  los eventos que creó (los muestra como "Ex miembro" y solo coordinación puede tocarlos).
+- El color lo decide el tipo (`eventKindColor`), sin color libre, igual que proyectos.
+- La vista semana cubre las 24 h y abre en las 08:00, para que nada quede fuera de la grilla.
+
+Pendiente:
+
+- Arrastrar para mover o redimensionar eventos.
+- Editar o borrar "esta y las siguientes" de una serie.
+- Filtros por proyecto o tipo (el `projectId` ya está para eso).
+- Asistentes y RSVP, recordatorios, exportar `.ics` o sincronizar con Google Calendar.
+- Conectar `DashboardCalendarCard` a datos reales y agregarle un link "Ver calendario →".
 
 ## Miembros
 
-- Sin edición: no existe UI para editar un miembro (nombre, área, skills, nivel, etc.), solo
-  lectura. "Editar perfil" y "Enviar mensaje" en `MemberProfileView` son botones decorativos.
-- "+ Invitar miembro" en `MembersTableView` no hace nada.
-- Filtros "Área ▾" / "Estado ▾" en la tabla de miembros son mocks visuales, no filtran.
-- El buscador de la tabla de miembros sigue siendo `search-mock`. El de proyectos ya es real
-  (`.search-box` en `ProyectosView`) y sirve de modelo.
-- El contador "Miembros" del sidebar está fijo en 18; el de Proyectos ya cuenta los activos.
+Decisiones:
+
+- **Permisos de edición**: cada persona edita su propio perfil (nombre, cumpleaños, habilidades,
+  disponibilidad). Área, rol, estado y nivel los asigna coordinación, que además puede editar el
+  perfil de cualquiera. `PATCH /api/members/[id]` lleva esos campos en un bloque `admin` opcional;
+  si lo manda alguien que no es coordinación, 403 `FORBIDDEN_ROLE`.
+- **Siempre queda al menos un coordinador.** Un coordinador puede quitarse el rol solo si queda otro
+  (409 `LAST_COORDINATOR`), y nadie puede eliminarse a sí mismo (422 `CANNOT_REMOVE_SELF`). Con esas
+  dos reglas basta: quien cambia el rol de otro o lo elimina es coordinación y lo sigue siendo. El
+  chequeo no es atómico; dos coordinadores quitándose el rol a la vez podrían dejar cero, y eso se
+  arregla por SQL.
+- **Eliminar un miembro borra la fila**, que es también su identidad de Better Auth: sesiones y
+  cuenta de GitHub en cascada, sale de los equipos, sus tareas quedan sin asignar y sus documentos y
+  eventos sin autor. Para apartar a alguien sin borrarlo está el estado **Hiatus**.
+- **Invitar es compartir el enlace de `/login`**: no hay pre-registro (ver Autenticación).
+- **Cumpleaños** guarda solo día y mes, en el año 2000 a mediodía UTC, y se lee con getters UTC
+  (`src/lib/api/member-fields.ts`).
+- **Disponibilidad semanal**: `Member.availability` guarda bloques `LUN_MANANA`…`VIE_NOCHE`.
+  Lun–Vie × mañana/tarde/noche, sin horas exactas.
 - `getMembers()` / `getMember()` excluyen las cuentas con `isVerifiedByCoordinator = false`: una
   cuenta pendiente no es miembro todavía y no debe aparecer en la tabla ni en los selectores.
+
+Pendiente:
+
+- Mensajería interna: "Enviar correo" abre un `mailto:`.
+- Racha y logros no se pueden editar ni se calculan solos; el nivel lo fija coordinación a mano.
 - Campos que existían en el mock original y no tienen columna en el schema: `telegram`, `rankNumber`/`ranking`
   (esto se pensaba calcular, no persistir), `areaLabel` (categoría corta tipo "PROYECTOS"/"WEB"/"LAB", distinta de
   `area`), color propio por miembro. Si se quieren recuperar, hay que agregar columnas reales.
@@ -95,19 +143,10 @@ Pendiente:
   equipo) mediante `useIsCoordinacion()` de `CurrentMemberProvider`. Es solo presentación: el
   servidor sigue siendo quien rechaza con 403.
 
-- **La aprobación de miembros es manual, por SQL.** Decisión explícita: con ~8 miembros no compensa
-  construir la UI todavía.
-
-  ```sql
-  -- cola de pendientes
-  SELECT name, email, "createdAt" FROM "Member" WHERE "isVerifiedByCoordinator" = false;
-  -- aprobar
-  UPDATE "Member" SET "isVerifiedByCoordinator" = true WHERE email = 'persona@ejemplo.com';
-  ```
-
-  Para construir la UI hay que estrenar la capa de escritura de miembros: `members.server.ts` es hoy
-  solo lectura (función server + `PATCH /api/members/[id]/verify` + hook de mutación + gate con
-  `requireCoordinacion()`).
+- **La aprobación de miembros se hace desde `/miembros`**, pestaña "Pendientes" (solo coordinación;
+  el sidebar muestra cuántas solicitudes esperan). Aprobar fija rol y área y pone `joinedAt` en la
+  fecha de aprobación. Rechazar borra la cuenta; como el registro es abierto, la persona puede volver
+  a entrar y queda pendiente otra vez.
 
 - **El registro es abierto.** Cualquiera con cuenta de GitHub puede crear una fila `Member`
   pendiente. No accede a nada, pero escribe en la base. Mitigación más barata si molesta: un

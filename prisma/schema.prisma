@@ -55,6 +55,13 @@ enum KanbanColumn {
   LISTO
 }
 
+enum EventKind {
+  REUNION
+  ENTREGA
+  HITO
+  OTRO
+}
+
 enum DocSlotType {
   KICKOFF
   REQUERIMIENTOS
@@ -86,10 +93,14 @@ model Member {
   birthday DateTime?
   skills   String[]     @default([])
   level    Int          @default(0)
+
+  /// Bloques de la semana en que la persona declara estar disponible, como
+  /// "LUN_MANANA". Los valores válidos viven en src/lib/api/member-fields.ts.
+  availability String[] @default([])
   streak   Int          @default(0)
 
-  /// Gate de acceso: nadie entra hasta que coordinación lo aprueba.
-  /// Se aprueba por SQL; ver docs/TODO.md.
+  /// Gate de acceso: nadie entra hasta que coordinación lo aprueba desde la
+  /// pestaña "Pendientes" de /miembros.
   isVerifiedByCoordinator Boolean @default(false)
 
   sessions          Session[]
@@ -99,6 +110,7 @@ model Member {
   achievements      MemberAchievement[]
   standups          Standup[]
   documentsAuthored Document[]          @relation("DocumentAuthor")
+  eventsCreated     CalendarEvent[]     @relation("EventCreator")
 }
 
 model Project {
@@ -116,6 +128,7 @@ model Project {
   tasks     Task[]
   documents Document[]
   actas     Acta[]
+  events    CalendarEvent[]
 }
 
 model ProjectMember {
@@ -124,7 +137,7 @@ model ProjectMember {
   role      String
 
   project Project @relation(fields: [projectId], references: [id])
-  member  Member  @relation(fields: [memberId], references: [id])
+  member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@id([projectId, memberId])
 }
@@ -158,7 +171,7 @@ model Task {
 
   project  Project  @relation(fields: [projectId], references: [id])
   feature  Feature? @relation(fields: [featureId], references: [id])
-  assignee Member?  @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  assignee Member?  @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 
   @@unique([projectId, label])
 }
@@ -179,7 +192,7 @@ model Document {
   content   String?
 
   project Project @relation(fields: [projectId], references: [id])
-  author  Member? @relation("DocumentAuthor", fields: [authorId], references: [id])
+  author  Member? @relation("DocumentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@unique([projectId, slot])
 }
@@ -210,7 +223,7 @@ model MemberAchievement {
   achievementId String
   unlockedAt    DateTime?
 
-  member      Member      @relation(fields: [memberId], references: [id])
+  member      Member      @relation(fields: [memberId], references: [id], onDelete: Cascade)
   achievement Achievement @relation(fields: [achievementId], references: [id])
 
   @@id([memberId, achievementId])
@@ -222,7 +235,39 @@ model Standup {
   date     DateTime
   text     String
 
-  member Member @relation(fields: [memberId], references: [id])
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+/// Fechas: los eventos con hora guardan instantes UTC y el cliente los muestra en
+/// su hora local. Los de día completo guardan fechas sin hora a medianoche UTC y
+/// se leen con getters UTC, para que no se corran de día en Chile (UTC−3/−4).
+/// La regla vive en src/lib/calendar.ts.
+///
+/// No hay recurrencia real: "repetir semanalmente" crea copias que comparten
+/// seriesId, y editar o borrar actúa sobre una sola ocurrencia.
+///
+/// createdById es opcional para que borrar a un miembro no se lleve los eventos
+/// que creó (mismo criterio que Document.author).
+model CalendarEvent {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  location    String? /// sala o link de videollamada
+  kind        EventKind @default(OTRO)
+  allDay      Boolean   @default(false)
+  startsAt    DateTime /// allDay: medianoche UTC del primer día
+  endsAt      DateTime /// exclusivo. allDay: medianoche UTC del día siguiente al último
+  seriesId    String? /// copias generadas por "repetir semanalmente"
+  projectId   String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  createdBy Member?  @relation("EventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([startsAt])
+  @@index([seriesId])
 }
 
 // ---------------------------------------------------------------------------

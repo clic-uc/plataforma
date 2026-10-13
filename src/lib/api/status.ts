@@ -1,5 +1,6 @@
 import {
   DocSlotType,
+  EventKind,
   FeatureStatus,
   KanbanColumn,
   MemberRole,
@@ -25,6 +26,16 @@ export const memberStatusColor: Record<MemberStatus, BadgeColor> = {
   ACTIVO: "green",
   HIATUS: "gray",
 };
+
+export const MEMBER_ROLE_OPTIONS: { value: MemberRole; label: string }[] = [
+  { value: "ROOKIE", label: "Rookie" },
+  { value: "EQUIPO", label: "Equipo" },
+  { value: "COORDINACION", label: "Coordinación" },
+];
+
+export const MEMBER_STATUS_OPTIONS: { value: MemberStatus; label: string }[] = (
+  Object.entries(memberStatusLabel) as [MemberStatus, string][]
+).map(([value, label]) => ({ value, label }));
 
 export const projectStatusLabel: Record<ProjectStatus, string> = {
   ACTIVO: "Activo",
@@ -147,3 +158,28 @@ export const docSlotBadgeColor: Record<DocSlotType, BadgeColor> = {
   DECISIONES: "gray",
   INFORME: "gray",
 };
+
+/// Color de los eventos del calendario. Sin color libre, igual que proyectos: el
+/// tipo decide, con la paleta de las badges más el acento (clases .cal-ev-*).
+export type EventColor = "accent" | "green" | "amber" | "gray";
+
+export const eventKindLabel: Record<EventKind, string> = {
+  REUNION: "Reunión",
+  ENTREGA: "Entrega",
+  HITO: "Hito",
+  OTRO: "Otro",
+};
+
+export const eventKindColor: Record<EventKind, EventColor> = {
+  REUNION: "accent",
+  ENTREGA: "amber",
+  HITO: "green",
+  OTRO: "gray",
+};
+
+export const EVENT_KIND_OPTIONS: { value: EventKind; label: string }[] = [
+  { value: "REUNION", label: "Reunión" },
+  { value: "ENTREGA", label: "Entrega" },
+  { value: "HITO", label: "Hito" },
+  { value: "OTRO", label: "Otro" },
+];

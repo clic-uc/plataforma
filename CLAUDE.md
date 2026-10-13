@@ -34,6 +34,11 @@ unit tests: there is no test database. `server-only` is aliased to an empty stub
 `@/lib/auth/guards` with `vi.mock` (see `src/lib/api/projects.server.test.ts`). Prefer pulling pure
 logic into its own module, as with `src/lib/api/labels.ts`, over mocking Prisma.
 
+The Prisma client is generated into `src/generated/prisma`, which is gitignored. `pnpm build` runs
+`prisma generate` itself instead of trusting `postinstall`: Vercel restores `node_modules` from its
+build cache, pnpm reports "Already up to date" and skips lifecycle scripts, and `src/generated` is
+not part of that cache — so without it the build fails with `Can't resolve '@/generated/prisma/...'`.
+
 CI (`.github/workflows/ci.yml`) runs lint, typecheck, tests and build on every PR and push to `dev`
 and `main`. It needs no secrets: the build does not touch the database, and the Better Auth variables
 it sets are placeholders.
@@ -63,10 +68,10 @@ one `useState` per field. Follow those conventions rather than introducing depen
 
 Each domain has two files in `src/lib/api/`:
 
-- `projects.ts`, `members.ts` — client-safe. Types, `fetch()` wrappers, TanStack Query hooks and
-  query-key factories.
-- `projects.server.ts`, `members.server.ts` — the **only** two files that import `@/lib/prisma`.
-  Prisma queries plus mapping to view models. Both carry `import "server-only"`.
+- `projects.ts`, `members.ts`, `events.ts` — client-safe. Types, `fetch()` wrappers, TanStack Query
+  hooks and query-key factories.
+- `projects.server.ts`, `members.server.ts`, `events.server.ts` — the **only** three files that
+  import `@/lib/prisma`. Prisma queries plus mapping to view models. All carry `import "server-only"`.
 
 Route handlers in `src/app/api/**` are thin: they parse params and delegate. Server pages prefetch
 with the `.server.ts` function and ship a dehydrated cache through `<HydrationBoundary>`; the client
@@ -78,11 +83,17 @@ by **label**, not by cuid. Labels are renumbered on delete, so every mutation th
 send the project's `labelsToken` in `If-Match` (412 `LABELS_CHANGED` if it went stale, 428 if
 missing); `docs/TODO.md` explains the mechanism.
 
+Calendar events (`/calendario`) keep timed events as UTC instants shown in the browser's local time,
+and all-day events as dates at midnight UTC read with UTC getters, so they do not slip a day in
+Chile. That rule and the rest of the date math live in `src/lib/calendar.ts`, which is pure and
+tested; anything that depends on the browser's time zone renders after hydration.
+
 ### Authentication and authorization
 
 `src/lib/auth.ts` holds the Better Auth instance (GitHub only, no domain restriction — anyone with a
 GitHub account can sign up, and `Member.isVerifiedByCoordinator` is the only thing gating access).
-Approval is manual via SQL; see `docs/TODO.md`.
+Coordination approves or rejects pending accounts from the "Pendientes" tab in `/miembros`; see
+`docs/TODO.md`.
 `src/lib/auth/guards.ts` is the enforcement point:
 
 - `getCurrentMember()` — the `Member` behind the session, or `null`. Wrapped in React `cache()`. It rereads
