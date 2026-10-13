@@ -2,8 +2,39 @@
 
 - **Dashboard y Tiempo siguen 100% hardcodeados** (`prisma/seed/data/dashboard.ts` y `tiempo.ts`,
   importados directo por `DashboardView`, `DashboardCalendarCard` y `TiempoView`). No hay modelos
-  en el schema para calendario, feed de actividad ni registro de horas. Para migrarlos habría que
-  diseñar modelos nuevos (`CalendarEvent`, `ActivityFeedItem`, `TimeEntry` o similar) en Prisma.
+  en el schema para feed de actividad ni registro de horas (`ActivityFeedItem`, `TimeEntry` o
+  similar). El calendario ya tiene modelo y vista propia (`/calendario`, ver abajo), pero la tarjeta
+  `DashboardCalendarCard` sigue mostrando el mock: conectarla a `useEvents` queda pendiente.
+
+## Calendario
+
+Vista `/calendario` con modos mes y semana; el plan original está en `docs/CALENDARIO.md`.
+
+Decisiones:
+
+- **Permisos**: cualquier miembro aprobado crea eventos. Editar y borrar es de quien lo creó o de
+  `COORDINACION` (403 `FORBIDDEN_ROLE` si no). `CalendarEventView.canEdit` solo esconde botones.
+- **Sin recurrencia real.** "Repetir semanalmente hasta…" crea copias (máx. 26 semanas) que comparten
+  `seriesId`; editar o borrar actúa sobre una sola ocurrencia. Las copias conservan la hora de reloj
+  en `America/Santiago` al cruzar un cambio de horario.
+- **Zona horaria**: los eventos con hora son instantes UTC y se muestran en la hora local del
+  navegador. Los de día completo son fechas a medianoche UTC (fin exclusivo) leídas con getters UTC.
+  Todo lo que depende de la zona del navegador se pinta después de hidratar. El servidor usa
+  `America/Santiago` solo para el "hoy" cuando la URL no trae fecha y para generar series. La regla
+  vive en `src/lib/calendar.ts`.
+- **Sin `If-Match`**: no hay labels, así que las mutaciones son last-write-wins.
+- `CalendarEvent.createdById` es opcional con `ON DELETE SET NULL`: borrar a un miembro conserva
+  los eventos que creó (los muestra como "Ex miembro" y solo coordinación puede tocarlos).
+- El color lo decide el tipo (`eventKindColor`), sin color libre, igual que proyectos.
+- La vista semana cubre las 24 h y abre en las 08:00, para que nada quede fuera de la grilla.
+
+Pendiente:
+
+- Arrastrar para mover o redimensionar eventos.
+- Editar o borrar "esta y las siguientes" de una serie.
+- Filtros por proyecto o tipo (el `projectId` ya está para eso).
+- Asistentes y RSVP, recordatorios, exportar `.ics` o sincronizar con Google Calendar.
+- Conectar `DashboardCalendarCard` a datos reales y agregarle un link "Ver calendario →".
 
 ## Miembros
 

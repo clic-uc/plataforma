@@ -63,10 +63,10 @@ one `useState` per field. Follow those conventions rather than introducing depen
 
 Each domain has two files in `src/lib/api/`:
 
-- `projects.ts`, `members.ts` — client-safe. Types, `fetch()` wrappers, TanStack Query hooks and
-  query-key factories.
-- `projects.server.ts`, `members.server.ts` — the **only** two files that import `@/lib/prisma`.
-  Prisma queries plus mapping to view models. Both carry `import "server-only"`.
+- `projects.ts`, `members.ts`, `events.ts` — client-safe. Types, `fetch()` wrappers, TanStack Query
+  hooks and query-key factories.
+- `projects.server.ts`, `members.server.ts`, `events.server.ts` — the **only** three files that
+  import `@/lib/prisma`. Prisma queries plus mapping to view models. All carry `import "server-only"`.
 
 Route handlers in `src/app/api/**` are thin: they parse params and delegate. Server pages prefetch
 with the `.server.ts` function and ship a dehydrated cache through `<HydrationBoundary>`; the client
@@ -77,6 +77,11 @@ feature/task labels (`F-01`, `T-01`) are generated server-side. The API addresse
 by **label**, not by cuid. Labels are renumbered on delete, so every mutation that takes a label must
 send the project's `labelsToken` in `If-Match` (412 `LABELS_CHANGED` if it went stale, 428 if
 missing); `docs/TODO.md` explains the mechanism.
+
+Calendar events (`/calendario`) keep timed events as UTC instants shown in the browser's local time,
+and all-day events as dates at midnight UTC read with UTC getters, so they do not slip a day in
+Chile. That rule and the rest of the date math live in `src/lib/calendar.ts`, which is pure and
+tested; anything that depends on the browser's time zone renders after hydration.
 
 ### Authentication and authorization
 
