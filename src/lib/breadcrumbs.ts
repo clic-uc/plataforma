@@ -30,6 +30,7 @@ export function useBreadcrumb(): Breadcrumb {
 
   if (pathname === "/dashboard") return { title: "Dashboard" };
   if (pathname === "/proyectos") return { title: "Gestión de Proyectos" };
+  if (pathname === "/calendario") return { title: "Calendario" };
   if (pathname === "/tiempo") return { title: "Tiempo & StandUp" };
   if (pathname === "/miembros") return { title: "Miembros" };
 

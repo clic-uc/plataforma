@@ -538,6 +538,85 @@ body {
 .week-exp-event.ev-green { background: var(--badge-green-bg); border-color: var(--badge-green-fg); color: var(--badge-green-fg); }
 .week-exp-event.ev-amber { background: var(--badge-amber-bg); border-color: var(--badge-amber-fg); color: var(--badge-amber-fg); }
 
+/* ─── CALENDARIO ─── */
+/* El tipo de evento fija el color (eventKindColor en lib/api/status.ts). */
+.cal-ev-accent { --ev-bg: var(--accent-dim); --ev-fg: var(--accent); }
+.cal-ev-green  { --ev-bg: var(--badge-green-bg); --ev-fg: var(--badge-green-fg); }
+.cal-ev-amber  { --ev-bg: var(--badge-amber-bg); --ev-fg: var(--badge-amber-fg); }
+.cal-ev-gray   { --ev-bg: var(--badge-gray-bg); --ev-fg: var(--badge-gray-fg); }
+
+.cal-toolbar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.cal-nav { display: flex; align-items: center; gap: 6px; }
+.cal-nav .month-cal-arrow { width: 30px; height: 30px; font-size: 15px; }
+.cal-today-btn { padding: 5px 12px; }
+.cal-title {
+  font-family: var(--font-barlow-condensed), sans-serif; font-size: 20px; font-weight: 700;
+  color: var(--text-1); min-width: 190px; display: flex; align-items: center; gap: 8px;
+}
+.cal-loading { font-size: 8px; color: var(--accent); animation: cal-pulse 1s ease-in-out infinite; }
+@keyframes cal-pulse { 50% { opacity: 0.25; } }
+.cal-view-toggle { margin: 0 0 0 auto; }
+.cal-view-toggle .tab-item { font-family: var(--font-barlow), sans-serif; }
+
+.cal-chip {
+  display: block; width: 100%; text-align: left;
+  font-family: var(--font-space-mono), monospace; font-size: 10px; line-height: 1.35;
+  padding: 2px 5px; border-radius: 3px; margin-bottom: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border: none; background: transparent; color: var(--text-1); cursor: pointer;
+}
+.cal-chip:hover { background: var(--surface-2); }
+.cal-chip::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ev-fg); margin-right: 5px; vertical-align: 1px;
+}
+.cal-chip.block { background: var(--ev-bg); color: var(--ev-fg); border-left: 2px solid var(--ev-fg); }
+.cal-chip.block::before { display: none; }
+.cal-chip.block:hover { filter: brightness(0.97); }
+.cal-chip-time { color: var(--text-3); margin-right: 5px; }
+
+/* vista mes */
+.cal-month { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.cal-month-dow { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-bottom: 1px solid var(--border); }
+.cal-month-dow div {
+  font-family: var(--font-space-mono), monospace; font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-3); text-align: center; padding: 8px 0;
+}
+.cal-month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-month-day {
+  min-width: 0; padding: 5px 6px 6px; cursor: pointer;
+  border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+.cal-month-day:nth-child(7n) { border-right: none; }
+.cal-month-day:hover { background: var(--surface-2); }
+.cal-month-day.other-month { background: var(--bg); }
+.cal-month-day.other-month .cal-month-num { color: var(--text-3); }
+.cal-month-day.other-month .cal-chip { opacity: 0.6; }
+.cal-month-num {
+  display: flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; padding: 0 4px; margin-bottom: 3px; border-radius: 11px;
+  font-family: var(--font-space-mono), monospace; font-size: 10.5px; color: var(--text-2);
+  background: transparent; border: none; cursor: pointer;
+}
+.cal-month-num:hover { background: var(--border); }
+.cal-month-day.today .cal-month-num { background: var(--accent); color: #fff; font-weight: 700; }
+.cal-more {
+  font-family: var(--font-space-mono), monospace; font-size: 9.5px; color: var(--text-3);
+  background: none; border: none; padding: 1px 5px; cursor: pointer;
+}
+.cal-more:hover { color: var(--accent); }
+
+@media (max-width: 720px) {
+  .cal-month-grid .cal-chip { font-size: 0; padding: 0; height: 6px; margin-bottom: 3px; }
+  .cal-month-grid .cal-chip::before { display: none; }
+  .cal-month-grid .cal-chip:not(.block) { background: var(--ev-fg); opacity: 0.6; }
+  .cal-view-toggle { margin-left: 0; }
+}
+
 /* ─── PROYECTOS SECTION ─── */
 .filter-row {
   display: flex;

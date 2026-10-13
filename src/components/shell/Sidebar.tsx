@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   HomeIcon,
   FolderIcon,
+  CalendarIcon,
   ClockIcon,
   AnalyticsIcon,
   UsersIcon,
@@ -29,6 +30,7 @@ interface NavItem {
 const principal: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: <HomeIcon className="nav-icon" /> },
   { label: "Proyectos", href: "/proyectos", icon: <FolderIcon className="nav-icon" />, matchPrefix: "/proyectos" },
+  { label: "Calendario", href: "/calendario", icon: <CalendarIcon className="nav-icon" />, matchPrefix: "/calendario" },
   { label: "Reporte", href: "/tiempo", icon: <ClockIcon className="nav-icon" /> },
   { label: "Analíticas", icon: <AnalyticsIcon className="nav-icon" /> },
 ];
