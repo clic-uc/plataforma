@@ -9,15 +9,11 @@ import { SearchIcon } from "@/components/icons";
 import { useProjects, type ProjectListItem } from "@/lib/api/projects";
 import { CreateProjectModal } from "@/components/views/CreateProjectModal";
 import { useIsCoordinacion } from "@/components/providers/CurrentMemberProvider";
-
-/** Minúsculas y sin tildes, para que "gestion" encuentre "Gestión". */
-function normalize(text: string): string {
-  return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-}
+import { normalizeSearch } from "@/lib/api/format";
 
 function matchesSearch(project: ProjectListItem, query: string): boolean {
   if (!query) return true;
-  return normalize([project.name, project.client, project.area, project.description].join(" ")).includes(query);
+  return normalizeSearch([project.name, project.client, project.area, project.description].join(" ")).includes(query);
 }
 
 export function ProyectosView() {
@@ -26,7 +22,7 @@ export function ProyectosView() {
   const [search, setSearch] = useState("");
   const isCoordinacion = useIsCoordinacion();
   const { data: projects = [] } = useProjects();
-  const query = normalize(search.trim());
+  const query = normalizeSearch(search.trim());
   const matching = projects.filter((p) => matchesSearch(p, query));
   const activos = matching.filter((p) => !p.archived);
   const archivados = matching.filter((p) => p.archived);

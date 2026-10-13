@@ -18,12 +18,15 @@ import {
 import { UserMenu } from "@/components/shell/UserMenu";
 import type { CurrentMember } from "@/lib/auth/current-member";
 import { useProjects } from "@/lib/api/projects";
+import { useMembers, usePendingMembers } from "@/lib/api/members";
 
 interface NavItem {
   label: string;
   href?: string;
   icon: React.ReactNode;
   count?: number;
+  /** Algo espera una acción de quien mira (p. ej. solicitudes por aprobar). */
+  alert?: { count: number; title: string };
   matchPrefix?: string;
 }
 
@@ -36,7 +39,7 @@ const principal: NavItem[] = [
 ];
 
 const comunidad: NavItem[] = [
-  { label: "Miembros", href: "/miembros", icon: <UsersIcon className="nav-icon" />, count: 18, matchPrefix: "/miembros" },
+  { label: "Miembros", href: "/miembros", icon: <UsersIcon className="nav-icon" />, matchPrefix: "/miembros" },
   { label: "Portafolio", icon: <BriefcaseIcon className="nav-icon" /> },
   { label: "Equipos", icon: <TeamsIcon className="nav-icon" /> },
   { label: "Reuniones", icon: <MeetingIcon className="nav-icon" /> },
@@ -53,6 +56,9 @@ function NavRow({ item, active }: { item: NavItem; active: boolean }) {
       {item.icon}
       <span className="nav-lbl">{item.label}</span>
       {item.count !== undefined && <span className="nav-count">{item.count}</span>}
+      {!!item.alert?.count && (
+        <span className="nav-count nav-count-alert" title={item.alert.title}>{item.alert.count}</span>
+      )}
     </>
   );
   if (!item.href) {
@@ -69,6 +75,20 @@ export function Sidebar({ member }: { member: CurrentMember }) {
   const pathname = usePathname();
   const { data: projects } = useProjects();
   const activeProjects = projects?.filter((p) => !p.archived).length;
+  const { data: members } = useMembers();
+  const isCoordinacion = member.role === "COORDINACION";
+  const { data: pending } = usePendingMembers({ enabled: isCoordinacion });
+
+  const withCounts = (item: NavItem): NavItem => {
+    if (item.href === "/proyectos") return { ...item, count: activeProjects };
+    if (item.href === "/miembros") {
+      const alert = pending?.length
+        ? { count: pending.length, title: `${pending.length} ${pending.length === 1 ? "solicitud" : "solicitudes"} por aprobar` }
+        : undefined;
+      return { ...item, count: members?.length, alert };
+    }
+    return item;
+  };
 
   const isActive = (item: NavItem) =>
     !!item.matchPrefix && pathname.startsWith(item.matchPrefix);
@@ -86,18 +106,14 @@ export function Sidebar({ member }: { member: CurrentMember }) {
         <div className="nav-section">
           <div className="nav-section-label">Principal</div>
           {principal.map((item) => (
-            <NavRow
-              key={item.label}
-              item={item.href === "/proyectos" ? { ...item, count: activeProjects } : item}
-              active={isActive(item)}
-            />
+            <NavRow key={item.label} item={withCounts(item)} active={isActive(item)} />
           ))}
         </div>
 
         <div className="nav-section" style={{ marginTop: 14 }}>
           <div className="nav-section-label">Comunidad</div>
           {comunidad.map((item) => (
-            <NavRow key={item.label} item={item} active={isActive(item)} />
+            <NavRow key={item.label} item={withCounts(item)} active={isActive(item)} />
           ))}
         </div>
 

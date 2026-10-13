@@ -1,6 +1,11 @@
 // Color usado para avatares/dots cuando el dato no trae un color propio en la DB.
 export const DEFAULT_ACCENT_COLOR = "var(--accent)";
 
+/** Minúsculas y sin tildes, para que "gestion" encuentre "Gestión". */
+export function normalizeSearch(text: string): string {
+  return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
 export function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
   const initials = parts.length > 1 ? parts[0][0] + parts[1][0] : parts[0].slice(0, 2);

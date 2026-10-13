@@ -1,7 +1,12 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
-import { PlaceholderBox } from "@/components/ui/PlaceholderBox";
+import { MemberAvatar } from "@/components/ui/Avatar";
+import { AvailabilityGrid } from "@/components/ui/AvailabilityGrid";
+import { EditMemberModal } from "@/components/views/EditMemberModal";
+import { useCurrentMember } from "@/components/providers/CurrentMemberProvider";
 import {
   StarAchievementIcon,
   SpeechAchievementIcon,
@@ -9,7 +14,8 @@ import {
   FileAchievementIcon,
   LockAchievementIcon,
 } from "@/components/icons";
-import { useMember } from "@/lib/api/members";
+import { errorMessage } from "@/lib/api/http";
+import { useDeleteMember, useMember } from "@/lib/api/members";
 import { DEFAULT_ACCENT_COLOR } from "@/lib/api/format";
 
 const achievementIcon = {
@@ -20,9 +26,29 @@ const achievementIcon = {
   lock: LockAchievementIcon,
 };
 
+function EmptyCardText({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: 12, color: "var(--text-3)" }}>{children}</div>;
+}
+
 export function MemberProfileView({ memberId }: { memberId: string }) {
+  const router = useRouter();
+  const current = useCurrentMember();
   const { data: member } = useMember(memberId);
+  const deleteMember = useDeleteMember();
+  const [editing, setEditing] = useState(false);
   if (!member) return null;
+
+  const isSelf = current.id === member.id;
+  const isCoordinacion = current.role === "COORDINACION";
+
+  function handleDelete() {
+    if (!member) return;
+    const confirmed = window.confirm(
+      `¿Eliminar a ${member.name} de la plataforma? Se borra su cuenta, sale de sus equipos y sus tareas quedan sin asignar. Esta acción no se puede deshacer.`,
+    );
+    if (!confirmed) return;
+    deleteMember.mutate(member.id, { onSuccess: () => router.push("/miembros") });
+  }
 
   const filled = "★".repeat(member.rankFilled) + "☆".repeat(4 - member.rankFilled);
 
@@ -30,18 +56,52 @@ export function MemberProfileView({ memberId }: { memberId: string }) {
     <section className="perfil-layout">
       <div>
         <div className="perfil-card">
-          <div className="perfil-avatar-lg" style={{ background: DEFAULT_ACCENT_COLOR }}>{member.initials}</div>
+          <MemberAvatar member={member} className="perfil-avatar-lg" />
           <div className="perfil-name">{member.name}</div>
           <Badge color="blue" style={{ marginTop: 8 }}>{member.area}</Badge>
           <hr className="perfil-divider" />
           <div className="perfil-info-row"><span className="perfil-info-label">Email</span><span className="perfil-info-val" style={{ fontFamily: "var(--font-space-mono)", fontSize: 11 }}>{member.email}</span></div>
+          <div className="perfil-info-row"><span className="perfil-info-label">Rol</span><span className="perfil-info-val">{member.role}</span></div>
           <div className="perfil-info-row"><span className="perfil-info-label">Cumpleaños</span><span className="perfil-info-val">{member.birthday}</span></div>
           <div className="perfil-info-row"><span className="perfil-info-label">Ingresó</span><span className="perfil-info-val">{member.joinedAt}</span></div>
           <div className="perfil-info-row"><span className="perfil-info-label">Estado</span><span className="perfil-info-val"><Badge color={member.statusColor}>{member.status}</Badge></span></div>
           <hr className="perfil-divider" />
-          <button className="btn-primary" style={{ width: "100%", fontSize: 12, marginBottom: 7 }}>Editar perfil</button>
-          <button className="btn-ghost" style={{ width: "100%", fontSize: 12 }}>Enviar mensaje</button>
+          {(isSelf || isCoordinacion) && (
+            <button
+              className="btn-primary"
+              style={{ width: "100%", fontSize: 12, marginBottom: 7 }}
+              onClick={() => setEditing(true)}
+            >
+              {isSelf ? "Editar mi perfil" : "Editar perfil"}
+            </button>
+          )}
+          {!isSelf && (
+            <a
+              href={`mailto:${member.email}`}
+              className="btn-ghost"
+              style={{ display: "block", width: "100%", fontSize: 12, textDecoration: "none", boxSizing: "border-box" }}
+            >
+              Enviar correo
+            </a>
+          )}
+          {isCoordinacion && !isSelf && (
+            <button
+              className="btn-danger"
+              style={{ width: "100%", fontSize: 12, marginTop: 7 }}
+              onClick={handleDelete}
+              disabled={deleteMember.isPending}
+            >
+              {deleteMember.isPending ? "Eliminando…" : "Eliminar miembro"}
+            </button>
+          )}
+          {deleteMember.isError && (
+            <div className="modal-error" style={{ marginTop: 8, marginBottom: 0 }}>
+              {errorMessage(deleteMember.error, "No se pudo eliminar al miembro. Intenta de nuevo.")}
+            </div>
+          )}
         </div>
+
+        {editing && <EditMemberModal member={member} onClose={() => setEditing(false)} />}
 
         <div className="card" style={{ marginTop: 13, textAlign: "left" }}>
           <div className="card-label" style={{ marginBottom: 12 }}>Stats</div>
@@ -65,6 +125,7 @@ export function MemberProfileView({ memberId }: { memberId: string }) {
 
         <div className="card" style={{ marginTop: 10, textAlign: "left" }}>
           <div className="card-label" style={{ marginBottom: 12 }}>Logros</div>
+          {member.achievements.length === 0 && <EmptyCardText>Todavía sin logros.</EmptyCardText>}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
             {member.achievements.map((a) => {
               const Icon = achievementIcon[a.icon];
@@ -90,6 +151,7 @@ export function MemberProfileView({ memberId }: { memberId: string }) {
       <div className="perfil-right">
         <div className="card">
           <div className="card-label">Habilidades técnicas</div>
+          {member.skills.length === 0 && <EmptyCardText>Sin habilidades registradas.</EmptyCardText>}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
             {member.skills.map((s) => (
               <span key={s} className="skill-chip" style={{ fontSize: 10, padding: "3px 8px" }}>{s}</span>
@@ -99,6 +161,7 @@ export function MemberProfileView({ memberId }: { memberId: string }) {
 
         <div className="card">
           <div className="card-label">Proyectos</div>
+          {member.projects.length === 0 && <EmptyCardText>No participa en ningún proyecto.</EmptyCardText>}
           {member.projects.map((p) => (
             <div key={p.id} className="perfil-proj-row">
               <div className="proj-dot" style={{ background: DEFAULT_ACCENT_COLOR }} />
@@ -113,11 +176,18 @@ export function MemberProfileView({ memberId }: { memberId: string }) {
 
         <div className="card">
           <div className="card-label">Disponibilidad semanal</div>
-          <PlaceholderBox text={<>Grilla de bloques horarios declarados<br />Lun–Vie · mañana / tarde / noche</>} style={{ height: 80 }} />
+          {member.availability.length === 0 ? (
+            <EmptyCardText>
+              {isSelf ? "Aún no declaras tu disponibilidad. Agrégala desde «Editar mi perfil»." : "Sin disponibilidad declarada."}
+            </EmptyCardText>
+          ) : (
+            <AvailabilityGrid value={member.availability} />
+          )}
         </div>
 
         <div className="card">
           <div className="card-label">StandUps recientes</div>
+          {member.standups.length === 0 && <EmptyCardText>Sin standups registrados.</EmptyCardText>}
           {member.standups.map((s, i) => (
             <div key={i} className="perfil-standup-item">
               <div className="perfil-standup-date">{s.date}</div>
