@@ -1,5 +1,6 @@
 import {
   DocSlotType,
+  EventKind,
   FeatureStatus,
   KanbanColumn,
   MemberRole,
@@ -147,3 +148,28 @@ export const docSlotBadgeColor: Record<DocSlotType, BadgeColor> = {
   DECISIONES: "gray",
   INFORME: "gray",
 };
+
+/// Color de los eventos del calendario. Sin color libre, igual que proyectos: el
+/// tipo decide, con la paleta de las badges más el acento (clases .cal-ev-*).
+export type EventColor = "accent" | "green" | "amber" | "gray";
+
+export const eventKindLabel: Record<EventKind, string> = {
+  REUNION: "Reunión",
+  ENTREGA: "Entrega",
+  HITO: "Hito",
+  OTRO: "Otro",
+};
+
+export const eventKindColor: Record<EventKind, EventColor> = {
+  REUNION: "accent",
+  ENTREGA: "amber",
+  HITO: "green",
+  OTRO: "gray",
+};
+
+export const EVENT_KIND_OPTIONS: { value: EventKind; label: string }[] = [
+  { value: "REUNION", label: "Reunión" },
+  { value: "ENTREGA", label: "Entrega" },
+  { value: "HITO", label: "Hito" },
+  { value: "OTRO", label: "Otro" },
+];

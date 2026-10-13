@@ -1,7 +1,9 @@
 import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { addDays, allDayToISO, startOfWeek, toDayKey, weeklyOccurrences } from "@/lib/calendar";
 import { projects as projectsData } from "./data/projects";
 import { members as membersData } from "./data/members";
 
@@ -110,6 +112,7 @@ async function main() {
   // también su identidad de auth, así que borrarlos eliminaría a la persona y sus
   // sesiones (FK en cascada). El resto es data de demo.
   console.log("Limpiando datos existentes...");
+  await prisma.calendarEvent.deleteMany();
   await prisma.standup.deleteMany();
   await prisma.memberAchievement.deleteMany();
   await prisma.achievement.deleteMany();
@@ -283,7 +286,123 @@ async function main() {
     }
   }
 
+  console.log("Creando eventos del calendario...");
+  await seedCalendarEvents(memberIdByMockId, [...projectIdByMockId.values()]);
+
   console.log("Seed completado.");
+}
+
+/**
+ * Eventos demo relativos a la semana actual, para que el calendario nunca se vea
+ * vacío al abrirlo. Las horas son locales de quien corre el seed (Chile).
+ */
+async function seedCalendarEvents(memberIdByMockId: Map<string, string>, projectIds: string[]) {
+  const monday = startOfWeek(new Date());
+  const at = (dayOffset: number, hours: number, minutes = 0) => {
+    const day = addDays(monday, dayOffset);
+    return new Date(day.getFullYear(), day.getMonth(), day.getDate(), hours, minutes);
+  };
+  const allDay = (firstOffset: number, lastOffset: number) => {
+    const { startsAt, endsAt } = allDayToISO(toDayKey(addDays(monday, firstOffset)), toDayKey(addDays(monday, lastOffset)));
+    return { allDay: true, startsAt: new Date(startsAt), endsAt: new Date(endsAt) };
+  };
+  const by = (mockId: string) => memberIdByMockId.get(mockId) ?? null;
+
+  type SeedEvent = {
+    title: string;
+    kind: "REUNION" | "ENTREGA" | "HITO" | "OTRO";
+    allDay?: boolean;
+    startsAt: Date;
+    endsAt: Date;
+    location?: string;
+    description?: string;
+    projectId?: string;
+    createdById: string | null;
+    /** Repite semanalmente hasta esta cantidad de semanas después (inclusive). */
+    repeatWeeks?: number;
+  };
+
+  const events: SeedEvent[] = [
+    {
+      title: "Reunión de área Datos",
+      kind: "REUNION",
+      startsAt: at(-14, 18),
+      endsAt: at(-14, 19),
+      location: "https://meet.google.com/abc-defg-hij",
+      createdById: by("jp"),
+      repeatWeeks: 6,
+    },
+    {
+      title: "Reunión de área Backend",
+      kind: "REUNION",
+      startsAt: at(-12, 17, 30),
+      endsAt: at(-12, 18, 30),
+      location: "Sala 2, edificio CLIC",
+      createdById: by("mg"),
+      repeatWeeks: 6,
+    },
+    {
+      title: "Sprint review",
+      kind: "REUNION",
+      startsAt: at(4, 16),
+      endsAt: at(4, 17, 30),
+      description: "Revisión del sprint con todo el equipo del proyecto.",
+      projectId: projectIds[0],
+      createdById: by("jp"),
+    },
+    {
+      title: "Code review del módulo de pagos",
+      kind: "OTRO",
+      startsAt: at(4, 16, 30),
+      endsAt: at(4, 17, 30),
+      projectId: projectIds[0],
+      createdById: by("cr"),
+    },
+    {
+      title: "Demo con el cliente",
+      kind: "HITO",
+      startsAt: at(9, 11),
+      endsAt: at(9, 12),
+      location: "Municipalidad, sala de concejo",
+      description: "Primera demo del flujo completo. Llevar notebook con la versión de staging.",
+      projectId: projectIds[1],
+      createdById: by("am"),
+    },
+    {
+      title: "Entrega informe de avance",
+      kind: "ENTREGA",
+      startsAt: at(11, 23),
+      endsAt: at(11, 23, 59),
+      projectId: projectIds[1],
+      createdById: by("am"),
+    },
+    {
+      title: "Jornada de planificación",
+      kind: "OTRO",
+      ...allDay(15, 17),
+      location: "Campus San Joaquín",
+      description: "Tres días para planificar el próximo semestre.",
+      createdById: by("jp"),
+    },
+    {
+      title: "Lanzamiento App Vecinos",
+      kind: "HITO",
+      ...allDay(2, 2),
+      projectId: projectIds[3],
+      createdById: by("dl"),
+    },
+  ];
+
+  for (const { repeatWeeks, ...event } of events) {
+    const occurrences = repeatWeeks
+      ? weeklyOccurrences({ allDay: !!event.allDay, startsAt: event.startsAt, endsAt: event.endsAt }, toDayKey(addDays(event.startsAt, repeatWeeks * 7)))!
+      : [{ startsAt: event.startsAt, endsAt: event.endsAt }];
+    const seriesId = occurrences.length > 1 ? randomUUID() : null;
+
+    await prisma.calendarEvent.createMany({
+      data: occurrences.map((o) => ({ ...event, ...o, seriesId })),
+    });
+  }
 }
 
 main()
