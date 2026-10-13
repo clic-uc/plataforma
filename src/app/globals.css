@@ -675,6 +675,27 @@ body {
   border-radius: 50%; background: #c0392b;
 }
 
+/* modales */
+.cal-detail-tags { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.cal-kind {
+  font-family: var(--font-space-mono), monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 2px 8px; border-radius: 3px; background: var(--ev-bg); color: var(--ev-fg);
+}
+.cal-detail-series { font-family: var(--font-space-mono), monospace; font-size: 10px; color: var(--text-3); }
+.cal-detail { display: grid; grid-template-columns: 92px 1fr; gap: 9px 12px; font-size: 13px; }
+.cal-detail dt {
+  font-family: var(--font-space-mono), monospace; font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-3); padding-top: 2px;
+}
+.cal-detail dd { color: var(--text-1); min-width: 0; overflow-wrap: anywhere; }
+.cal-detail dd a { color: var(--accent); text-decoration: none; }
+.cal-detail dd a:hover { text-decoration: underline; }
+.cal-detail-desc { white-space: pre-wrap; color: var(--text-2); line-height: 1.5; }
+.cal-datetime { display: grid; grid-template-columns: 1fr 110px; gap: 8px; }
+.cal-datetime input:only-child { grid-column: 1 / -1; }
+.cal-repeat-until { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; color: var(--text-2); }
+.cal-repeat-until input { max-width: 170px; }
+
 @media (max-width: 720px) {
   .cal-month-grid .cal-chip { font-size: 0; padding: 0; height: 6px; margin-bottom: 3px; }
   .cal-month-grid .cal-chip::before { display: none; }
