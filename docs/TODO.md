@@ -135,14 +135,23 @@ Pendiente:
     hay botón, y si alguien escribe la sintaxis se muestra como texto (`[ ]`), no como checkbox.
   - Los cambios que hace la barra no entran al Ctrl+Z nativo del `textarea`, porque el valor lo
     escribe React.
-- Sigue pendiente en el editor:
-  - Metadatos editables (tipo, autor, fecha) — hoy son de solo lectura.
-  - "Historial de versiones" es un placeholder.
-  - "Compartir enlace" no hace nada.
-- El propio schema tiene esto documentado en comentarios (`Document` y `Acta`, en
-  `prisma/schema.prisma`): `content` es texto plano por ahora; si en algún momento se necesitan
-  secciones estructuradas o versionamiento real, `author`/`date` deberían pasar a vivir en un
-  modelo `DocumentVersion` aparte, con `Document`/`Acta` como contenedor del slot.
+- **Historial de versiones** en `DocVersion` (migración `20261021120000_doc_versions`), compartido
+  por documentos y actas: cada fila cuelga de exactamente uno de los dos (CHECK en la migración).
+  - Guarda el **texto completo** de cada versión; el diff se calcula al mostrarlo
+    (`src/lib/diff.ts`, LCS por líneas, sin dependencias). `Document.content`/`Acta.content` siguen
+    siendo la versión actual, así que leer un documento no toca el historial.
+  - **Cada guardado con cambios es una versión**, y una versión no se modifica después. Guardar sin
+    cambios no registra nada. Se probó fusionar los guardados de una misma persona en una "sesión"
+    de 30 minutos, pero aquí guardar es un clic deliberado (no hay autoguardado) y fusionar
+    escondía los cambios intermedios; se quitó en `20261022120000_doc_versions_immutable`.
+  - **Restaurar no reescribe la historia**: lleva el contenido al editor y, al guardar, queda como
+    una versión nueva.
+  - La migración creó una versión inicial para lo que ya tenía contenido: en documentos, con el
+    creador y la fecha de creación; en actas, sin autor y con la fecha de la reunión, porque no hay
+    otra. Lo que llegue sin historial (el seed) recibe esa misma versión inicial al primer guardado.
+- **Los metadatos (tipo, autor, fecha) son de solo lectura a propósito**: el tipo es el slot del
+  proyecto, y autor/fecha describen la creación. Quién editó y cuándo está en el historial.
+- Sigue pendiente en el editor: "Compartir enlace" no hace nada.
 
 ## Features y Tareas
 

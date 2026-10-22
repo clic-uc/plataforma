@@ -3,8 +3,8 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Markdown } from "@/components/ui/Markdown";
-import { PlaceholderBox } from "@/components/ui/PlaceholderBox";
-import { useProject, useProjectDoc, useUpdateProjectDoc } from "@/lib/api/projects";
+import { DocVersionModal } from "@/components/views/DocVersionModal";
+import { useProject, useProjectDoc, useProjectDocVersions, useUpdateProjectDoc, type ProjectDocVersion } from "@/lib/api/projects";
 import { applyFormat, continueList, type MarkdownFormat } from "@/lib/markdown";
 
 const TOOLBAR: { format: MarkdownFormat; label: ReactNode; title: string }[] = [
@@ -28,6 +28,8 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
   // Un documento con contenido se abre para leerlo; uno vacío, directo para escribir.
   const [mode, setMode] = useState<"write" | "preview">(() => (doc?.content?.trim() ? "preview" : "write"));
   const mutation = useUpdateProjectDoc(projectId, docId);
+  const { data: versions = [] } = useProjectDocVersions(projectId, docId);
+  const [openVersionId, setOpenVersionId] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // La selección que deja un botón de formato solo se puede aplicar después de que
@@ -58,6 +60,17 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
     pendingSelection.current = [next.start, next.end];
     setContent(next.value);
   }
+
+  // Restaurar lleva el contenido al editor sin guardarlo: se aplica con "Guardar cambios",
+  // que registra una versión nueva en vez de borrar las posteriores.
+  function restore(version: ProjectDocVersion) {
+    if (content !== doc?.content && !window.confirm("Tienes cambios sin guardar. ¿Reemplazarlos por esta versión?")) return;
+    setContent(version.content);
+    setMode("write");
+    setOpenVersionId(null);
+  }
+
+  const openIndex = versions.findIndex((version) => version.id === openVersionId);
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !e.nativeEvent.isComposing) {
@@ -139,7 +152,21 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
 
         <div className="doc-sc">
           <div className="ds-lbl">Historial de versiones</div>
-          <PlaceholderBox text={<>Lista de versiones<br />con diff y autor</>} style={{ height: 72 }} />
+          {versions.length === 0 ? (
+            <div className="doc-v-empty">Sin versiones todavía. Se registra una al guardar.</div>
+          ) : (
+            <div className="doc-v-list">
+              {versions.map((version, index) => (
+                <button key={version.id} type="button" className="doc-v-row" onClick={() => setOpenVersionId(version.id)}>
+                  <span className="doc-v-author">
+                    {version.author || "Autor desconocido"}
+                    {index === 0 && <Badge color="blue" style={{ fontSize: 8, marginLeft: 6 }}>Actual</Badge>}
+                  </span>
+                  <span className="doc-v-date">{version.date}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {mutation.isError && <div className="modal-error">No se pudo guardar. Intenta de nuevo.</div>}
@@ -154,6 +181,16 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
         </button>
         <button className="btn-ghost" style={{ width: "100%", fontSize: 13 }}>Compartir enlace</button>
       </div>
+
+      {openIndex !== -1 && (
+        <DocVersionModal
+          version={versions[openIndex]}
+          previous={versions[openIndex + 1]}
+          canRestore={versions[openIndex].content !== content}
+          onRestore={() => restore(versions[openIndex])}
+          onClose={() => setOpenVersionId(null)}
+        />
+      )}
     </section>
   );
 }

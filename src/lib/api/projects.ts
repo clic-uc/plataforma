@@ -91,6 +91,14 @@ export interface ProjectDocDetail {
   content: string;
 }
 
+export interface ProjectDocVersion {
+  id: string;
+  /** Vacío en una versión sin autor: la inicial de un acta o la de un miembro eliminado. */
+  author: string;
+  date: string;
+  content: string;
+}
+
 export interface UpdateProjectInput {
   name: string;
   client: string;
@@ -164,6 +172,7 @@ export const projectsKeys = {
   list: () => [...projectsKeys.all, "list"] as const,
   detail: (id: string) => [...projectsKeys.all, "detail", id] as const,
   doc: (id: string, docId: string) => [...projectsKeys.all, "detail", id, "doc", docId] as const,
+  docVersions: (id: string, docId: string) => [...projectsKeys.doc(id, docId), "versions"] as const,
 };
 
 async function fetchProjects(): Promise<ProjectListItem[]> {
@@ -183,6 +192,12 @@ async function fetchProjectDoc(id: string, docId: string): Promise<ProjectDocDet
   const res = await fetch(`/api/projects/${id}/docs/${docId}`);
   if (res.status === 404) return null;
   await assertOk(res, "No se pudo cargar el documento");
+  return res.json();
+}
+
+async function fetchProjectDocVersions(id: string, docId: string): Promise<ProjectDocVersion[]> {
+  const res = await fetch(`/api/projects/${id}/docs/${docId}/versions`);
+  await assertOk(res, "No se pudo cargar el historial");
   return res.json();
 }
 
@@ -348,6 +363,10 @@ export function useProjectDoc(id: string, docId: string, options?: { enabled?: b
   return useQuery({ queryKey: projectsKeys.doc(id, docId), queryFn: () => fetchProjectDoc(id, docId), ...options });
 }
 
+export function useProjectDocVersions(id: string, docId: string) {
+  return useQuery({ queryKey: projectsKeys.docVersions(id, docId), queryFn: () => fetchProjectDocVersions(id, docId) });
+}
+
 export function useCreateProject() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -387,6 +406,9 @@ export function useUpdateProjectDoc(id: string, docId: string) {
     mutationFn: (content: string) => updateProjectDocRequest(id, docId, content),
     onSuccess: (updated) => {
       queryClient.setQueryData(projectsKeys.doc(id, docId), updated);
+      // Se devuelve la promesa para que el guardado siga "pendiente" hasta que el historial
+      // ya muestre la versión nueva, en vez de marcar "Guardado ✓" antes de que aparezca.
+      return queryClient.invalidateQueries({ queryKey: projectsKeys.docVersions(id, docId) });
     },
   });
 }

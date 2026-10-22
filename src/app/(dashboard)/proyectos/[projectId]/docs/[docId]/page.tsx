@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { HydrationBoundary, dehydrate } from "@tanstack/react-query";
 import { getQueryClient } from "@/lib/api/query-client";
 import { projectsKeys } from "@/lib/api/projects";
-import { getProject, getProjectDoc } from "@/lib/api/projects.server";
+import { getProject, getProjectDoc, getProjectDocVersions } from "@/lib/api/projects.server";
 import { DocEditorView } from "@/components/views/DocEditorView";
 
 export default async function DocEditorPage({
@@ -24,6 +24,11 @@ export default async function DocEditorPage({
     queryFn: () => getProjectDoc(projectId, docId),
   });
   if (!doc) notFound();
+
+  await queryClient.prefetchQuery({
+    queryKey: projectsKeys.docVersions(projectId, docId),
+    queryFn: () => getProjectDocVersions(projectId, docId),
+  });
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>
