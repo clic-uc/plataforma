@@ -123,9 +123,19 @@ Pendiente:
 
 ## Documentos y Actas
 
-- El editor de documentos (`DocEditorView`) solo tiene **el campo de texto plano** conectado a
-  guardar/persistir. Sigue pendiente:
-  - Formato enriquecido: los botones B/I/H1/H2/Lista/Tarea/Tabla/Código son decorativos.
+- **El contenido es Markdown** (GFM), guardado tal cual en `content`, sin migración: el texto plano
+  que ya existía es Markdown válido. El editor (`DocEditorView`) es un `textarea` con pestañas
+  "Escribir / Vista previa", y abre en la vista previa salvo que el documento esté vacío. La barra
+  (B/I/H1/H2/Lista/Tabla/Código, Ctrl+B, Ctrl+I) inserta la sintaxis, y Enter dentro de una lista
+  abre el siguiente ítem; esa lógica es pura y vive en `src/lib/markdown.ts`. La vista previa usa `react-markdown` +
+  `remark-gfm` (`src/components/ui/Markdown.tsx`), que no renderiza HTML crudo.
+  - Se descartó un editor WYSIWYG (Tiptap/ProseMirror): obligaba a pasar `content` a JSON, migrar
+    lo existente y sumar una dependencia pesada; con texto, el futuro diff de versiones es trivial.
+  - **Sin listas de tareas (`- [ ]`)** a propósito: chocarían con la entidad `Task` del proyecto. No
+    hay botón, y si alguien escribe la sintaxis se muestra como texto (`[ ]`), no como checkbox.
+  - Los cambios que hace la barra no entran al Ctrl+Z nativo del `textarea`, porque el valor lo
+    escribe React.
+- Sigue pendiente en el editor:
   - Metadatos editables (tipo, autor, fecha) — hoy son de solo lectura.
   - "Historial de versiones" es un placeholder.
   - "Compartir enlace" no hace nada.

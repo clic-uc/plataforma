@@ -178,7 +178,7 @@ model Task {
   @@unique([projectId, label])
 }
 
-/// content es texto plano por ahora. A futuro, cuando se hagan secciones dentro
+/// content es Markdown (GFM). A futuro, cuando se hagan secciones dentro
 /// del documento (contexto, alcance, decisiones, por ejemplo), conviene migrarlo a JSON estructurado.
 /// author/date describen hoy "quién y cuándo se llenó el documento", pero conceptualmente
 /// son metadata de una versión. Cuando se implemente versionamiento, deberían moverse a un
@@ -199,7 +199,7 @@ model Document {
   @@unique([projectId, slot])
 }
 
-/// Misma observación que en Document: content es texto plano por ahora, candidato a JSON
+/// Misma observación que en Document: content es Markdown por ahora, candidato a JSON
 /// por secciones a futuro, y date sería metadata de versión si las actas llegan a requerir
 /// historial de cambios.
 model Acta {
