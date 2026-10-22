@@ -9,7 +9,6 @@ import {
   ClockIcon,
   AnalyticsIcon,
   UsersIcon,
-  BriefcaseIcon,
   MeetingIcon,
   BookIcon,
   PostulacionesIcon,
@@ -38,7 +37,6 @@ const principal: NavItem[] = [
 
 const comunidad: NavItem[] = [
   { label: "Equipo", href: "/miembros", icon: <UsersIcon className="nav-icon" />, matchPrefix: "/miembros" },
-  { label: "Portafolio", icon: <BriefcaseIcon className="nav-icon" /> },
   { label: "Reuniones", icon: <MeetingIcon className="nav-icon" /> },
   { label: "Recursos", icon: <BookIcon className="nav-icon" /> },
 ];
