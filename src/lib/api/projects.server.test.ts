@@ -6,10 +6,13 @@ import {
   deleteFeature,
   deleteTask,
   parseAddProjectMemberInput,
+  createProjectDocComment,
+  parseCreateDocCommentInput,
   parseCreateTaskInput,
   parseUpdateProjectMemberInput,
   parseUpdateTaskInput,
   removeProjectMember,
+  resolveProjectDocComment,
   updateProjectMemberRole,
   updateTask,
 } from "@/lib/api/projects.server";
@@ -17,6 +20,9 @@ import {
 const { prisma } = vi.hoisted(() => ({
   prisma: {
     project: { findUnique: vi.fn() },
+    document: { findUnique: vi.fn() },
+    acta: { findFirst: vi.fn() },
+    docComment: { create: vi.fn(), deleteMany: vi.fn() },
     member: { findUnique: vi.fn() },
     feature: { findMany: vi.fn() },
     task: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
@@ -370,5 +376,70 @@ describe("equipo del proyecto", () => {
     prisma.projectMember.deleteMany.mockResolvedValue({ count: 0 });
     await expect(removeProjectMember("p1", "m1")).resolves.toBeNull();
     expect(prisma.task.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("parseCreateDocCommentInput", () => {
+  const valid = { quote: "un fragmento", occurrence: 1, body: "  Falta una fuente  " };
+
+  it("acepta un comentario válido y recorta el cuerpo", () => {
+    expect(parseCreateDocCommentInput(valid)).toEqual({ quote: "un fragmento", occurrence: 1, body: "Falta una fuente" });
+  });
+
+  it("conserva el fragmento tal cual, con sus espacios", () => {
+    expect(parseCreateDocCommentInput({ ...valid, quote: "a  b" })?.quote).toBe("a  b");
+  });
+
+  it.each([
+    ["sin cuerpo", { ...valid, body: "   " }],
+    ["sin fragmento", { ...valid, quote: "  " }],
+    ["fragmento demasiado largo", { ...valid, quote: "x".repeat(501) }],
+    ["cuerpo demasiado largo", { ...valid, body: "x".repeat(2001) }],
+    ["repetición negativa", { ...valid, occurrence: -1 }],
+    ["repetición fraccionaria", { ...valid, occurrence: 0.5 }],
+    ["repetición como texto", { ...valid, occurrence: "1" }],
+    ["body que no es un objeto", "hola"],
+    ["body nulo", null],
+  ])("rechaza %s", (_name, body) => {
+    expect(parseCreateDocCommentInput(body)).toBeNull();
+  });
+});
+
+describe("comentarios de documentos", () => {
+  beforeEach(resetPrisma);
+
+  const documentRow = { id: "d1", filled: true, content: "", authorId: null, date: null };
+
+  it("resolver borra la fila, acotada al documento del que se pidió", async () => {
+    prisma.document.findUnique.mockResolvedValue(documentRow);
+    prisma.docComment.deleteMany.mockResolvedValue({ count: 1 });
+    await expect(resolveProjectDocComment("p1", "kickoff", "c1")).resolves.toBe(true);
+    expect(prisma.docComment.deleteMany).toHaveBeenCalledWith({ where: { id: "c1", documentId: "d1" } });
+  });
+
+  it("resolver un comentario de otro documento (o ya resuelto) devuelve false", async () => {
+    prisma.document.findUnique.mockResolvedValue(documentRow);
+    prisma.docComment.deleteMany.mockResolvedValue({ count: 0 });
+    await expect(resolveProjectDocComment("p1", "kickoff", "otro")).resolves.toBe(false);
+  });
+
+  it("sin documento ni acta no toca la base de comentarios", async () => {
+    prisma.document.findUnique.mockResolvedValue(null);
+    prisma.acta.findFirst.mockResolvedValue(null);
+    await expect(resolveProjectDocComment("p1", "nada", "c1")).resolves.toBe(false);
+    await expect(createProjectDocComment("p1", "nada", { quote: "a", occurrence: 0, body: "b" })).resolves.toBeNull();
+    expect(prisma.docComment.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.docComment.create).not.toHaveBeenCalled();
+  });
+
+  it("en un acta, el comentario cuelga del acta", async () => {
+    prisma.acta.findFirst.mockResolvedValue({ id: "a1", content: "", date: new Date() });
+    prisma.docComment.create.mockResolvedValue({
+      id: "c1", quote: "a", occurrence: 0, body: "b", createdAt: new Date(), author: { name: "Yo" },
+    });
+    await createProjectDocComment("p1", "a1", { quote: "a", occurrence: 0, body: "b" });
+    expect(prisma.docComment.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ actaId: "a1", authorId: "yo" }) }),
+    );
   });
 });

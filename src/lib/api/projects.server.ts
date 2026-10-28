@@ -5,6 +5,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireMember, requireCoordinacion } from "@/lib/auth/guards";
 import { ApiError } from "@/lib/api/errors";
+import { MAX_COMMENT_LENGTH, MAX_QUOTE_LENGTH } from "@/lib/comments";
 import { formatLabel, labelNumber, labelsToken, matchesLabelsToken, nextLabel } from "@/lib/api/labels";
 import {
   formatDateTime,
@@ -30,10 +31,12 @@ import {
 import type {
   AddProjectMemberInput,
   CreateActaInput,
+  CreateDocCommentInput,
   CreateFeatureInput,
   CreateProjectInput,
   CreateTaskInput,
   ProjectDetail,
+  ProjectDocComment,
   ProjectDocDetail,
   ProjectDocVersion,
   ProjectListItem,
@@ -462,6 +465,80 @@ export async function getProjectDocVersions(projectId: string, docId: string): P
     date: formatDateTime(version.createdAt),
     content: version.content,
   }));
+}
+
+type DocCommentRow = Prisma.DocCommentGetPayload<{ include: { author: { select: { name: true } } } }>;
+
+function toDocComment(comment: DocCommentRow): ProjectDocComment {
+  return {
+    id: comment.id,
+    author: comment.author?.name ?? "",
+    date: formatDateTime(comment.createdAt),
+    quote: comment.quote,
+    occurrence: comment.occurrence,
+    body: comment.body,
+  };
+}
+
+export function parseCreateDocCommentInput(body: unknown): CreateDocCommentInput | null {
+  if (typeof body !== "object" || body === null) return null;
+  const b = body as Record<string, unknown>;
+
+  // El fragmento se guarda tal cual: lo que se busca en el texto es justamente lo que se seleccionó.
+  const quote = typeof b.quote === "string" ? b.quote : "";
+  if (!quote.trim() || quote.length > MAX_QUOTE_LENGTH) return null;
+
+  const occurrence = b.occurrence;
+  if (typeof occurrence !== "number" || !Number.isInteger(occurrence) || occurrence < 0) return null;
+
+  const text = typeof b.body === "string" ? b.body.trim() : "";
+  if (!text || text.length > MAX_COMMENT_LENGTH) return null;
+
+  return { quote, occurrence, body: text };
+}
+
+export async function getProjectDocComments(projectId: string, docId: string): Promise<ProjectDocComment[] | null> {
+  await requireMember();
+
+  const target = await findDocTarget(projectId, docId);
+  if (!target) return null;
+
+  const comments = await prisma.docComment.findMany({
+    where: target.parent,
+    orderBy: { createdAt: "asc" },
+    include: { author: { select: { name: true } } },
+  });
+
+  return comments.map(toDocComment);
+}
+
+export async function createProjectDocComment(
+  projectId: string,
+  docId: string,
+  input: CreateDocCommentInput,
+): Promise<ProjectDocComment | null> {
+  const member = await requireMember();
+
+  const target = await findDocTarget(projectId, docId);
+  if (!target) return null;
+
+  const comment = await prisma.docComment.create({
+    data: { ...target.parent, authorId: member.id, quote: input.quote, occurrence: input.occurrence, body: input.body },
+    include: { author: { select: { name: true } } },
+  });
+
+  return toDocComment(comment);
+}
+
+/** Resolver un comentario es borrar su fila. false si no existe o es de otro documento. */
+export async function resolveProjectDocComment(projectId: string, docId: string, commentId: string): Promise<boolean> {
+  await requireMember();
+
+  const target = await findDocTarget(projectId, docId);
+  if (!target) return false;
+
+  const { count } = await prisma.docComment.deleteMany({ where: { id: commentId, ...target.parent } });
+  return count > 0;
 }
 
 export async function createProjectDoc(projectId: string, slotKey: string): Promise<ProjectDetail | null> {

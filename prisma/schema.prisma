@@ -112,6 +112,7 @@ model Member {
   timeEntries       TimeEntry[]
   documentsAuthored Document[]          @relation("DocumentAuthor")
   docVersions       DocVersion[]        @relation("DocVersionAuthor")
+  docComments       DocComment[]        @relation("DocCommentAuthor")
   eventsCreated     CalendarEvent[]     @relation("EventCreator")
 }
 
@@ -196,6 +197,7 @@ model Document {
   project  Project      @relation(fields: [projectId], references: [id])
   author   Member?      @relation("DocumentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   versions DocVersion[]
+  comments DocComment[]
 
   @@unique([projectId, slot])
 }
@@ -211,6 +213,7 @@ model Acta {
 
   project  Project      @relation(fields: [projectId], references: [id])
   versions DocVersion[]
+  comments DocComment[]
 }
 
 /// Una versión guardada del contenido de un documento o de un acta: exactamente uno de
@@ -230,6 +233,31 @@ model DocVersion {
   document Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
   acta     Acta?     @relation(fields: [actaId], references: [id], onDelete: Cascade)
   author   Member?   @relation("DocVersionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([documentId, createdAt])
+  @@index([actaId, createdAt])
+}
+
+/// Comentario sobre un fragmento de un documento o de un acta: exactamente uno de
+/// documentId / actaId (CHECK en la migración). Resolverlo es borrar la fila; no hay hilo.
+///
+/// El fragmento se ancla por su texto, no por posición: quote es el texto seleccionado en la
+/// vista previa (ya renderizado, sin la sintaxis Markdown) y occurrence cuál de sus repeticiones
+/// es (0 = la primera). Así sobrevive a ediciones en otras partes del documento; si el
+/// fragmento se reescribe deja de encontrarse y el comentario queda "huérfano" (src/lib/comments.ts).
+model DocComment {
+  id         String   @id @default(cuid())
+  documentId String?
+  actaId     String?
+  authorId   String?
+  quote      String
+  occurrence Int      @default(0)
+  body       String
+  createdAt  DateTime @default(now())
+
+  document Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  acta     Acta?     @relation(fields: [actaId], references: [id], onDelete: Cascade)
+  author   Member?   @relation("DocCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([documentId, createdAt])
   @@index([actaId, createdAt])

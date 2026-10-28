@@ -149,6 +149,23 @@ Pendiente:
   - La migración creó una versión inicial para lo que ya tenía contenido: en documentos, con el
     creador y la fecha de creación; en actas, sin autor y con la fecha de la reunión, porque no hay
     otra. Lo que llegue sin historial (el seed) recibe esa misma versión inicial al primer guardado.
+- **Comentarios sobre un fragmento** en `DocComment` (migración `20261027120000_doc_comments`),
+  compartido por documentos y actas igual que `DocVersion` (CHECK de un solo padre). Se selecciona
+  texto en la **Vista previa**, aparece "+ Comentar" y el comentario queda en el panel lateral.
+  - **Sin hilo y sin distinguir resolver de eliminar**: "Resolver" borra la fila (hard delete).
+    Cualquier miembro puede resolver cualquier comentario. No queda registro de lo resuelto.
+  - **El fragmento se ancla por su texto, no por posición**: `quote` (el texto de la vista previa,
+    sin la sintaxis Markdown) y `occurrence` (cuál de sus repeticiones, 0 = la primera). Las
+    posiciones se desfasarían con cualquier edición anterior; el texto sobrevive. La lógica pura
+    está en `src/lib/comments.ts` y la del DOM en `src/lib/comment-dom.ts`.
+  - **Si el fragmento se reescribe**, deja de encontrarse: el comentario sigue en el panel (con su
+    cita) pero sin resaltado, y se puede resolver igual. Si el texto citado aparece menos veces que
+    antes se resalta la primera repetición.
+  - El resaltado usa la **CSS Custom Highlight API** (no toca el DOM de React). En un navegador
+    sin ella (Firefox anterior a 140) los comentarios funcionan pero no se pintan.
+  - Los comentarios no se versionan: un comentario ligado a texto que solo existe en un cambio sin
+    guardar sigue ahí si no se guarda.
+  - Se comenta solo desde la Vista previa: en el `textarea` no se puede resaltar texto.
 - **Los metadatos (tipo, autor, fecha) son de solo lectura a propósito**: el tipo es el slot del
   proyecto, y autor/fecha describen la creación. Quién editó y cuándo está en el historial.
 - Sigue pendiente en el editor: "Compartir enlace" no hace nada.
