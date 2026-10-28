@@ -1251,9 +1251,7 @@ tbody tr:last-child td { border-bottom: none; }
 .doc-e-empty { font-size: 13px; color: var(--text-3); }
 .doc-e-previewwrap { position: relative; }
 
-/* Comentarios: fragmentos resaltados con la CSS Custom Highlight API (src/lib/comment-dom.ts) y su panel */
-::highlight(doc-comment) { background-color: var(--comment-hl); }
-::highlight(doc-comment-pending) { background-color: var(--comment-hl); text-decoration: underline; }
+/* Comentarios: panel y botón "Comentar". Los estilos ::highlight() están en DocEditorView.tsx */
 .doc-c-fab {
   position: absolute; z-index: 5; transform: translateX(-100%);
   padding: 4px 10px; border-radius: 5px; border: 1px solid var(--accent);
