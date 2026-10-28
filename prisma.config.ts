@@ -7,7 +7,6 @@ export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
-    seed: "tsx prisma/seed/seed.ts",
   },
   datasource: {
     // El CLI (migrate, db push, studio) usa la conexión directa/no pooleada;

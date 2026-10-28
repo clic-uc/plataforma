@@ -13,7 +13,6 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [client, setClient] = useState("");
-  const [area, setArea] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<ProjectStatus>("PLANIFICACION");
   const [startDate, setStartDate] = useState(() => toISODateInput(new Date()));
@@ -23,7 +22,7 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     mutation.mutate(
-      { name, client, area, description, status, startDate },
+      { name, client, description, status, startDate },
       { onSuccess: (created) => router.push(`/proyectos/${created.id}`) },
     );
   }
@@ -36,15 +35,9 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
           <input className="field-input" value={name} onChange={(e) => setName(e.target.value)} autoFocus required />
         </div>
 
-        <div className="field-row">
-          <div className="form-field">
-            <div className="f-label">Cliente</div>
-            <input className="field-input" value={client} onChange={(e) => setClient(e.target.value)} required />
-          </div>
-          <div className="form-field">
-            <div className="f-label">Área</div>
-            <input className="field-input" value={area} onChange={(e) => setArea(e.target.value)} required />
-          </div>
+        <div className="form-field">
+          <div className="f-label">Cliente</div>
+          <input className="field-input" value={client} onChange={(e) => setClient(e.target.value)} required />
         </div>
 
         <div className="form-field">

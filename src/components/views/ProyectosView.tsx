@@ -13,7 +13,7 @@ import { normalizeSearch } from "@/lib/api/format";
 
 function matchesSearch(project: ProjectListItem, query: string): boolean {
   if (!query) return true;
-  return normalizeSearch([project.name, project.client, project.area, project.description].join(" ")).includes(query);
+  return normalizeSearch([project.name, project.client, project.description].join(" ")).includes(query);
 }
 
 export function ProyectosView() {
@@ -84,7 +84,6 @@ export function ProyectosView() {
               <div className="pcard-meta">
                 <AvatarStack members={p.team} accentFirst />
                 <div className="pcard-labels">
-                  <span className="pcard-label">{p.area}</span>
                   <span className="pcard-label">{p.client}</span>
                 </div>
               </div>

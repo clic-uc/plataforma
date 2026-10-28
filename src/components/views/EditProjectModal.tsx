@@ -10,7 +10,6 @@ import { useUpdateProject, type ProjectDetail } from "@/lib/api/projects";
 export function EditProjectModal({ project, onClose }: { project: ProjectDetail; onClose: () => void }) {
   const [name, setName] = useState(project.name);
   const [client, setClient] = useState(project.client);
-  const [area, setArea] = useState(project.area);
   const [description, setDescription] = useState(project.description);
   const [status, setStatus] = useState<ProjectStatus>(project.statusValue);
   const [startDate, setStartDate] = useState(project.startDateISO);
@@ -21,7 +20,7 @@ export function EditProjectModal({ project, onClose }: { project: ProjectDetail;
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     mutation.mutate(
-      { name, client, area, description, status, startDate, archived },
+      { name, client, description, status, startDate, archived },
       { onSuccess: onClose },
     );
   }
@@ -34,15 +33,9 @@ export function EditProjectModal({ project, onClose }: { project: ProjectDetail;
           <input className="field-input" value={name} onChange={(e) => setName(e.target.value)} required />
         </div>
 
-        <div className="field-row">
-          <div className="form-field">
-            <div className="f-label">Cliente</div>
-            <input className="field-input" value={client} onChange={(e) => setClient(e.target.value)} required />
-          </div>
-          <div className="form-field">
-            <div className="f-label">Área</div>
-            <input className="field-input" value={area} onChange={(e) => setArea(e.target.value)} required />
-          </div>
+        <div className="form-field">
+          <div className="f-label">Cliente</div>
+          <input className="field-input" value={client} onChange={(e) => setClient(e.target.value)} required />
         </div>
 
         <div className="form-field">

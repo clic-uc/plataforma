@@ -13,7 +13,6 @@ export interface MemberListItem {
   name: string;
   initials: string;
   image: string | null;
-  area: string;
   email: string;
   status: string;
   statusColor: BadgeColor;
@@ -67,7 +66,6 @@ export interface PendingMember {
   initials: string;
   image: string | null;
   email: string;
-  area: string;
   requestedAt: string;
 }
 
@@ -82,7 +80,6 @@ export interface MemberProfileInput {
 
 /** Campos que asigna coordinación. */
 export interface MemberAdminInput {
-  area: string;
   role: MemberRole;
   status: MemberStatus;
   level: number;
@@ -98,7 +95,6 @@ export interface UpdateMemberInput extends MemberProfileInput {
 
 export interface ApproveMemberInput {
   role: MemberRole;
-  area: string;
 }
 
 export const membersKeys = {

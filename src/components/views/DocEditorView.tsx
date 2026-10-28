@@ -31,6 +31,14 @@ const TOOLBAR: { format: MarkdownFormat; label: ReactNode; title: string }[] = [
 
 const SHORTCUTS: Record<string, MarkdownFormat> = { b: "bold", i: "italic" };
 
+// Los fragmentos comentados se pintan con la CSS Custom Highlight API (src/lib/comment-dom.ts).
+// Va aquí y no en globals.css porque el parser de CSS de Turbopack no reconoce `::highlight()`
+// y avisa en cada build; un <style> con `precedence` lo sube al <head> una sola vez.
+const HIGHLIGHT_CSS = `
+::highlight(doc-comment) { background-color: var(--comment-hl); }
+::highlight(doc-comment-pending) { background-color: var(--comment-hl); text-decoration: underline; }
+`;
+
 // El padre monta este componente con key={docId}, así que el estado local
 // se reinicia solo al cambiar de documento (ver docs/[docId]/page.tsx).
 export function DocEditorView({ projectId, docId }: { projectId: string; docId: string }) {
@@ -130,6 +138,7 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
 
   return (
     <section className="doc-ew">
+      <style href="doc-comment-highlights" precedence="default">{HIGHLIGHT_CSS}</style>
       <div>
         <div className="card" style={{ padding: "22px 24px" }}>
           <div className="doc-e-title">{doc.title}</div>

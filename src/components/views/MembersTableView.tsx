@@ -19,7 +19,7 @@ import { MEMBER_STATUS_OPTIONS } from "@/lib/api/status";
 function matchesSearch(member: MemberListItem, query: string): boolean {
   if (!query) return true;
   return normalizeSearch(
-    [member.name, member.email, member.area, ...member.projects.map((p) => p.name)].join(" "),
+    [member.name, member.email, ...member.projects.map((p) => p.name)].join(" "),
   ).includes(query);
 }
 
@@ -31,16 +31,14 @@ export function MembersTableView() {
 
   const [tab, setTab] = useState<"miembros" | "equipos" | "pendientes">("miembros");
   const [search, setSearch] = useState("");
-  const [area, setArea] = useState("");
   const [status, setStatus] = useState<MemberStatus | "">("");
   const [inviting, setInviting] = useState(false);
 
-  const areas = [...new Set(members.map((m) => m.area))].sort((a, b) => a.localeCompare(b, "es"));
   const query = normalizeSearch(search.trim());
   const shown = members.filter(
-    (m) => matchesSearch(m, query) && (!area || m.area === area) && (!status || m.statusValue === status),
+    (m) => matchesSearch(m, query) && (!status || m.statusValue === status),
   );
-  const filtering = !!query || !!area || !!status;
+  const filtering = !!query || !!status;
 
   return (
     <section>
@@ -57,12 +55,6 @@ export function MembersTableView() {
                 aria-label="Buscar miembro"
               />
             </label>
-            <select className="filter-select" value={area} onChange={(e) => setArea(e.target.value)} aria-label="Área">
-              <option value="">Todas las áreas</option>
-              {areas.map((a) => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
             <select
               className="filter-select"
               value={status}
@@ -113,7 +105,6 @@ export function MembersTableView() {
               <tr>
                 <th style={{ textAlign: "center" }}>Miembro</th>
                 <th style={{ textAlign: "center" }}>Rango</th>
-                <th style={{ textAlign: "center" }}>Área</th>
                 <th style={{ textAlign: "center" }}>Proyectos</th>
                 <th style={{ textAlign: "center" }}>Estado</th>
                 <th style={{ textAlign: "center" }}>Cumpleaños</th>
@@ -132,7 +123,6 @@ export function MembersTableView() {
                     </div>
                   </td>
                   <td><RankStars filled={m.rankFilled} /></td>
-                  <td><Badge color="blue" style={{ fontSize: 9 }}>{m.area}</Badge></td>
                   <td>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }} onClick={(e) => e.stopPropagation()}>
                       {m.projects.map((p) => (
