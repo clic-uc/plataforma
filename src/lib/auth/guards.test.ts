@@ -18,7 +18,6 @@ function memberRow(overrides: Record<string, unknown> = {}) {
     createdAt: new Date(),
     updatedAt: new Date(),
     role: "EQUIPO",
-    area: "Web",
     status: "ACTIVO",
     joinedAt: new Date(),
     birthday: new Date(2000, 0, 1),

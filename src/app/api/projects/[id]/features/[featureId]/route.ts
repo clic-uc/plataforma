@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteFeature, parseUpdateFeatureInput, updateFeature } from "@/lib/api/projects.server";
+import { LABELS_TOKEN_HEADER } from "@/lib/api/http";
 import { withAuth } from "@/lib/api/route-handler";
 
 type Context = { params: Promise<{ id: string; featureId: string }> };
@@ -10,7 +11,7 @@ async function patchHandler(request: Request, { params }: Context) {
   const input = parseUpdateFeatureInput(await request.json());
   if (!input) return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
 
-  const project = await updateFeature(id, featureId, input, request.headers.get("if-match"));
+  const project = await updateFeature(id, featureId, input, request.headers.get(LABELS_TOKEN_HEADER));
   if (!project) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json(project);
 }
@@ -18,7 +19,7 @@ async function patchHandler(request: Request, { params }: Context) {
 async function deleteHandler(request: Request, { params }: Context) {
   const { id, featureId } = await params;
 
-  const project = await deleteFeature(id, featureId, request.headers.get("if-match"));
+  const project = await deleteFeature(id, featureId, request.headers.get(LABELS_TOKEN_HEADER));
   if (!project) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json(project);
 }

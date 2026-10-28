@@ -4,9 +4,9 @@ import { MemberRole, MemberStatus } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { AuthError, requireCoordinacion, requireMember } from "@/lib/auth/guards";
 import { ApiError } from "@/lib/api/errors";
-import { formatDayMonthYear, formatMonthYear, formatWeekdayDayMonthYear, getInitials } from "@/lib/api/format";
+import { formatDayMonthYear, formatMonthYear, getInitials } from "@/lib/api/format";
+import { dateToDayKey, formatWeek } from "@/lib/tiempo";
 import {
-  MAX_AREA_LENGTH,
   MAX_LEVEL,
   MAX_NAME_LENGTH,
   birthdayFromDate,
@@ -39,6 +39,9 @@ function toAchievementIcon(icon: string): AchievementIcon {
   return (ACHIEVEMENT_ICONS.includes(icon) ? icon : "lock") as AchievementIcon;
 }
 
+/** Standups que muestra el perfil. */
+const RECENT_STANDUPS = 6;
+
 function rankFromLevel(level: number): number {
   return Math.min(4, Math.max(0, level));
 }
@@ -61,7 +64,6 @@ export async function getMembers(): Promise<MemberListItem[]> {
     name: member.name,
     initials: getInitials(member.name),
     image: member.image,
-    area: member.area,
     email: member.email,
     status: memberStatusLabel[member.status],
     statusColor: memberStatusColor[member.status],
@@ -80,7 +82,7 @@ export async function getMember(id: string): Promise<MemberDetail | null> {
     include: {
       projects: { include: { project: true } },
       achievements: { include: { achievement: true } },
-      standups: { orderBy: { date: "desc" } },
+      standups: { orderBy: { weekStart: "desc" }, take: RECENT_STANDUPS },
     },
   });
   if (!member) return null;
@@ -90,7 +92,6 @@ export async function getMember(id: string): Promise<MemberDetail | null> {
     name: member.name,
     initials: getInitials(member.name),
     image: member.image,
-    area: member.area,
     email: member.email,
     role: memberRoleLabel[member.role],
     roleValue: member.role,
@@ -118,14 +119,14 @@ export async function getMember(id: string): Promise<MemberDetail | null> {
       icon: toAchievementIcon(ma.achievement.icon),
       unlocked: ma.unlockedAt !== null,
     })),
-    standups: member.standups.map((s) => ({ date: formatWeekdayDayMonthYear(s.date), text: s.text })),
+    standups: member.standups.map((s) => ({ week: formatWeek(dateToDayKey(s.weekStart)), text: s.text, learned: s.learned })),
   };
 }
 
 // ─── Edición ───
 //
 // Cada persona edita su propio perfil (nombre, cumpleaños, habilidades,
-// disponibilidad). Área, rol, estado y nivel los asigna coordinación, que
+// disponibilidad). Rol, estado y nivel los asigna coordinación, que
 // además puede editar el perfil de cualquiera.
 
 function parseText(value: unknown, maxLength: number): string | null {
@@ -137,9 +138,6 @@ function parseAdminInput(value: unknown): MemberAdminInput | null {
   if (typeof value !== "object" || value === null) return null;
   const a = value as Record<string, unknown>;
 
-  const area = parseText(a.area, MAX_AREA_LENGTH);
-  if (!area) return null;
-
   const role = typeof a.role === "string" ? a.role : "";
   if (!(Object.values(MemberRole) as string[]).includes(role)) return null;
 
@@ -149,7 +147,7 @@ function parseAdminInput(value: unknown): MemberAdminInput | null {
   const level = a.level;
   if (typeof level !== "number" || !Number.isInteger(level) || level < 0 || level > MAX_LEVEL) return null;
 
-  return { area, role: role as MemberRole, status: status as MemberStatus, level };
+  return { role: role as MemberRole, status: status as MemberStatus, level };
 }
 
 export function parseUpdateMemberInput(body: unknown): UpdateMemberInput | null {
@@ -237,7 +235,7 @@ export async function getPendingMembers(): Promise<PendingMember[]> {
   const pending = await prisma.member.findMany({
     where: { isVerifiedByCoordinator: false },
     orderBy: { createdAt: "asc" },
-    select: { id: true, name: true, image: true, email: true, area: true, createdAt: true },
+    select: { id: true, name: true, image: true, email: true, createdAt: true },
   });
 
   return pending.map((member) => ({
@@ -246,7 +244,6 @@ export async function getPendingMembers(): Promise<PendingMember[]> {
     initials: getInitials(member.name),
     image: member.image,
     email: member.email,
-    area: member.area,
     requestedAt: formatDayMonthYear(member.createdAt),
   }));
 }
@@ -258,10 +255,7 @@ export function parseApproveMemberInput(body: unknown): ApproveMemberInput | nul
   const role = typeof b.role === "string" ? b.role : "";
   if (!(Object.values(MemberRole) as string[]).includes(role)) return null;
 
-  const area = parseText(b.area, MAX_AREA_LENGTH);
-  if (!area) return null;
-
-  return { role: role as MemberRole, area };
+  return { role: role as MemberRole };
 }
 
 /**
@@ -273,7 +267,7 @@ export async function approveMember(id: string, input: ApproveMemberInput): Prom
 
   const { count } = await prisma.member.updateMany({
     where: { id, isVerifiedByCoordinator: false },
-    data: { isVerifiedByCoordinator: true, role: input.role, area: input.area, joinedAt: new Date() },
+    data: { isVerifiedByCoordinator: true, role: input.role, joinedAt: new Date() },
   });
   if (count === 0) {
     const exists = await prisma.member.findUnique({ where: { id }, select: { id: true } });

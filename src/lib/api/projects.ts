@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
 import { kanbanColumnLabel, type BadgeColor } from "@/lib/api/status";
-import { ApiRequestError, assertOk } from "@/lib/api/http";
+import { ApiRequestError, assertOk, LABELS_TOKEN_HEADER } from "@/lib/api/http";
 import { membersKeys } from "@/lib/api/members";
 
 export interface ProjectTeamMember {
@@ -15,7 +15,6 @@ export interface ProjectListItem {
   id: string;
   name: string;
   client: string;
-  area: string;
   description: string;
   status: string;
   statusColor: BadgeColor;
@@ -73,7 +72,7 @@ export interface ProjectDetail extends ProjectListItem {
   /**
    * Huella de qué entidad hay detrás de cada label (F-01, T-01) en este snapshot.
    * Los labels se renumeran al borrar, así que toda mutación que direcciona por
-   * label la manda en If-Match y el servidor responde 412 si ya no coincide.
+   * label la manda en X-Labels-Token y el servidor responde 412 si ya no coincide.
    */
   labelsToken: string;
   docs: ProjectDoc[];
@@ -91,10 +90,34 @@ export interface ProjectDocDetail {
   content: string;
 }
 
+export interface ProjectDocVersion {
+  id: string;
+  /** Vacío en una versión sin autor: la inicial de un acta o la de un miembro eliminado. */
+  author: string;
+  date: string;
+  content: string;
+}
+
+export interface ProjectDocComment {
+  id: string;
+  /** Vacío si el autor ya no existe. */
+  author: string;
+  date: string;
+  /** Texto de la vista previa al que se ancla; ver src/lib/comments.ts. */
+  quote: string;
+  occurrence: number;
+  body: string;
+}
+
+export interface CreateDocCommentInput {
+  quote: string;
+  occurrence: number;
+  body: string;
+}
+
 export interface UpdateProjectInput {
   name: string;
   client: string;
-  area: string;
   description: string;
   status: ProjectStatus;
   startDate: string;
@@ -104,7 +127,6 @@ export interface UpdateProjectInput {
 export interface CreateProjectInput {
   name: string;
   client: string;
-  area: string;
   description: string;
   status: ProjectStatus;
   startDate: string;
@@ -164,6 +186,8 @@ export const projectsKeys = {
   list: () => [...projectsKeys.all, "list"] as const,
   detail: (id: string) => [...projectsKeys.all, "detail", id] as const,
   doc: (id: string, docId: string) => [...projectsKeys.all, "detail", id, "doc", docId] as const,
+  docVersions: (id: string, docId: string) => [...projectsKeys.doc(id, docId), "versions"] as const,
+  docComments: (id: string, docId: string) => [...projectsKeys.doc(id, docId), "comments"] as const,
 };
 
 async function fetchProjects(): Promise<ProjectListItem[]> {
@@ -184,6 +208,33 @@ async function fetchProjectDoc(id: string, docId: string): Promise<ProjectDocDet
   if (res.status === 404) return null;
   await assertOk(res, "No se pudo cargar el documento");
   return res.json();
+}
+
+async function fetchProjectDocVersions(id: string, docId: string): Promise<ProjectDocVersion[]> {
+  const res = await fetch(`/api/projects/${id}/docs/${docId}/versions`);
+  await assertOk(res, "No se pudo cargar el historial");
+  return res.json();
+}
+
+async function fetchProjectDocComments(id: string, docId: string): Promise<ProjectDocComment[]> {
+  const res = await fetch(`/api/projects/${id}/docs/${docId}/comments`);
+  await assertOk(res, "No se pudieron cargar los comentarios");
+  return res.json();
+}
+
+async function createDocCommentRequest(id: string, docId: string, input: CreateDocCommentInput): Promise<ProjectDocComment> {
+  const res = await fetch(`/api/projects/${id}/docs/${docId}/comments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  await assertOk(res, "No se pudo agregar el comentario");
+  return res.json();
+}
+
+async function resolveDocCommentRequest(id: string, docId: string, commentId: string): Promise<void> {
+  const res = await fetch(`/api/projects/${id}/docs/${docId}/comments/${commentId}`, { method: "DELETE" });
+  await assertOk(res, "No se pudo resolver el comentario");
 }
 
 async function createProjectRequest(input: CreateProjectInput): Promise<ProjectDetail> {
@@ -239,7 +290,7 @@ async function createFeatureRequest(id: string, input: CreateFeatureInput): Prom
 
 /** Precondición de las mutaciones que direccionan por label; ver ProjectDetail.labelsToken. */
 function labelsHeaders(labelsToken: string): Record<string, string> {
-  return { "If-Match": `"${labelsToken}"` };
+  return { [LABELS_TOKEN_HEADER]: labelsToken };
 }
 
 async function updateFeatureRequest(
@@ -348,6 +399,33 @@ export function useProjectDoc(id: string, docId: string, options?: { enabled?: b
   return useQuery({ queryKey: projectsKeys.doc(id, docId), queryFn: () => fetchProjectDoc(id, docId), ...options });
 }
 
+export function useProjectDocVersions(id: string, docId: string) {
+  return useQuery({ queryKey: projectsKeys.docVersions(id, docId), queryFn: () => fetchProjectDocVersions(id, docId) });
+}
+
+export function useProjectDocComments(id: string, docId: string) {
+  return useQuery({ queryKey: projectsKeys.docComments(id, docId), queryFn: () => fetchProjectDocComments(id, docId) });
+}
+
+export function useCreateDocComment(id: string, docId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateDocCommentInput) => createDocCommentRequest(id, docId, input),
+    // Se devuelve la promesa para que el formulario siga "pendiente" hasta que el comentario ya esté en la lista.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectsKeys.docComments(id, docId) }),
+  });
+}
+
+// Resolver es borrar el comentario. Si otra persona ya lo resolvió la respuesta es 404;
+// onSettled refresca la lista en ambos casos.
+export function useResolveDocComment(id: string, docId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (commentId: string) => resolveDocCommentRequest(id, docId, commentId),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: projectsKeys.docComments(id, docId) }),
+  });
+}
+
 export function useCreateProject() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -387,6 +465,9 @@ export function useUpdateProjectDoc(id: string, docId: string) {
     mutationFn: (content: string) => updateProjectDocRequest(id, docId, content),
     onSuccess: (updated) => {
       queryClient.setQueryData(projectsKeys.doc(id, docId), updated);
+      // Se devuelve la promesa para que el guardado siga "pendiente" hasta que el historial
+      // ya muestre la versión nueva, en vez de marcar "Guardado ✓" antes de que aparezca.
+      return queryClient.invalidateQueries({ queryKey: projectsKeys.docVersions(id, docId) });
     },
   });
 }

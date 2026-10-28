@@ -9,7 +9,8 @@ export type ApiErrorCode =
   | "INVALID_PROJECT"
   | "LAST_COORDINATOR"
   | "NOT_PENDING"
-  | "CANNOT_REMOVE_SELF";
+  | "CANNOT_REMOVE_SELF"
+  | "WEEK_CLOSED";
 
 /**
  * Rechazo de dominio que la capa .server.ts no puede expresar devolviendo null

@@ -24,6 +24,21 @@ export function formatDayMonthYear(date: Date): string {
   return new Intl.DateTimeFormat("es-CL", { day: "numeric", month: "short", year: "numeric" }).format(date).replace(".", "");
 }
 
+// Un instante (no una fecha de calendario), mostrado en hora de Chile para que servidor y
+// navegador escriban lo mismo. Es la misma zona que CALENDAR_TIME_ZONE; no se importa de
+// src/lib/calendar.ts porque ese módulo ya importa este.
+export function formatDateTime(date: Date): string {
+  return new Intl.DateTimeFormat("es-CL", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: "America/Santiago",
+  }).format(date).replace(".", "");
+}
+
 export function formatWeekdayDayMonthYear(date: Date): string {
   return new Intl.DateTimeFormat("es-CL", {
     weekday: "short",

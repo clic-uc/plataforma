@@ -4,7 +4,6 @@
  */
 
 export const MAX_NAME_LENGTH = 80;
-export const MAX_AREA_LENGTH = 60;
 export const MAX_SKILLS = 20;
 export const MAX_SKILL_LENGTH = 40;
 export const MAX_LEVEL = 99;

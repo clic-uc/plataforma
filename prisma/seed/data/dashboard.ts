@@ -8,7 +8,7 @@ export interface StatCardData {
 }
 
 export const stats: StatCardData[] = [
-  { label: "Proyectos activos", value: "4", hint: "2 con actividad esta semana" },
+  { label: "Tareas pendientes", value: "5", hint: "2 en revisión" },
   { label: "Horas esta semana", value: "12", unit: ".5h", hint: "↑ 3h vs semana anterior", hintUp: true, accent: true },
   { label: "Racha actual", value: "7", unit: " días", hint: "Continúa hasta el lunes" },
   { label: "Próxima reunión", value: "Lun 9", hint: "Área Datos · 18:00" },

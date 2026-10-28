@@ -5,8 +5,10 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireMember, requireCoordinacion } from "@/lib/auth/guards";
 import { ApiError } from "@/lib/api/errors";
+import { MAX_COMMENT_LENGTH, MAX_QUOTE_LENGTH } from "@/lib/comments";
 import { formatLabel, labelNumber, labelsToken, matchesLabelsToken, nextLabel } from "@/lib/api/labels";
 import {
+  formatDateTime,
   formatDayMonth,
   formatDayMonthYear,
   formatMonthYear,
@@ -29,11 +31,14 @@ import {
 import type {
   AddProjectMemberInput,
   CreateActaInput,
+  CreateDocCommentInput,
   CreateFeatureInput,
   CreateProjectInput,
   CreateTaskInput,
   ProjectDetail,
+  ProjectDocComment,
   ProjectDocDetail,
+  ProjectDocVersion,
   ProjectListItem,
   ProjectTeamMember,
   UpdateFeatureInput,
@@ -84,14 +89,14 @@ interface ResolvedLabels {
 }
 
 /**
- * Verifica el If-Match de una mutación y devuelve la resolución label→id vigente.
+ * Verifica el token de labels (encabezado X-Labels-Token) de una mutación y devuelve la resolución label→id vigente.
  * Quien llama debe escribir por id, no por label: así, si otro borrado renumera
  * entre esta lectura y la escritura, la escritura sigue cayendo en la entidad
  * que el cliente vio.
  */
-async function resolveLabels(projectId: string, ifMatch: string | null): Promise<ResolvedLabels> {
-  if (!ifMatch) {
-    throw new ApiError(428, "PRECONDITION_REQUIRED", "Falta el encabezado If-Match con el labelsToken del proyecto");
+async function resolveLabels(projectId: string, token: string | null): Promise<ResolvedLabels> {
+  if (!token) {
+    throw new ApiError(428, "PRECONDITION_REQUIRED", "Falta el encabezado X-Labels-Token con el labelsToken del proyecto");
   }
 
   const [features, tasks] = await Promise.all([
@@ -99,7 +104,7 @@ async function resolveLabels(projectId: string, ifMatch: string | null): Promise
     prisma.task.findMany({ where: { projectId }, select: { id: true, label: true } }),
   ]);
 
-  if (!matchesLabelsToken(ifMatch, features, tasks)) {
+  if (!matchesLabelsToken(token, features, tasks)) {
     throw new ApiError(
       412,
       "LABELS_CHANGED",
@@ -143,7 +148,6 @@ export async function getProjects(): Promise<ProjectListItem[]> {
     id: project.id,
     name: project.name,
     client: project.client,
-    area: project.area,
     description: project.description,
     status: projectStatusLabel[project.status],
     statusColor: projectStatusColor[project.status],
@@ -183,7 +187,6 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
     id: project.id,
     name: project.name,
     client: project.client,
-    area: project.area,
     description: project.description,
     status: projectStatusLabel[project.status],
     statusColor: projectStatusColor[project.status],
@@ -245,9 +248,8 @@ export function parseCreateProjectInput(body: unknown): CreateProjectInput | nul
 
   const name = typeof b.name === "string" ? b.name.trim() : "";
   const client = typeof b.client === "string" ? b.client.trim() : "";
-  const area = typeof b.area === "string" ? b.area.trim() : "";
   const description = typeof b.description === "string" ? b.description.trim() : "";
-  if (!name || !client || !area || !description) return null;
+  if (!name || !client || !description) return null;
 
   const status = typeof b.status === "string" ? b.status : "";
   if (!(Object.values(ProjectStatus) as string[]).includes(status)) return null;
@@ -255,7 +257,7 @@ export function parseCreateProjectInput(body: unknown): CreateProjectInput | nul
   const startDate = typeof b.startDate === "string" ? b.startDate : "";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return null;
 
-  return { name, client, area, description, status: status as ProjectStatus, startDate };
+  return { name, client, description, status: status as ProjectStatus, startDate };
 }
 
 export async function createProject(input: CreateProjectInput): Promise<ProjectDetail> {
@@ -265,7 +267,6 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectD
     data: {
       name: input.name,
       client: input.client,
-      area: input.area,
       description: input.description,
       status: input.status,
       startDate: parseISODateInput(input.startDate),
@@ -289,6 +290,7 @@ export async function deleteProject(id: string): Promise<boolean> {
   if (!exists) return false;
 
   await prisma.$transaction([
+    prisma.timeEntry.deleteMany({ where: { projectId: id } }),
     prisma.task.deleteMany({ where: { projectId: id } }),
     prisma.feature.deleteMany({ where: { projectId: id } }),
     prisma.document.deleteMany({ where: { projectId: id } }),
@@ -306,9 +308,8 @@ export function parseUpdateProjectInput(body: unknown): UpdateProjectInput | nul
 
   const name = typeof b.name === "string" ? b.name.trim() : "";
   const client = typeof b.client === "string" ? b.client.trim() : "";
-  const area = typeof b.area === "string" ? b.area.trim() : "";
   const description = typeof b.description === "string" ? b.description.trim() : "";
-  if (!name || !client || !area || !description) return null;
+  if (!name || !client || !description) return null;
 
   const status = typeof b.status === "string" ? b.status : "";
   if (!(Object.values(ProjectStatus) as string[]).includes(status)) return null;
@@ -318,7 +319,7 @@ export function parseUpdateProjectInput(body: unknown): UpdateProjectInput | nul
 
   if (typeof b.archived !== "boolean") return null;
 
-  return { name, client, area, description, status: status as ProjectStatus, startDate, archived: b.archived };
+  return { name, client, description, status: status as ProjectStatus, startDate, archived: b.archived };
 }
 
 export async function updateProject(id: string, input: UpdateProjectInput): Promise<ProjectDetail | null> {
@@ -332,7 +333,6 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
     data: {
       name: input.name,
       client: input.client,
-      area: input.area,
       description: input.description,
       status: input.status,
       startDate: parseISODateInput(input.startDate),
@@ -382,25 +382,157 @@ export async function getProjectDoc(projectId: string, docId: string): Promise<P
   return null;
 }
 
-export async function updateProjectDoc(projectId: string, docId: string, content: string): Promise<ProjectDocDetail | null> {
-  await requireMember();
+// Un documento fijo se direcciona por su slot y un acta por su id, igual que en
+// getProjectDoc. parent es de quién cuelgan sus versiones en DocVersion.
+type DocTarget = {
+  parent: { documentId: string } | { actaId: string };
+  content: string;
+  // Autor y fecha con que se registra el contenido actual si todavía no tiene versión.
+  baseline: { authorId: string | null; date: Date };
+};
 
+async function findDocTarget(projectId: string, docId: string): Promise<DocTarget | null> {
   const slot = parseDocSlot(docId);
   if (slot) {
-    const existing = await prisma.document.findUnique({ where: { projectId_slot: { projectId, slot } } });
-    if (existing?.filled) {
-      await prisma.document.update({ where: { projectId_slot: { projectId, slot } }, data: { content } });
-      return getProjectDoc(projectId, docId);
+    const doc = await prisma.document.findUnique({ where: { projectId_slot: { projectId, slot } } });
+    if (doc?.filled) {
+      return {
+        parent: { documentId: doc.id },
+        content: doc.content ?? "",
+        baseline: { authorId: doc.authorId, date: doc.date ?? new Date() },
+      };
     }
   }
 
   const acta = await prisma.acta.findFirst({ where: { id: docId, projectId } });
   if (acta) {
-    await prisma.acta.update({ where: { id: docId }, data: { content } });
-    return getProjectDoc(projectId, docId);
+    return { parent: { actaId: acta.id }, content: acta.content ?? "", baseline: { authorId: null, date: acta.date } };
   }
 
   return null;
+}
+
+export async function updateProjectDoc(projectId: string, docId: string, content: string): Promise<ProjectDocDetail | null> {
+  const member = await requireMember();
+
+  const target = await findDocTarget(projectId, docId);
+  if (!target) return null;
+  // Cada guardado con cambios es una versión; guardar lo mismo no registra nada.
+  if (content === target.content) return getProjectDoc(projectId, docId);
+
+  await prisma.$transaction(async (tx) => {
+    if ("documentId" in target.parent) {
+      await tx.document.update({ where: { id: target.parent.documentId }, data: { content } });
+    } else {
+      await tx.acta.update({ where: { id: target.parent.actaId }, data: { content } });
+    }
+
+    // Contenido que llegó sin pasar por aquí (el seed) queda como versión inicial, para que
+    // este cambio tenga contra qué compararse. La migración hizo lo mismo con lo existente.
+    const hasVersions = (await tx.docVersion.count({ where: target.parent })) > 0;
+    if (!hasVersions && target.content.trim()) {
+      const { authorId, date } = target.baseline;
+      await tx.docVersion.create({ data: { ...target.parent, authorId, content: target.content, createdAt: date } });
+    }
+
+    await tx.docVersion.create({ data: { ...target.parent, authorId: member.id, content } });
+  });
+
+  return getProjectDoc(projectId, docId);
+}
+
+export async function getProjectDocVersions(projectId: string, docId: string): Promise<ProjectDocVersion[] | null> {
+  await requireMember();
+
+  const target = await findDocTarget(projectId, docId);
+  if (!target) return null;
+
+  const versions = await prisma.docVersion.findMany({
+    where: target.parent,
+    orderBy: { createdAt: "desc" },
+    include: { author: { select: { name: true } } },
+  });
+
+  return versions.map((version) => ({
+    id: version.id,
+    author: version.author?.name ?? "",
+    date: formatDateTime(version.createdAt),
+    content: version.content,
+  }));
+}
+
+type DocCommentRow = Prisma.DocCommentGetPayload<{ include: { author: { select: { name: true } } } }>;
+
+function toDocComment(comment: DocCommentRow): ProjectDocComment {
+  return {
+    id: comment.id,
+    author: comment.author?.name ?? "",
+    date: formatDateTime(comment.createdAt),
+    quote: comment.quote,
+    occurrence: comment.occurrence,
+    body: comment.body,
+  };
+}
+
+export function parseCreateDocCommentInput(body: unknown): CreateDocCommentInput | null {
+  if (typeof body !== "object" || body === null) return null;
+  const b = body as Record<string, unknown>;
+
+  // El fragmento se guarda tal cual: lo que se busca en el texto es justamente lo que se seleccionó.
+  const quote = typeof b.quote === "string" ? b.quote : "";
+  if (!quote.trim() || quote.length > MAX_QUOTE_LENGTH) return null;
+
+  const occurrence = b.occurrence;
+  if (typeof occurrence !== "number" || !Number.isInteger(occurrence) || occurrence < 0) return null;
+
+  const text = typeof b.body === "string" ? b.body.trim() : "";
+  if (!text || text.length > MAX_COMMENT_LENGTH) return null;
+
+  return { quote, occurrence, body: text };
+}
+
+export async function getProjectDocComments(projectId: string, docId: string): Promise<ProjectDocComment[] | null> {
+  await requireMember();
+
+  const target = await findDocTarget(projectId, docId);
+  if (!target) return null;
+
+  const comments = await prisma.docComment.findMany({
+    where: target.parent,
+    orderBy: { createdAt: "asc" },
+    include: { author: { select: { name: true } } },
+  });
+
+  return comments.map(toDocComment);
+}
+
+export async function createProjectDocComment(
+  projectId: string,
+  docId: string,
+  input: CreateDocCommentInput,
+): Promise<ProjectDocComment | null> {
+  const member = await requireMember();
+
+  const target = await findDocTarget(projectId, docId);
+  if (!target) return null;
+
+  const comment = await prisma.docComment.create({
+    data: { ...target.parent, authorId: member.id, quote: input.quote, occurrence: input.occurrence, body: input.body },
+    include: { author: { select: { name: true } } },
+  });
+
+  return toDocComment(comment);
+}
+
+/** Resolver un comentario es borrar su fila. false si no existe o es de otro documento. */
+export async function resolveProjectDocComment(projectId: string, docId: string, commentId: string): Promise<boolean> {
+  await requireMember();
+
+  const target = await findDocTarget(projectId, docId);
+  if (!target) return false;
+
+  const { count } = await prisma.docComment.deleteMany({ where: { id: commentId, ...target.parent } });
+  return count > 0;
 }
 
 export async function createProjectDoc(projectId: string, slotKey: string): Promise<ProjectDetail | null> {
@@ -509,11 +641,11 @@ export async function updateFeature(
   projectId: string,
   label: string,
   input: UpdateFeatureInput,
-  ifMatch: string | null,
+  token: string | null,
 ): Promise<ProjectDetail | null> {
   await requireMember();
 
-  const id = (await resolveLabels(projectId, ifMatch)).featureId(label);
+  const id = (await resolveLabels(projectId, token)).featureId(label);
   if (!id) return null;
 
   const { count } = await prisma.feature.updateMany({
@@ -525,10 +657,10 @@ export async function updateFeature(
   return getProject(projectId);
 }
 
-export async function deleteFeature(projectId: string, label: string, ifMatch: string | null): Promise<ProjectDetail | null> {
+export async function deleteFeature(projectId: string, label: string, token: string | null): Promise<ProjectDetail | null> {
   await requireMember();
 
-  const id = (await resolveLabels(projectId, ifMatch)).featureId(label);
+  const id = (await resolveLabels(projectId, token)).featureId(label);
   if (!id) return null;
 
   const deleted = await prisma.$transaction(async (tx) => {
@@ -583,7 +715,7 @@ async function renumberTaskLabels(tx: Prisma.TransactionClient, projectId: strin
 export async function createTask(
   projectId: string,
   input: CreateTaskInput,
-  ifMatch: string | null,
+  token: string | null,
 ): Promise<ProjectDetail | null> {
   await requireMember();
 
@@ -593,7 +725,7 @@ export async function createTask(
   // Solo una tarea con feature referencia un label; sin feature no hay nada que validar.
   let featureId: string | null = null;
   if (input.featureId) {
-    const resolved = (await resolveLabels(projectId, ifMatch)).featureId(input.featureId);
+    const resolved = (await resolveLabels(projectId, token)).featureId(input.featureId);
     if (!resolved) return null;
     featureId = resolved;
   }
@@ -636,11 +768,11 @@ export async function updateTask(
   projectId: string,
   label: string,
   input: UpdateTaskInput,
-  ifMatch: string | null,
+  token: string | null,
 ): Promise<ProjectDetail | null> {
   await requireMember();
 
-  const labels = await resolveLabels(projectId, ifMatch);
+  const labels = await resolveLabels(projectId, token);
   const id = labels.taskId(label);
   if (!id) return null;
 
@@ -672,10 +804,10 @@ export async function updateTask(
   return getProject(projectId);
 }
 
-export async function deleteTask(projectId: string, label: string, ifMatch: string | null): Promise<ProjectDetail | null> {
+export async function deleteTask(projectId: string, label: string, token: string | null): Promise<ProjectDetail | null> {
   await requireMember();
 
-  const id = (await resolveLabels(projectId, ifMatch)).taskId(label);
+  const id = (await resolveLabels(projectId, token)).taskId(label);
   if (!id) return null;
 
   const deleted = await prisma.$transaction(async (tx) => {

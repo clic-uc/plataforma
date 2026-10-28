@@ -32,7 +32,7 @@ export function useBreadcrumb(): Breadcrumb {
   if (pathname === "/proyectos") return { title: "Gestión de Proyectos" };
   if (pathname === "/calendario") return { title: "Calendario" };
   if (pathname === "/tiempo") return { title: "Tiempo & StandUp" };
-  if (pathname === "/miembros") return { title: "Miembros" };
+  if (pathname === "/miembros") return { title: "Equipo" };
 
   if (params.docId && params.projectId) {
     return {
@@ -52,7 +52,7 @@ export function useBreadcrumb(): Breadcrumb {
   if (params.memberId) {
     return {
       title: member?.name ?? "Miembro",
-      parent: { title: "Miembros", href: "/miembros" },
+      parent: { title: "Equipo", href: "/miembros" },
     };
   }
 

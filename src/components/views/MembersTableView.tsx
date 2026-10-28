@@ -10,6 +10,7 @@ import { RankStars } from "@/components/ui/RankStars";
 import { SearchIcon } from "@/components/icons";
 import { InviteMemberModal } from "@/components/views/InviteMemberModal";
 import { PendingMembersTable } from "@/components/views/PendingMembersTable";
+import { PlaceholderBox } from "@/components/ui/PlaceholderBox";
 import { useIsCoordinacion } from "@/components/providers/CurrentMemberProvider";
 import { useMembers, usePendingMembers, type MemberListItem } from "@/lib/api/members";
 import { DEFAULT_ACCENT_COLOR, normalizeSearch } from "@/lib/api/format";
@@ -18,7 +19,7 @@ import { MEMBER_STATUS_OPTIONS } from "@/lib/api/status";
 function matchesSearch(member: MemberListItem, query: string): boolean {
   if (!query) return true;
   return normalizeSearch(
-    [member.name, member.email, member.area, ...member.projects.map((p) => p.name)].join(" "),
+    [member.name, member.email, ...member.projects.map((p) => p.name)].join(" "),
   ).includes(query);
 }
 
@@ -28,18 +29,16 @@ export function MembersTableView() {
   const { data: members = [] } = useMembers();
   const { data: pending = [] } = usePendingMembers({ enabled: isCoordinacion });
 
-  const [tab, setTab] = useState<"miembros" | "pendientes">("miembros");
+  const [tab, setTab] = useState<"miembros" | "equipos" | "pendientes">("miembros");
   const [search, setSearch] = useState("");
-  const [area, setArea] = useState("");
   const [status, setStatus] = useState<MemberStatus | "">("");
   const [inviting, setInviting] = useState(false);
 
-  const areas = [...new Set(members.map((m) => m.area))].sort((a, b) => a.localeCompare(b, "es"));
   const query = normalizeSearch(search.trim());
   const shown = members.filter(
-    (m) => matchesSearch(m, query) && (!area || m.area === area) && (!status || m.statusValue === status),
+    (m) => matchesSearch(m, query) && (!status || m.statusValue === status),
   );
-  const filtering = !!query || !!area || !!status;
+  const filtering = !!query || !!status;
 
   return (
     <section>
@@ -56,12 +55,6 @@ export function MembersTableView() {
                 aria-label="Buscar miembro"
               />
             </label>
-            <select className="filter-select" value={area} onChange={(e) => setArea(e.target.value)} aria-label="Área">
-              <option value="">Todas las áreas</option>
-              {areas.map((a) => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
             <select
               className="filter-select"
               value={status}
@@ -75,16 +68,19 @@ export function MembersTableView() {
             </select>
           </>
         )}
-        {isCoordinacion && (
-          <div className="tabs" style={{ margin: 0 }}>
-            <div className={`tab-item${tab === "miembros" ? " active" : ""}`} onClick={() => setTab("miembros")}>
-              Miembros <span>{members.length}</span>
-            </div>
+        <div className="tabs" style={{ margin: 0 }}>
+          <div className={`tab-item${tab === "miembros" ? " active" : ""}`} onClick={() => setTab("miembros")}>
+            Lista completa <span>{members.length}</span>
+          </div>
+          <div className={`tab-item${tab === "equipos" ? " active" : ""}`} onClick={() => setTab("equipos")}>
+            Gestionar equipos
+          </div>
+          {isCoordinacion && (
             <div className={`tab-item${tab === "pendientes" ? " active" : ""}`} onClick={() => setTab("pendientes")}>
               Pendientes <span>{pending.length}</span>
             </div>
-          </div>
-        )}
+          )}
+        </div>
         <div style={{ marginLeft: "auto" }}>
           <button className="btn-primary" onClick={() => setInviting(true)}>+ Invitar miembro</button>
         </div>
@@ -94,6 +90,8 @@ export function MembersTableView() {
 
       {tab === "pendientes" ? (
         <PendingMembersTable pending={pending} />
+      ) : tab === "equipos" ? (
+        <PlaceholderBox text={<>Gestión de equipos<br />Próximamente</>} style={{ minHeight: 160 }} />
       ) : shown.length === 0 ? (
         <div className="ph" style={{ minHeight: 160 }}>
           <div className="ph-text">
@@ -107,7 +105,6 @@ export function MembersTableView() {
               <tr>
                 <th style={{ textAlign: "center" }}>Miembro</th>
                 <th style={{ textAlign: "center" }}>Rango</th>
-                <th style={{ textAlign: "center" }}>Área</th>
                 <th style={{ textAlign: "center" }}>Proyectos</th>
                 <th style={{ textAlign: "center" }}>Estado</th>
                 <th style={{ textAlign: "center" }}>Cumpleaños</th>
@@ -126,7 +123,6 @@ export function MembersTableView() {
                     </div>
                   </td>
                   <td><RankStars filled={m.rankFilled} /></td>
-                  <td><Badge color="blue" style={{ fontSize: 9 }}>{m.area}</Badge></td>
                   <td>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }} onClick={(e) => e.stopPropagation()}>
                       {m.projects.map((p) => (

@@ -9,7 +9,6 @@ import { useCurrentMember } from "@/components/providers/CurrentMemberProvider";
 import { errorMessage } from "@/lib/api/http";
 import { MEMBER_ROLE_OPTIONS, MEMBER_STATUS_OPTIONS } from "@/lib/api/status";
 import {
-  MAX_AREA_LENGTH,
   MAX_LEVEL,
   MAX_NAME_LENGTH,
   MAX_SKILLS,
@@ -35,7 +34,6 @@ export function EditMemberModal({ member, onClose }: { member: MemberDetail; onC
   const [birthDay, setBirthDay] = useState(initialBirthday ? String(initialBirthday.day) : "");
   const [skillsText, setSkillsText] = useState(member.skills.join(", "));
   const [availability, setAvailability] = useState<AvailabilitySlot[]>(member.availability);
-  const [area, setArea] = useState(member.area);
   const [role, setRole] = useState<MemberRole>(member.roleValue);
   const [status, setStatus] = useState<MemberStatus>(member.statusValue);
   const [level, setLevel] = useState(String(member.level));
@@ -66,7 +64,7 @@ export function EditMemberModal({ member, onClose }: { member: MemberDetail; onC
       skills,
       availability,
     };
-    if (isCoordinacion) input.admin = { area, role, status, level: Number(level) };
+    if (isCoordinacion) input.admin = { role, status, level: Number(level) };
 
     mutation.mutate(input, {
       onSuccess: () => {
@@ -133,16 +131,6 @@ export function EditMemberModal({ member, onClose }: { member: MemberDetail; onC
             <div className="perfil-section-label" style={{ textAlign: "left" }}>Coordinación</div>
             <div className="field-row">
               <div className="form-field">
-                <div className="f-label">Área</div>
-                <input
-                  className="field-input"
-                  value={area}
-                  onChange={(e) => setArea(e.target.value)}
-                  maxLength={MAX_AREA_LENGTH}
-                  required
-                />
-              </div>
-              <div className="form-field">
                 <div className="f-label">Rol</div>
                 <select className="field-select" value={role} onChange={(e) => setRole(e.target.value as MemberRole)}>
                   {MEMBER_ROLE_OPTIONS.map((opt) => (
@@ -150,8 +138,6 @@ export function EditMemberModal({ member, onClose }: { member: MemberDetail; onC
                   ))}
                 </select>
               </div>
-            </div>
-            <div className="field-row">
               <div className="form-field">
                 <div className="f-label">Estado</div>
                 <select
@@ -164,6 +150,8 @@ export function EditMemberModal({ member, onClose }: { member: MemberDetail; onC
                   ))}
                 </select>
               </div>
+            </div>
+            <div className="field-row">
               <div className="form-field">
                 <div className="f-label">Nivel</div>
                 <input

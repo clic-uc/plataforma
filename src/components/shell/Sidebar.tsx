@@ -9,8 +9,6 @@ import {
   ClockIcon,
   AnalyticsIcon,
   UsersIcon,
-  BriefcaseIcon,
-  TeamsIcon,
   MeetingIcon,
   BookIcon,
   PostulacionesIcon,
@@ -35,18 +33,16 @@ const principal: NavItem[] = [
   { label: "Proyectos", href: "/proyectos", icon: <FolderIcon className="nav-icon" />, matchPrefix: "/proyectos" },
   { label: "Calendario", href: "/calendario", icon: <CalendarIcon className="nav-icon" />, matchPrefix: "/calendario" },
   { label: "Reporte", href: "/tiempo", icon: <ClockIcon className="nav-icon" /> },
-  { label: "Analíticas", icon: <AnalyticsIcon className="nav-icon" /> },
 ];
 
 const comunidad: NavItem[] = [
-  { label: "Miembros", href: "/miembros", icon: <UsersIcon className="nav-icon" />, matchPrefix: "/miembros" },
-  { label: "Portafolio", icon: <BriefcaseIcon className="nav-icon" /> },
-  { label: "Equipos", icon: <TeamsIcon className="nav-icon" /> },
+  { label: "Equipo", href: "/miembros", icon: <UsersIcon className="nav-icon" />, matchPrefix: "/miembros" },
   { label: "Reuniones", icon: <MeetingIcon className="nav-icon" /> },
+  { label: "Recursos", icon: <BookIcon className="nav-icon" /> },
 ];
 
-const org: NavItem[] = [
-  { label: "Recursos", icon: <BookIcon className="nav-icon" /> },
+const coordinacion: NavItem[] = [
+  { label: "Analíticas", icon: <AnalyticsIcon className="nav-icon" /> },
   { label: "Postulaciones", icon: <PostulacionesIcon className="nav-icon" />, count: 3 },
 ];
 
@@ -117,12 +113,15 @@ export function Sidebar({ member }: { member: CurrentMember }) {
           ))}
         </div>
 
-        <div className="nav-section" style={{ marginTop: 14 }}>
-          <div className="nav-section-label">Org.</div>
-          {org.map((item) => (
-            <NavRow key={item.label} item={item} active={isActive(item)} />
-          ))}
-        </div>
+        {/* Solo presentación: lo que haya detrás lo sigue protegiendo el servidor. */}
+        {isCoordinacion && (
+          <div className="nav-section" style={{ marginTop: 14 }}>
+            <div className="nav-section-label">Coordinación</div>
+            {coordinacion.map((item) => (
+              <NavRow key={item.label} item={item} active={isActive(item)} />
+            ))}
+          </div>
+        )}
       </nav>
 
       <UserMenu member={member} />
