@@ -3,7 +3,7 @@
 // Es pura para poder probarla sin DOM.
 //
 // No hay botón de lista de tareas (`- [ ]`) a propósito: chocaría con la entidad Task
-// del proyecto. Ver "Documentos y Actas" en docs/TODO.md.
+// del proyecto. Ver "Documents and actas" en CLAUDE.md.
 
 export type TextSelection = { value: string; start: number; end: number };
 

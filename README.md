@@ -59,6 +59,7 @@ GitHub Actions corre esos tres comandos y `pnpm build` en cada PR y en cada push
 
 ## Más
 
-- `CLAUDE.md` — arquitectura: la separación `.ts` / `.server.ts`, dónde se aplican los guards de
-  autenticación y por qué están donde están.
-- `docs/TODO.md` — qué falta y qué se dejó fuera a propósito.
+- `CLAUDE.md` — arquitectura (la separación `.ts` / `.server.ts`, dónde se aplican los guards de
+  autenticación y por qué están donde están) y cómo funciona hoy cada módulo, con las decisiones que
+  se tomaron a propósito.
+- `docs/TODO.md` — solo lo que falta.
