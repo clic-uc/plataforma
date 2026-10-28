@@ -1395,12 +1395,6 @@ tbody tr:last-child td { border-bottom: none; }
   font-size: 26px; font-weight: 700; color: #fff;
 }
 .perfil-name { font-size: 18px; font-weight: 700; color: var(--text-1); letter-spacing: 0em; font-family: var(--font-barlow-condensed), sans-serif; }
-.perfil-area-badge {
-  display: inline-block; margin-top: 8px;
-  font-family: var(--font-space-mono), monospace; font-size: 9px;
-  text-transform: uppercase; letter-spacing: 0.05em;
-  padding: 2px 8px; border-radius: 3px;
-}
 .perfil-divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
 .perfil-info-row {
   display: flex; align-items: center; gap: 8px;

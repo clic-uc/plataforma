@@ -15,7 +15,6 @@ export interface ProjectListItem {
   id: string;
   name: string;
   client: string;
-  area: string;
   description: string;
   status: string;
   statusColor: BadgeColor;
@@ -119,7 +118,6 @@ export interface CreateDocCommentInput {
 export interface UpdateProjectInput {
   name: string;
   client: string;
-  area: string;
   description: string;
   status: ProjectStatus;
   startDate: string;
@@ -129,7 +127,6 @@ export interface UpdateProjectInput {
 export interface CreateProjectInput {
   name: string;
   client: string;
-  area: string;
   description: string;
   status: ProjectStatus;
   startDate: string;

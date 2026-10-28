@@ -16,7 +16,6 @@ pnpm typecheck              # next typegen + tsc --noEmit
 pnpm test                   # Vitest, single run (pnpm test:watch for watch mode)
 pnpm exec prisma generate   # Regenerate the Prisma client into src/generated/prisma
 pnpm exec prisma migrate dev --name <name>
-pnpm exec prisma db seed    # Wipes and reseeds demo data (see the caveat below)
 pnpm add <pkg>              # Add a dependency
 ```
 
@@ -24,9 +23,6 @@ Use `pnpm exec`, **not** `pnpm dlx`, for `prisma`. `prisma` is a local devDepend
 has to match `@prisma/client`; `pnpm dlx` would fetch a separate copy into a temporary store and
 ignore that pin. `pnpm dlx` is only for packages that are *not* installed here (the npx equivalent
 for one-off tools).
-
-`prisma db seed` deletes only members with no OAuth `Account` — the demo ones. A real account's row
-is its identity, so deleting it would delete the person and their sessions.
 
 Tests are **Vitest**, colocated as `src/**/*.test.ts`, running in a Node environment. They are
 unit tests: there is no test database. `server-only` is aliased to an empty stub in
@@ -126,7 +122,7 @@ Two rules worth knowing before changing anything here:
 
 ### `Member` is the user
 
-There is no separate `User` model. `Member` is both the domain profile (role, area, level, streak,
+There is no separate `User` model. `Member` is both the domain profile (role, level, streak,
 skills) and Better Auth's identity, wired with `user: { modelName: "member" }` in `src/lib/auth.ts`.
 Everything already pointed at `Member` — `Task.assigneeId`, `Document.authorId`,
 `ProjectMember.memberId`, `Standup.memberId` — and `Session.userId` / `Account.userId` now do too.
@@ -135,16 +131,13 @@ This works because **every member is born from a login**; there is no pre-regist
 changes and coordination needs to create members before they sign in, this is the decision to
 revisit.
 
-Two consequences worth knowing:
-
-- Every domain column on `Member` needs a `@default` (`role` → `ROOKIE`, `area` → `"Sin asignar"`,
-  and so on). Better Auth inserts the row knowing only its own fields, so anything `NOT NULL`
-  without a default would break sign-up. That is also why there is no creation hook.
-- `prisma db seed` deletes only members with no OAuth `Account` — the demo ones. Deleting a real
-  account's row would delete the person entirely, sessions included.
+One consequence worth knowing: every domain column on `Member` needs a `@default` (`role` →
+`ROOKIE`, `status` → `ACTIVO`, and so on). Better Auth inserts the row knowing only its own fields,
+so anything `NOT NULL` without a default would break sign-up. That is also why there is no creation
+hook. And deleting a member's row deletes the person entirely, sessions included.
 
 ## Known state
 
 `docs/TODO.md` is the source of truth for gaps and for decisions that were made deliberately (rather
 than forgotten). Notably, the Dashboard view still imports mock data directly from
-`prisma/seed/data/*`.
+`prisma/seed/data/dashboard.ts`; the rest of the old seed is gone (see the TODO).

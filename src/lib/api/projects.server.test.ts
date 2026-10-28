@@ -52,7 +52,6 @@ const projectRow = {
   id: "p1",
   name: "Plataforma",
   client: "CLIC",
-  area: "Web",
   description: "",
   status: "ACTIVO",
   startDate: new Date(2026, 0, 15),

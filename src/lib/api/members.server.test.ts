@@ -47,7 +47,6 @@ function memberRow(id: string) {
     id,
     name: "Ana Rojas",
     image: null,
-    area: "Web",
     email: "ana@example.com",
     role: "EQUIPO",
     status: "ACTIVO",
@@ -64,7 +63,7 @@ function memberRow(id: string) {
 }
 
 const profile = { name: "Ana Rojas", birthday: "03-08", skills: ["React"], availability: ["LUN_MANANA"] };
-const admin = { area: "Datos", role: "EQUIPO", status: "HIATUS", level: 3 };
+const admin = { role: "EQUIPO", status: "HIATUS", level: 3 };
 
 beforeEach(() => {
   for (const fn of Object.values(prisma.member)) fn.mockReset();
@@ -75,7 +74,7 @@ beforeEach(() => {
 describe("parseUpdateMemberInput", () => {
   it("acepta el perfil solo o con los campos de coordinación", () => {
     expect(parseUpdateMemberInput({ ...profile, name: "  Ana Rojas " })).toEqual(profile);
-    expect(parseUpdateMemberInput({ ...profile, admin: { ...admin, area: " Datos " } })).toEqual({ ...profile, admin });
+    expect(parseUpdateMemberInput({ ...profile, admin })).toEqual({ ...profile, admin });
   });
 
   it("exige birthday explícito, aunque sea null", () => {
@@ -179,23 +178,23 @@ describe("updateMember", () => {
 });
 
 describe("approveMember", () => {
-  it("parseApproveMemberInput valida rol y área", () => {
-    expect(parseApproveMemberInput({ role: "ROOKIE", area: " Web " })).toEqual({ role: "ROOKIE", area: "Web" });
-    expect(parseApproveMemberInput({ role: "ROOKIE", area: "" })).toBeNull();
-    expect(parseApproveMemberInput({ role: "JEFE", area: "Web" })).toBeNull();
+  it("parseApproveMemberInput valida el rol", () => {
+    expect(parseApproveMemberInput({ role: "ROOKIE" })).toEqual({ role: "ROOKIE" });
+    expect(parseApproveMemberInput({ role: "JEFE" })).toBeNull();
+    expect(parseApproveMemberInput({})).toBeNull();
   });
 
-  it("solo aprueba cuentas pendientes y fija rol, área y fecha de ingreso", async () => {
+  it("solo aprueba cuentas pendientes y fija rol y fecha de ingreso", async () => {
     actAs(coordinacion);
     prisma.member.updateMany.mockResolvedValueOnce({ count: 1 });
     prisma.member.findUnique.mockResolvedValueOnce(memberRow("nuevo"));
 
-    const result = await approveMember("nuevo", { role: "ROOKIE", area: "Web" });
+    const result = await approveMember("nuevo", { role: "ROOKIE" });
 
     expect(result?.id).toBe("nuevo");
     expect(prisma.member.updateMany).toHaveBeenCalledWith({
       where: { id: "nuevo", isVerifiedByCoordinator: false },
-      data: { isVerifiedByCoordinator: true, role: "ROOKIE", area: "Web", joinedAt: expect.any(Date) },
+      data: { isVerifiedByCoordinator: true, role: "ROOKIE", joinedAt: expect.any(Date) },
     });
   });
 
@@ -204,18 +203,18 @@ describe("approveMember", () => {
     prisma.member.updateMany.mockResolvedValue({ count: 0 });
 
     prisma.member.findUnique.mockResolvedValueOnce({ id: "viejo" });
-    await expect(approveMember("viejo", { role: "ROOKIE", area: "Web" })).rejects.toMatchObject({
+    await expect(approveMember("viejo", { role: "ROOKIE" })).rejects.toMatchObject({
       status: 409,
       code: "NOT_PENDING",
     });
 
     prisma.member.findUnique.mockResolvedValueOnce(null);
-    expect(await approveMember("nadie", { role: "ROOKIE", area: "Web" })).toBeNull();
+    expect(await approveMember("nadie", { role: "ROOKIE" })).toBeNull();
   });
 
   it("es solo de coordinación", async () => {
     actAs(equipo);
-    await expect(approveMember("nuevo", { role: "ROOKIE", area: "Web" })).rejects.toMatchObject({ status: 403 });
+    await expect(approveMember("nuevo", { role: "ROOKIE" })).rejects.toMatchObject({ status: 403 });
     expect(prisma.member.updateMany).not.toHaveBeenCalled();
   });
 });

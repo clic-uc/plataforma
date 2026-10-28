@@ -13,7 +13,6 @@ Requiere **pnpm** (está pinneado en `packageManager`; no uses npm).
 pnpm install
 cp .env.example .env.local   # y completa los valores
 pnpm exec prisma migrate deploy
-pnpm exec prisma db seed     # data de demo, opcional
 pnpm dev
 ```
 

@@ -5,17 +5,15 @@ import type { MemberRole } from "@/generated/prisma/enums";
 import { Modal } from "@/components/ui/Modal";
 import { errorMessage } from "@/lib/api/http";
 import { MEMBER_ROLE_OPTIONS } from "@/lib/api/status";
-import { MAX_AREA_LENGTH } from "@/lib/api/member-fields";
 import { useApproveMember, type PendingMember } from "@/lib/api/members";
 
 export function ApproveMemberModal({ member, onClose }: { member: PendingMember; onClose: () => void }) {
   const [role, setRole] = useState<MemberRole>("ROOKIE");
-  const [area, setArea] = useState(member.area);
   const mutation = useApproveMember();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    mutation.mutate({ id: member.id, input: { role, area } }, { onSuccess: onClose });
+    mutation.mutate({ id: member.id, input: { role } }, { onSuccess: onClose });
   }
 
   return (
@@ -26,25 +24,13 @@ export function ApproveMemberModal({ member, onClose }: { member: PendingMember;
           el rol que elijas; lo demás del perfil se puede completar después.
         </p>
 
-        <div className="field-row">
-          <div className="form-field">
-            <div className="f-label">Rol</div>
-            <select className="field-select" value={role} onChange={(e) => setRole(e.target.value as MemberRole)}>
-              {MEMBER_ROLE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-field">
-            <div className="f-label">Área</div>
-            <input
-              className="field-input"
-              value={area}
-              onChange={(e) => setArea(e.target.value)}
-              maxLength={MAX_AREA_LENGTH}
-              required
-            />
-          </div>
+        <div className="form-field">
+          <div className="f-label">Rol</div>
+          <select className="field-select" value={role} onChange={(e) => setRole(e.target.value as MemberRole)}>
+            {MEMBER_ROLE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
 
         {role === "COORDINACION" && (

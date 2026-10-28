@@ -87,7 +87,6 @@ model Member {
   updatedAt     DateTime @updatedAt
 
   role     MemberRole   @default(ROOKIE)
-  area     String       @default("Sin asignar")
   status   MemberStatus @default(ACTIVO)
   joinedAt DateTime     @default(now())
   birthday DateTime?
@@ -120,7 +119,6 @@ model Project {
   id          String        @id @default(cuid())
   name        String
   client      String
-  area        String
   description String
   status      ProjectStatus
   startDate   DateTime

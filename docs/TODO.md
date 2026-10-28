@@ -5,6 +5,13 @@
   (`ActivityFeedItem` o similar). El calendario y las horas ya tienen modelo y vista propia
   (`/calendario` y `/tiempo`, ver abajo), pero las tarjetas del dashboard siguen mostrando el mock.
 
+- **Se eliminó el seed** (`prisma db seed`, `prisma/seed/seed.ts` y sus datos de ejemplo de miembros y
+  proyectos), junto con la dependencia `tsx` que solo él usaba: la base ya tiene datos reales y el
+  seed borraba datos de demostración que nadie volvía a usar. Quedó `prisma/seed/data/dashboard.ts`
+  porque el Dashboard lo importa; cuando el Dashboard tenga datos reales hay que borrarlo y con él
+  la carpeta `prisma/seed`. Para tener datos de prueba en una base nueva, entrar con GitHub y
+  aprobar la cuenta desde "Pendientes".
+
 ## Calendario
 
 Vista `/calendario` con modos mes y semana; el plan original está en `docs/CALENDARIO.md`.
@@ -103,12 +110,14 @@ Pendiente:
 - Mensajería interna: "Enviar correo" abre un `mailto:`.
 - Racha y logros no se pueden editar ni se calculan solos; el nivel lo fija coordinación a mano.
 - Campos que existían en el mock original y no tienen columna en el schema: `telegram`, `rankNumber`/`ranking`
-  (esto se pensaba calcular, no persistir), `areaLabel` (categoría corta tipo "PROYECTOS"/"WEB"/"LAB", distinta de
-  `area`), color propio por miembro. Si se quieren recuperar, hay que agregar columnas reales.
+  (esto se pensaba calcular, no persistir), `areaLabel` (categoría corta tipo "PROYECTOS"/"WEB"/"LAB"), color propio por miembro. Si se quieren recuperar, hay que agregar columnas reales.
 
 ## Proyectos
 
-- `prCount` (contador de PRs) y `teamLabel` (pod/equipo interno a cargo, distinto de `area`) se
+- **`area` se quitó de miembros y de proyectos** (migración `20261027130000_drop_area`): era texto
+  libre que solo se mostraba y filtraba. Se perdieron los valores guardados. Al aprobar una cuenta
+  ahora solo se elige el rol; la tabla de miembros ya no filtra por área.
+- `prCount` (contador de PRs) y `teamLabel` (pod/equipo interno a cargo) se
   descartaron al migrar — no hay integración con GitHub ni columna equivalente.
 - Color propio por proyecto se descartó (se usa el acento único de la app en todos lados). Si se
   quiere recuperar variedad de color, ver nota de Miembros arriba — mismo problema, misma solución
@@ -148,7 +157,7 @@ Pendiente:
     una versión nueva.
   - La migración creó una versión inicial para lo que ya tenía contenido: en documentos, con el
     creador y la fecha de creación; en actas, sin autor y con la fecha de la reunión, porque no hay
-    otra. Lo que llegue sin historial (el seed) recibe esa misma versión inicial al primer guardado.
+    otra. Lo que llegue sin historial recibe esa misma versión inicial al primer guardado.
 - **Comentarios sobre un fragmento** en `DocComment` (migración `20261027120000_doc_comments`),
   compartido por documentos y actas igual que `DocVersion` (CHECK de un solo padre). Se selecciona
   texto en la **Vista previa**, aparece "+ Comentar" y el comentario queda en el panel lateral.

@@ -148,7 +148,6 @@ export async function getProjects(): Promise<ProjectListItem[]> {
     id: project.id,
     name: project.name,
     client: project.client,
-    area: project.area,
     description: project.description,
     status: projectStatusLabel[project.status],
     statusColor: projectStatusColor[project.status],
@@ -188,7 +187,6 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
     id: project.id,
     name: project.name,
     client: project.client,
-    area: project.area,
     description: project.description,
     status: projectStatusLabel[project.status],
     statusColor: projectStatusColor[project.status],
@@ -250,9 +248,8 @@ export function parseCreateProjectInput(body: unknown): CreateProjectInput | nul
 
   const name = typeof b.name === "string" ? b.name.trim() : "";
   const client = typeof b.client === "string" ? b.client.trim() : "";
-  const area = typeof b.area === "string" ? b.area.trim() : "";
   const description = typeof b.description === "string" ? b.description.trim() : "";
-  if (!name || !client || !area || !description) return null;
+  if (!name || !client || !description) return null;
 
   const status = typeof b.status === "string" ? b.status : "";
   if (!(Object.values(ProjectStatus) as string[]).includes(status)) return null;
@@ -260,7 +257,7 @@ export function parseCreateProjectInput(body: unknown): CreateProjectInput | nul
   const startDate = typeof b.startDate === "string" ? b.startDate : "";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return null;
 
-  return { name, client, area, description, status: status as ProjectStatus, startDate };
+  return { name, client, description, status: status as ProjectStatus, startDate };
 }
 
 export async function createProject(input: CreateProjectInput): Promise<ProjectDetail> {
@@ -270,7 +267,6 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectD
     data: {
       name: input.name,
       client: input.client,
-      area: input.area,
       description: input.description,
       status: input.status,
       startDate: parseISODateInput(input.startDate),
@@ -312,9 +308,8 @@ export function parseUpdateProjectInput(body: unknown): UpdateProjectInput | nul
 
   const name = typeof b.name === "string" ? b.name.trim() : "";
   const client = typeof b.client === "string" ? b.client.trim() : "";
-  const area = typeof b.area === "string" ? b.area.trim() : "";
   const description = typeof b.description === "string" ? b.description.trim() : "";
-  if (!name || !client || !area || !description) return null;
+  if (!name || !client || !description) return null;
 
   const status = typeof b.status === "string" ? b.status : "";
   if (!(Object.values(ProjectStatus) as string[]).includes(status)) return null;
@@ -324,7 +319,7 @@ export function parseUpdateProjectInput(body: unknown): UpdateProjectInput | nul
 
   if (typeof b.archived !== "boolean") return null;
 
-  return { name, client, area, description, status: status as ProjectStatus, startDate, archived: b.archived };
+  return { name, client, description, status: status as ProjectStatus, startDate, archived: b.archived };
 }
 
 export async function updateProject(id: string, input: UpdateProjectInput): Promise<ProjectDetail | null> {
@@ -338,7 +333,6 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
     data: {
       name: input.name,
       client: input.client,
-      area: input.area,
       description: input.description,
       status: input.status,
       startDate: parseISODateInput(input.startDate),
