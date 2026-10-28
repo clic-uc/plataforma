@@ -5,8 +5,10 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireMember, requireCoordinacion } from "@/lib/auth/guards";
 import { ApiError } from "@/lib/api/errors";
+import { MAX_COMMENT_LENGTH, MAX_QUOTE_LENGTH } from "@/lib/comments";
 import { formatLabel, labelNumber, labelsToken, matchesLabelsToken, nextLabel } from "@/lib/api/labels";
 import {
+  formatDateTime,
   formatDayMonth,
   formatDayMonthYear,
   formatMonthYear,
@@ -29,11 +31,14 @@ import {
 import type {
   AddProjectMemberInput,
   CreateActaInput,
+  CreateDocCommentInput,
   CreateFeatureInput,
   CreateProjectInput,
   CreateTaskInput,
   ProjectDetail,
+  ProjectDocComment,
   ProjectDocDetail,
+  ProjectDocVersion,
   ProjectListItem,
   ProjectTeamMember,
   UpdateFeatureInput,
@@ -383,25 +388,157 @@ export async function getProjectDoc(projectId: string, docId: string): Promise<P
   return null;
 }
 
-export async function updateProjectDoc(projectId: string, docId: string, content: string): Promise<ProjectDocDetail | null> {
-  await requireMember();
+// Un documento fijo se direcciona por su slot y un acta por su id, igual que en
+// getProjectDoc. parent es de quién cuelgan sus versiones en DocVersion.
+type DocTarget = {
+  parent: { documentId: string } | { actaId: string };
+  content: string;
+  // Autor y fecha con que se registra el contenido actual si todavía no tiene versión.
+  baseline: { authorId: string | null; date: Date };
+};
 
+async function findDocTarget(projectId: string, docId: string): Promise<DocTarget | null> {
   const slot = parseDocSlot(docId);
   if (slot) {
-    const existing = await prisma.document.findUnique({ where: { projectId_slot: { projectId, slot } } });
-    if (existing?.filled) {
-      await prisma.document.update({ where: { projectId_slot: { projectId, slot } }, data: { content } });
-      return getProjectDoc(projectId, docId);
+    const doc = await prisma.document.findUnique({ where: { projectId_slot: { projectId, slot } } });
+    if (doc?.filled) {
+      return {
+        parent: { documentId: doc.id },
+        content: doc.content ?? "",
+        baseline: { authorId: doc.authorId, date: doc.date ?? new Date() },
+      };
     }
   }
 
   const acta = await prisma.acta.findFirst({ where: { id: docId, projectId } });
   if (acta) {
-    await prisma.acta.update({ where: { id: docId }, data: { content } });
-    return getProjectDoc(projectId, docId);
+    return { parent: { actaId: acta.id }, content: acta.content ?? "", baseline: { authorId: null, date: acta.date } };
   }
 
   return null;
+}
+
+export async function updateProjectDoc(projectId: string, docId: string, content: string): Promise<ProjectDocDetail | null> {
+  const member = await requireMember();
+
+  const target = await findDocTarget(projectId, docId);
+  if (!target) return null;
+  // Cada guardado con cambios es una versión; guardar lo mismo no registra nada.
+  if (content === target.content) return getProjectDoc(projectId, docId);
+
+  await prisma.$transaction(async (tx) => {
+    if ("documentId" in target.parent) {
+      await tx.document.update({ where: { id: target.parent.documentId }, data: { content } });
+    } else {
+      await tx.acta.update({ where: { id: target.parent.actaId }, data: { content } });
+    }
+
+    // Contenido que llegó sin pasar por aquí (el seed) queda como versión inicial, para que
+    // este cambio tenga contra qué compararse. La migración hizo lo mismo con lo existente.
+    const hasVersions = (await tx.docVersion.count({ where: target.parent })) > 0;
+    if (!hasVersions && target.content.trim()) {
+      const { authorId, date } = target.baseline;
+      await tx.docVersion.create({ data: { ...target.parent, authorId, content: target.content, createdAt: date } });
+    }
+
+    await tx.docVersion.create({ data: { ...target.parent, authorId: member.id, content } });
+  });
+
+  return getProjectDoc(projectId, docId);
+}
+
+export async function getProjectDocVersions(projectId: string, docId: string): Promise<ProjectDocVersion[] | null> {
+  await requireMember();
+
+  const target = await findDocTarget(projectId, docId);
+  if (!target) return null;
+
+  const versions = await prisma.docVersion.findMany({
+    where: target.parent,
+    orderBy: { createdAt: "desc" },
+    include: { author: { select: { name: true } } },
+  });
+
+  return versions.map((version) => ({
+    id: version.id,
+    author: version.author?.name ?? "",
+    date: formatDateTime(version.createdAt),
+    content: version.content,
+  }));
+}
+
+type DocCommentRow = Prisma.DocCommentGetPayload<{ include: { author: { select: { name: true } } } }>;
+
+function toDocComment(comment: DocCommentRow): ProjectDocComment {
+  return {
+    id: comment.id,
+    author: comment.author?.name ?? "",
+    date: formatDateTime(comment.createdAt),
+    quote: comment.quote,
+    occurrence: comment.occurrence,
+    body: comment.body,
+  };
+}
+
+export function parseCreateDocCommentInput(body: unknown): CreateDocCommentInput | null {
+  if (typeof body !== "object" || body === null) return null;
+  const b = body as Record<string, unknown>;
+
+  // El fragmento se guarda tal cual: lo que se busca en el texto es justamente lo que se seleccionó.
+  const quote = typeof b.quote === "string" ? b.quote : "";
+  if (!quote.trim() || quote.length > MAX_QUOTE_LENGTH) return null;
+
+  const occurrence = b.occurrence;
+  if (typeof occurrence !== "number" || !Number.isInteger(occurrence) || occurrence < 0) return null;
+
+  const text = typeof b.body === "string" ? b.body.trim() : "";
+  if (!text || text.length > MAX_COMMENT_LENGTH) return null;
+
+  return { quote, occurrence, body: text };
+}
+
+export async function getProjectDocComments(projectId: string, docId: string): Promise<ProjectDocComment[] | null> {
+  await requireMember();
+
+  const target = await findDocTarget(projectId, docId);
+  if (!target) return null;
+
+  const comments = await prisma.docComment.findMany({
+    where: target.parent,
+    orderBy: { createdAt: "asc" },
+    include: { author: { select: { name: true } } },
+  });
+
+  return comments.map(toDocComment);
+}
+
+export async function createProjectDocComment(
+  projectId: string,
+  docId: string,
+  input: CreateDocCommentInput,
+): Promise<ProjectDocComment | null> {
+  const member = await requireMember();
+
+  const target = await findDocTarget(projectId, docId);
+  if (!target) return null;
+
+  const comment = await prisma.docComment.create({
+    data: { ...target.parent, authorId: member.id, quote: input.quote, occurrence: input.occurrence, body: input.body },
+    include: { author: { select: { name: true } } },
+  });
+
+  return toDocComment(comment);
+}
+
+/** Resolver un comentario es borrar su fila. false si no existe o es de otro documento. */
+export async function resolveProjectDocComment(projectId: string, docId: string, commentId: string): Promise<boolean> {
+  await requireMember();
+
+  const target = await findDocTarget(projectId, docId);
+  if (!target) return false;
+
+  const { count } = await prisma.docComment.deleteMany({ where: { id: commentId, ...target.parent } });
+  return count > 0;
 }
 
 export async function createProjectDoc(projectId: string, slotKey: string): Promise<ProjectDetail | null> {

@@ -123,16 +123,52 @@ Pendiente:
 
 ## Documentos y Actas
 
-- El editor de documentos (`DocEditorView`) solo tiene **el campo de texto plano** conectado a
-  guardar/persistir. Sigue pendiente:
-  - Formato enriquecido: los botones B/I/H1/H2/Lista/Tarea/Tabla/Código son decorativos.
-  - Metadatos editables (tipo, autor, fecha) — hoy son de solo lectura.
-  - "Historial de versiones" es un placeholder.
-  - "Compartir enlace" no hace nada.
-- El propio schema tiene esto documentado en comentarios (`Document` y `Acta`, en
-  `prisma/schema.prisma`): `content` es texto plano por ahora; si en algún momento se necesitan
-  secciones estructuradas o versionamiento real, `author`/`date` deberían pasar a vivir en un
-  modelo `DocumentVersion` aparte, con `Document`/`Acta` como contenedor del slot.
+- **El contenido es Markdown** (GFM), guardado tal cual en `content`, sin migración: el texto plano
+  que ya existía es Markdown válido. El editor (`DocEditorView`) es un `textarea` con pestañas
+  "Escribir / Vista previa", y abre en la vista previa salvo que el documento esté vacío. La barra
+  (B/I/H1/H2/Lista/Tabla/Código, Ctrl+B, Ctrl+I) inserta la sintaxis, y Enter dentro de una lista
+  abre el siguiente ítem; esa lógica es pura y vive en `src/lib/markdown.ts`. La vista previa usa `react-markdown` +
+  `remark-gfm` (`src/components/ui/Markdown.tsx`), que no renderiza HTML crudo.
+  - Se descartó un editor WYSIWYG (Tiptap/ProseMirror): obligaba a pasar `content` a JSON, migrar
+    lo existente y sumar una dependencia pesada; con texto, el futuro diff de versiones es trivial.
+  - **Sin listas de tareas (`- [ ]`)** a propósito: chocarían con la entidad `Task` del proyecto. No
+    hay botón, y si alguien escribe la sintaxis se muestra como texto (`[ ]`), no como checkbox.
+  - Los cambios que hace la barra no entran al Ctrl+Z nativo del `textarea`, porque el valor lo
+    escribe React.
+- **Historial de versiones** en `DocVersion` (migración `20261021120000_doc_versions`), compartido
+  por documentos y actas: cada fila cuelga de exactamente uno de los dos (CHECK en la migración).
+  - Guarda el **texto completo** de cada versión; el diff se calcula al mostrarlo
+    (`src/lib/diff.ts`, LCS por líneas, sin dependencias). `Document.content`/`Acta.content` siguen
+    siendo la versión actual, así que leer un documento no toca el historial.
+  - **Cada guardado con cambios es una versión**, y una versión no se modifica después. Guardar sin
+    cambios no registra nada. Se probó fusionar los guardados de una misma persona en una "sesión"
+    de 30 minutos, pero aquí guardar es un clic deliberado (no hay autoguardado) y fusionar
+    escondía los cambios intermedios; se quitó en `20261022120000_doc_versions_immutable`.
+  - **Restaurar no reescribe la historia**: lleva el contenido al editor y, al guardar, queda como
+    una versión nueva.
+  - La migración creó una versión inicial para lo que ya tenía contenido: en documentos, con el
+    creador y la fecha de creación; en actas, sin autor y con la fecha de la reunión, porque no hay
+    otra. Lo que llegue sin historial (el seed) recibe esa misma versión inicial al primer guardado.
+- **Comentarios sobre un fragmento** en `DocComment` (migración `20261027120000_doc_comments`),
+  compartido por documentos y actas igual que `DocVersion` (CHECK de un solo padre). Se selecciona
+  texto en la **Vista previa**, aparece "+ Comentar" y el comentario queda en el panel lateral.
+  - **Sin hilo y sin distinguir resolver de eliminar**: "Resolver" borra la fila (hard delete).
+    Cualquier miembro puede resolver cualquier comentario. No queda registro de lo resuelto.
+  - **El fragmento se ancla por su texto, no por posición**: `quote` (el texto de la vista previa,
+    sin la sintaxis Markdown) y `occurrence` (cuál de sus repeticiones, 0 = la primera). Las
+    posiciones se desfasarían con cualquier edición anterior; el texto sobrevive. La lógica pura
+    está en `src/lib/comments.ts` y la del DOM en `src/lib/comment-dom.ts`.
+  - **Si el fragmento se reescribe**, deja de encontrarse: el comentario sigue en el panel (con su
+    cita) pero sin resaltado, y se puede resolver igual. Si el texto citado aparece menos veces que
+    antes se resalta la primera repetición.
+  - El resaltado usa la **CSS Custom Highlight API** (no toca el DOM de React). En un navegador
+    sin ella (Firefox anterior a 140) los comentarios funcionan pero no se pintan.
+  - Los comentarios no se versionan: un comentario ligado a texto que solo existe en un cambio sin
+    guardar sigue ahí si no se guarda.
+  - Se comenta solo desde la Vista previa: en el `textarea` no se puede resaltar texto.
+- **Los metadatos (tipo, autor, fecha) son de solo lectura a propósito**: el tipo es el slot del
+  proyecto, y autor/fecha describen la creación. Quién editó y cuándo está en el historial.
+- Sigue pendiente en el editor: "Compartir enlace" no hace nada.
 
 ## Features y Tareas
 

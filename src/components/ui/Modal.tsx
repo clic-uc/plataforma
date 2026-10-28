@@ -5,10 +5,12 @@ import { useEffect } from "react";
 export function Modal({
   title,
   onClose,
+  wide = false,
   children,
 }: {
   title: string;
   onClose: () => void;
+  wide?: boolean;
   children: React.ReactNode;
 }) {
   useEffect(() => {
@@ -21,7 +23,7 @@ export function Modal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div className={`modal-card${wide ? " wide" : ""}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-title">{title}</div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Cerrar">×</button>

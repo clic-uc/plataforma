@@ -97,7 +97,7 @@ model Member {
   /// Bloques de la semana en que la persona declara estar disponible, como
   /// "LUN_MANANA". Los valores válidos viven en src/lib/api/member-fields.ts.
   availability String[] @default([])
-  streak   Int          @default(0)
+  streak       Int      @default(0)
 
   /// Gate de acceso: nadie entra hasta que coordinación lo aprueba desde la
   /// pestaña "Pendientes" de /miembros.
@@ -111,6 +111,8 @@ model Member {
   standups          Standup[]
   timeEntries       TimeEntry[]
   documentsAuthored Document[]          @relation("DocumentAuthor")
+  docVersions       DocVersion[]        @relation("DocVersionAuthor")
+  docComments       DocComment[]        @relation("DocCommentAuthor")
   eventsCreated     CalendarEvent[]     @relation("EventCreator")
 }
 
@@ -124,10 +126,10 @@ model Project {
   startDate   DateTime
   archived    Boolean       @default(false)
 
-  members   ProjectMember[]
-  features  Feature[]
-  tasks     Task[]
-  documents Document[]
+  members     ProjectMember[]
+  features    Feature[]
+  tasks       Task[]
+  documents   Document[]
   actas       Acta[]
   events      CalendarEvent[]
   timeEntries TimeEntry[]
@@ -178,30 +180,30 @@ model Task {
   @@unique([projectId, label])
 }
 
-/// content es texto plano por ahora. A futuro, cuando se hagan secciones dentro
-/// del documento (contexto, alcance, decisiones, por ejemplo), conviene migrarlo a JSON estructurado.
-/// author/date describen hoy "quién y cuándo se llenó el documento", pero conceptualmente
-/// son metadata de una versión. Cuando se implemente versionamiento, deberían moverse a un
-/// modelo DocumentVersion (documentId, authorId, date, content) y Document pasaría a ser
-/// solo el contenedor del slot. Se deja así mientras no exista diseño de versionamiento.
+/// content es Markdown (GFM) y es la versión actual; el historial vive en DocVersion.
+/// A futuro, cuando se hagan secciones dentro del documento (contexto, alcance, decisiones,
+/// por ejemplo), conviene migrarlo a JSON estructurado.
+/// author/date son "quién y cuándo se creó el documento"; quién editó y cuándo está en
+/// DocVersion.
 model Document {
   id        String      @id @default(cuid())
   projectId String
-  authorId  String? /// autor debería ser última modificación en realidad, ya que son incrementales
+  authorId  String?
   slot      DocSlotType
   filled    Boolean     @default(false)
   date      DateTime?
   content   String?
 
-  project Project @relation(fields: [projectId], references: [id])
-  author  Member? @relation("DocumentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  project  Project      @relation(fields: [projectId], references: [id])
+  author   Member?      @relation("DocumentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  versions DocVersion[]
+  comments DocComment[]
 
   @@unique([projectId, slot])
 }
 
-/// Misma observación que en Document: content es texto plano por ahora, candidato a JSON
-/// por secciones a futuro, y date sería metadata de versión si las actas llegan a requerir
-/// historial de cambios.
+/// Misma observación que en Document: content es Markdown y es la versión actual, con el
+/// historial en DocVersion. date es la fecha de la reunión, no de una versión.
 model Acta {
   id        String   @id @default(cuid())
   projectId String
@@ -209,7 +211,56 @@ model Acta {
   date      DateTime
   content   String?
 
-  project Project @relation(fields: [projectId], references: [id])
+  project  Project      @relation(fields: [projectId], references: [id])
+  versions DocVersion[]
+  comments DocComment[]
+}
+
+/// Una versión guardada del contenido de un documento o de un acta: exactamente uno de
+/// documentId / actaId (lo asegura un CHECK en la migración). Guarda el texto completo, no
+/// un diff; el diff se calcula al mostrarlo (src/lib/diff.ts).
+///
+/// Cada guardado con cambios crea una versión, y una versión no se modifica después: por
+/// eso no tiene updatedAt.
+model DocVersion {
+  id         String   @id @default(cuid())
+  documentId String?
+  actaId     String?
+  authorId   String?
+  content    String
+  createdAt  DateTime @default(now())
+
+  document Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  acta     Acta?     @relation(fields: [actaId], references: [id], onDelete: Cascade)
+  author   Member?   @relation("DocVersionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([documentId, createdAt])
+  @@index([actaId, createdAt])
+}
+
+/// Comentario sobre un fragmento de un documento o de un acta: exactamente uno de
+/// documentId / actaId (CHECK en la migración). Resolverlo es borrar la fila; no hay hilo.
+///
+/// El fragmento se ancla por su texto, no por posición: quote es el texto seleccionado en la
+/// vista previa (ya renderizado, sin la sintaxis Markdown) y occurrence cuál de sus repeticiones
+/// es (0 = la primera). Así sobrevive a ediciones en otras partes del documento; si el
+/// fragmento se reescribe deja de encontrarse y el comentario queda "huérfano" (src/lib/comments.ts).
+model DocComment {
+  id         String   @id @default(cuid())
+  documentId String?
+  actaId     String?
+  authorId   String?
+  quote      String
+  occurrence Int      @default(0)
+  body       String
+  createdAt  DateTime @default(now())
+
+  document Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  acta     Acta?     @relation(fields: [actaId], references: [id], onDelete: Cascade)
+  author   Member?   @relation("DocCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([documentId, createdAt])
+  @@index([actaId, createdAt])
 }
 
 model Achievement {
