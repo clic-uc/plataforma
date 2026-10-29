@@ -280,6 +280,7 @@ Weekly StandUp, this week's hours chart and the hours history.
 - **The editor shows no metadata card** (type, project, author, creation date): it was visually
   redundant with the title and breadcrumb. The API still returns those fields (`get_document` uses
   them). Who edited and when is in the version history.
+- **Creating an acta opens it** in the editor right away.
 
 ### Features and tasks
 
