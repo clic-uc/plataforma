@@ -52,18 +52,18 @@ export function CreateIssueModal({ projectId, onClose }: { projectId: string; on
 
         <div className="form-field">
           <div className="f-label">Descripción</div>
-          <div className="md-toolbar-row">
+          <div className="md-frame">
             <MarkdownToolbar onFormat={format} />
+            <textarea
+              ref={textareaRef}
+              className="field-textarea issue-body-input"
+              value={body}
+              maxLength={MAX_ISSUE_BODY_LENGTH}
+              onChange={(e) => setBody(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Contexto, qué se propone o qué falla…"
+            />
           </div>
-          <textarea
-            ref={textareaRef}
-            className="field-textarea issue-body-input"
-            value={body}
-            maxLength={MAX_ISSUE_BODY_LENGTH}
-            onChange={(e) => setBody(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Contexto, qué se propone o qué falla…"
-          />
         </div>
 
         {mutation.isError && (

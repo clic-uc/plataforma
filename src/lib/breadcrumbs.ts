@@ -33,10 +33,11 @@ export function useBreadcrumb(): Breadcrumb {
   const { data: member } = useMember(memberId, { enabled: !!memberId });
 
   if (pathname === "/dashboard") return { title: "Dashboard" };
-  if (pathname === "/proyectos") return { title: "Gestión de Proyectos" };
+  if (pathname === "/proyectos") return { title: "Proyectos" };
   if (pathname === "/calendario") return { title: "Calendario" };
-  if (pathname === "/tiempo") return { title: "Tiempo & StandUp" };
+  if (pathname === "/tiempo") return { title: "Horas y StandUp" };
   if (pathname === "/miembros") return { title: "Equipo" };
+  if (pathname === "/analiticas") return { title: "Analíticas" };
 
   if (params.docId && params.projectId) {
     return {

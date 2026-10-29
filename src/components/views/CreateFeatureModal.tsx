@@ -65,17 +65,17 @@ export function CreateFeatureModal({
 
         <div className="form-field">
           <div className="f-label">Descripción</div>
-          <div className="md-toolbar-row">
+          <div className="md-frame">
             <MarkdownToolbar onFormat={format} />
+            <textarea
+              ref={textareaRef}
+              className="field-textarea"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Opcional"
+            />
           </div>
-          <textarea
-            ref={textareaRef}
-            className="field-textarea"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Opcional"
-          />
         </div>
 
         {mutation.isError && (

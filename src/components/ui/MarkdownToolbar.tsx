@@ -1,16 +1,17 @@
 "use client";
 
-import { useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { applyFormat, continueList, type MarkdownFormat } from "@/lib/markdown";
 
-const TOOLBAR: { format: MarkdownFormat; label: ReactNode; title: string }[] = [
-  { format: "bold", label: <strong>B</strong>, title: "Negrita (Ctrl+B)" },
-  { format: "italic", label: <em>I</em>, title: "Cursiva (Ctrl+I)" },
-  { format: "h1", label: "H1", title: "Título" },
-  { format: "h2", label: "H2", title: "Subtítulo" },
-  { format: "list", label: "— Lista", title: "Lista" },
-  { format: "table", label: "▦ Tabla", title: "Tabla" },
-  { format: "code", label: "{} Código", title: "Código" },
+// `group` separa visualmente los botones: formato de texto, títulos y bloques.
+const TOOLBAR: { format: MarkdownFormat; label: ReactNode; title: string; group: number }[] = [
+  { format: "bold", label: <strong>B</strong>, title: "Negrita (Ctrl+B)", group: 0 },
+  { format: "italic", label: <em>I</em>, title: "Cursiva (Ctrl+I)", group: 0 },
+  { format: "h1", label: "H1", title: "Título", group: 1 },
+  { format: "h2", label: "H2", title: "Subtítulo", group: 1 },
+  { format: "list", label: "Lista", title: "Lista", group: 2 },
+  { format: "table", label: "Tabla", title: "Tabla", group: 2 },
+  { format: "code", label: "Código", title: "Código", group: 2 },
 ];
 
 const SHORTCUTS: Record<string, MarkdownFormat> = { b: "bold", i: "italic" };
@@ -71,19 +72,22 @@ export function useMarkdownEditor(value: string, onChange: (next: string) => voi
 
 export function MarkdownToolbar({ onFormat }: { onFormat: (kind: MarkdownFormat) => void }) {
   return (
-    <div className="doc-e-toolbar">
-      {TOOLBAR.map(({ format: kind, label, title }) => (
-        // preventDefault en mousedown evita que el botón le quite el foco al textarea.
-        <button
-          key={kind}
-          type="button"
-          className="toolbar-btn"
-          title={title}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => onFormat(kind)}
-        >
-          {label}
-        </button>
+    <div className="doc-e-toolbar" role="toolbar" aria-label="Formato Markdown">
+      {TOOLBAR.map(({ format: kind, label, title, group }, index) => (
+        <Fragment key={kind}>
+          {index > 0 && TOOLBAR[index - 1].group !== group && <span className="toolbar-sep" aria-hidden />}
+          {/* preventDefault en mousedown evita que el botón le quite el foco al textarea. */}
+          <button
+            type="button"
+            className="toolbar-btn"
+            title={title}
+            aria-label={title}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onFormat(kind)}
+          >
+            {label}
+          </button>
+        </Fragment>
       ))}
     </div>
   );

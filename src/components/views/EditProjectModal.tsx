@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { ProjectStatus } from "@/generated/prisma/enums";
 import { Modal } from "@/components/ui/Modal";
 import { errorMessage } from "@/lib/api/http";
 import { PROJECT_STATUS_OPTIONS } from "@/lib/api/status";
-import { useUpdateProject, type ProjectDetail } from "@/lib/api/projects";
+import { useDeleteProject, useUpdateProject, type ProjectDetail } from "@/lib/api/projects";
 
 export function EditProjectModal({ project, onClose }: { project: ProjectDetail; onClose: () => void }) {
   const [name, setName] = useState(project.name);
@@ -16,6 +17,13 @@ export function EditProjectModal({ project, onClose }: { project: ProjectDetail;
   const [archived, setArchived] = useState(project.archived);
 
   const mutation = useUpdateProject(project.id);
+  const router = useRouter();
+  const deleteProject = useDeleteProject();
+
+  function handleDelete() {
+    if (!window.confirm(`¿Eliminar el proyecto "${project.name}"? Esta acción no se puede deshacer.`)) return;
+    deleteProject.mutate(project.id, { onSuccess: () => router.push("/proyectos") });
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -89,7 +97,22 @@ export function EditProjectModal({ project, onClose }: { project: ProjectDetail;
           </div>
         )}
 
+        {deleteProject.isError && (
+          <div className="modal-error">
+            {errorMessage(deleteProject.error, "No se pudo eliminar el proyecto. Intenta de nuevo.")}
+          </div>
+        )}
+
         <div className="modal-footer" style={{ padding: 0, border: "none", marginTop: 4 }}>
+          <button
+            type="button"
+            className="btn-text-danger"
+            style={{ marginRight: "auto" }}
+            disabled={deleteProject.isPending}
+            onClick={handleDelete}
+          >
+            {deleteProject.isPending ? "Eliminando…" : "Eliminar proyecto"}
+          </button>
           <button type="button" className="btn-ghost" onClick={onClose}>Cancelar</button>
           <button type="submit" className="btn-primary" disabled={mutation.isPending}>
             {mutation.isPending ? "Guardando…" : "Guardar cambios"}

@@ -79,18 +79,50 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
 
   const openIndex = versions.findIndex((version) => version.id === openVersionId);
 
+  const dirty = content !== doc.content;
+
   return (
     <section className="doc-ew">
       <style href="doc-comment-highlights" precedence="default">{HIGHLIGHT_CSS}</style>
       <div>
-        <div className="card" style={{ padding: "22px 24px" }}>
-          <div className="doc-e-title">{doc.title}</div>
-          <div className="doc-e-bar">
-            <div className="tabs" style={{ margin: 0 }}>
-              <button type="button" className={`tab-item${mode === "write" ? " active" : ""}`} onClick={() => setMode("write")}>
+        <div className="doc-e-head">
+          <h2 className="doc-e-title">{doc.title}</h2>
+          <div className="doc-e-save">
+            {mutation.isError ? (
+              <span className="doc-e-status dirty" role="alert">No se pudo guardar. Intenta de nuevo.</span>
+            ) : (
+              <span className={`doc-e-status${dirty ? " dirty" : ""}`}>{dirty ? "Cambios sin guardar" : "Guardado"}</span>
+            )}
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={mutation.isPending || !dirty}
+              onClick={() => mutation.mutate(content)}
+            >
+              {mutation.isPending ? "Guardando…" : "Guardar cambios"}
+            </button>
+          </div>
+        </div>
+
+        <div className="doc-frame">
+          <div className="doc-frame-bar">
+            <div className="doc-ftabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "write"}
+                className={`doc-ftab${mode === "write" ? " active" : ""}`}
+                onClick={() => setMode("write")}
+              >
                 Escribir
               </button>
-              <button type="button" className={`tab-item${mode === "preview" ? " active" : ""}`} onClick={() => setMode("preview")}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "preview"}
+                className={`doc-ftab${mode === "preview" ? " active" : ""}`}
+                onClick={() => setMode("preview")}
+              >
                 Vista previa
               </button>
             </div>
@@ -103,14 +135,18 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
               value={content}
               onChange={(e) => setContent(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder="Escribe el contenido del documento…"
+              placeholder="Escribe el contenido del documento en Markdown…"
             />
           ) : (
             // El botón "Comentar" va fuera de doc-e-preview: su texto contaría como parte del
             // documento al calcular a qué fragmento se ancla un comentario.
             <div className="doc-e-previewwrap">
               <div className="doc-e-preview" ref={setPreviewEl}>
-                {content.trim() ? <Markdown>{content}</Markdown> : <div className="doc-e-empty">Nada que mostrar todavía.</div>}
+                {content.trim() ? (
+                  <Markdown>{content}</Markdown>
+                ) : (
+                  <div className="doc-e-empty">El documento está vacío. Pasa a «Escribir» para agregar contenido.</div>
+                )}
               </div>
               {selection && content.trim() && (
                 <button
@@ -132,7 +168,7 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
         </div>
       </div>
 
-      <div>
+      <aside className="side-panel">
         <DocCommentsPanel
           comments={comments}
           composing={composing}
@@ -147,8 +183,10 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
           onShow={showComment}
         />
 
-        <div className="doc-sc">
-          <div className="ds-lbl">Historial de versiones</div>
+        <div className="side-sec">
+          <div className="ds-lbl">
+            Historial de versiones{versions.length > 0 && <span className="label-count">{versions.length}</span>}
+          </div>
           {versions.length === 0 ? (
             <div className="doc-v-empty">Sin versiones todavía. Se registra una al guardar.</div>
           ) : (
@@ -157,7 +195,7 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
                 <button key={version.id} type="button" className="doc-v-row" onClick={() => setOpenVersionId(version.id)}>
                   <span className="doc-v-author">
                     {version.author || "Autor desconocido"}
-                    {index === 0 && <Badge color="blue" style={{ fontSize: 8, marginLeft: 6 }}>Actual</Badge>}
+                    {index === 0 && <Badge color="blue">Actual</Badge>}
                   </span>
                   <span className="doc-v-date">{version.date}</span>
                 </button>
@@ -165,19 +203,7 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
             </div>
           )}
         </div>
-
-        {mutation.isError && <div className="modal-error">No se pudo guardar. Intenta de nuevo.</div>}
-
-        <button
-          className="btn-primary"
-          style={{ width: "100%", marginBottom: 8 }}
-          disabled={mutation.isPending}
-          onClick={() => mutation.mutate(content)}
-        >
-          {mutation.isPending ? "Guardando…" : content === doc.content ? "Guardado ✓" : "Guardar cambios"}
-        </button>
-        <button className="btn-ghost" style={{ width: "100%", fontSize: 13 }}>Compartir enlace</button>
-      </div>
+      </aside>
 
       {openIndex !== -1 && (
         <DocVersionModal

@@ -45,7 +45,7 @@ export function ConsentCard({ consentCode, clientName, redirectHosts, email, all
         <div className="logo-wordmark">
           C<em>L</em>IC
         </div>
-        <div className="logo-tagline">PLATAFORMA INTERNA</div>
+        <div className="logo-tagline">Plataforma interna</div>
       </div>
 
       {!consentCode ? (

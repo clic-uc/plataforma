@@ -10,10 +10,9 @@ import { RankStars } from "@/components/ui/RankStars";
 import { SearchIcon } from "@/components/icons";
 import { InviteMemberModal } from "@/components/views/InviteMemberModal";
 import { PendingMembersTable } from "@/components/views/PendingMembersTable";
-import { PlaceholderBox } from "@/components/ui/PlaceholderBox";
 import { useIsCoordinacion } from "@/components/providers/CurrentMemberProvider";
 import { useMembers, usePendingMembers, type MemberListItem } from "@/lib/api/members";
-import { DEFAULT_ACCENT_COLOR, normalizeSearch } from "@/lib/api/format";
+import { normalizeSearch } from "@/lib/api/format";
 import { MEMBER_STATUS_OPTIONS } from "@/lib/api/status";
 
 function matchesSearch(member: MemberListItem, query: string): boolean {
@@ -29,7 +28,7 @@ export function MembersTableView() {
   const { data: members = [] } = useMembers();
   const { data: pending = [] } = usePendingMembers({ enabled: isCoordinacion });
 
-  const [tab, setTab] = useState<"miembros" | "equipos" | "pendientes">("miembros");
+  const [tab, setTab] = useState<"miembros" | "pendientes">("miembros");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<MemberStatus | "">("");
   const [inviting, setInviting] = useState(false);
@@ -42,16 +41,47 @@ export function MembersTableView() {
 
   return (
     <section>
-      <div className="dir-search-bar">
-        {tab === "miembros" && (
-          <>
-            <label className="search-box" style={{ maxWidth: 280 }}>
+      {/* Vistas (pestañas) arriba; el filtro solo aplica a la lista y va debajo. */}
+      <div className="utabs" style={{ marginBottom: 16 }}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "miembros"}
+          className={`utab${tab === "miembros" ? " active" : ""}`}
+          onClick={() => setTab("miembros")}
+        >
+          Miembros <span className="utab-count">{members.length}</span>
+        </button>
+        {isCoordinacion && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "pendientes"}
+            className={`utab${tab === "pendientes" ? " active" : ""}`}
+            onClick={() => setTab("pendientes")}
+          >
+            Pendientes <span className="utab-count">{pending.length}</span>
+          </button>
+        )}
+        <div style={{ marginLeft: "auto", paddingBottom: 6 }}>
+          <button className="btn-primary" onClick={() => setInviting(true)}>Invitar miembro</button>
+        </div>
+      </div>
+
+      {inviting && <InviteMemberModal onClose={() => setInviting(false)} />}
+
+      {tab === "pendientes" ? (
+        <PendingMembersTable pending={pending} />
+      ) : (
+        <>
+          <div className="filter-row">
+            <label className="search-box">
               <SearchIcon />
               <input
                 type="search"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar miembro…"
+                placeholder="Buscar por nombre, correo o proyecto…"
                 aria-label="Buscar miembro"
               />
             </label>
@@ -66,79 +96,75 @@ export function MembersTableView() {
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
-          </>
-        )}
-        <div className="tabs" style={{ margin: 0 }}>
-          <div className={`tab-item${tab === "miembros" ? " active" : ""}`} onClick={() => setTab("miembros")}>
-            Lista completa <span>{members.length}</span>
           </div>
-          <div className={`tab-item${tab === "equipos" ? " active" : ""}`} onClick={() => setTab("equipos")}>
-            Gestionar equipos
-          </div>
-          {isCoordinacion && (
-            <div className={`tab-item${tab === "pendientes" ? " active" : ""}`} onClick={() => setTab("pendientes")}>
-              Pendientes <span>{pending.length}</span>
+
+          {shown.length === 0 ? (
+            <div className="ph">
+              <div className="ph-text">
+                {filtering
+                  ? "Ningún miembro coincide con la búsqueda. Prueba con otro nombre o quita el filtro de estado."
+                  : "Todavía no hay miembros aprobados. Invita a alguien compartiendo el enlace de ingreso."}
+              </div>
+            </div>
+          ) : (
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+              <table className="dir-table">
+                <thead>
+                  <tr>
+                    <th>Miembro</th>
+                    <th>Rango</th>
+                    <th>Proyectos</th>
+                    <th>Estado</th>
+                    <th>Cumpleaños</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map((m) => (
+                    <tr key={m.id} className="clickable" onClick={() => router.push(`/miembros/${m.id}`)}>
+                      <td>
+                        <div className="dir-name-cell">
+                          <MemberAvatar member={m} className="dir-avatar" />
+                          <div>
+                            <Link
+                              href={`/miembros/${m.id}`}
+                              className="dir-fullname"
+                              style={{ textDecoration: "none" }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {m.name}
+                            </Link>
+                            <div className="dir-email">{m.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        {m.rankFilled > 0 ? (
+                          <RankStars filled={m.rankFilled} />
+                        ) : (
+                          <span className="dir-empty-val" title="Sin rango asignado">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                          {m.projects.length === 0 && <span className="dir-empty-val">—</span>}
+                          {m.projects.map((p) => (
+                            <Link key={p.id} href={`/proyectos/${p.id}`} className="chip">
+                              {p.name}
+                            </Link>
+                          ))}
+                        </div>
+                      </td>
+                      <td><Badge color={m.statusColor}>{m.status}</Badge></td>
+                      <td style={{ fontVariantNumeric: "tabular-nums" }}>
+                        {m.birthday || <span className="dir-empty-val">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
-        </div>
-        <div style={{ marginLeft: "auto" }}>
-          <button className="btn-primary" onClick={() => setInviting(true)}>+ Invitar miembro</button>
-        </div>
-      </div>
-
-      {inviting && <InviteMemberModal onClose={() => setInviting(false)} />}
-
-      {tab === "pendientes" ? (
-        <PendingMembersTable pending={pending} />
-      ) : tab === "equipos" ? (
-        <PlaceholderBox text={<>Gestión de equipos<br />Próximamente</>} style={{ minHeight: 160 }} />
-      ) : shown.length === 0 ? (
-        <div className="ph" style={{ minHeight: 160 }}>
-          <div className="ph-text">
-            {filtering ? "Ningún miembro coincide con los filtros." : "Todavía no hay miembros aprobados."}
-          </div>
-        </div>
-      ) : (
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <table className="dir-table">
-            <thead>
-              <tr>
-                <th style={{ textAlign: "center" }}>Miembro</th>
-                <th style={{ textAlign: "center" }}>Rango</th>
-                <th style={{ textAlign: "center" }}>Proyectos</th>
-                <th style={{ textAlign: "center" }}>Estado</th>
-                <th style={{ textAlign: "center" }}>Cumpleaños</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((m) => (
-                <tr key={m.id} onClick={() => router.push(`/miembros/${m.id}`)}>
-                  <td>
-                    <div className="dir-name-cell">
-                      <MemberAvatar member={m} className="dir-avatar" />
-                      <div>
-                        <div className="dir-fullname">{m.name}</div>
-                        <div className="dir-email">{m.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td><RankStars filled={m.rankFilled} /></td>
-                  <td>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }} onClick={(e) => e.stopPropagation()}>
-                      {m.projects.map((p) => (
-                        <Link key={p.id} href={`/proyectos/${p.id}`} className="proj-task-chip">
-                          <span className="proj-task-chip-dot" style={{ background: DEFAULT_ACCENT_COLOR }} />{p.name}
-                        </Link>
-                      ))}
-                    </div>
-                  </td>
-                  <td><Badge color={m.statusColor}>{m.status}</Badge></td>
-                  <td style={{ fontFamily: "var(--font-space-mono)", fontSize: 11 }}>{m.birthday}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        </>
       )}
     </section>
   );
