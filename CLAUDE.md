@@ -39,6 +39,10 @@ CI (`.github/workflows/ci.yml`) runs lint, typecheck, tests and build on every P
 and `main`. It needs no secrets: the build does not touch the database, and the Better Auth variables
 it sets are placeholders.
 
+Vercel deploys only `main` (production): `vercel.json` turns off automatic deployments for every
+other branch and for PRs (`git.deploymentEnabled`), since CI already checks them. A one-off preview
+is still possible by hand (`vercel deploy` or the dashboard).
+
 ## Stack
 
 - **Next.js 16** with App Router (`src/app/`)
