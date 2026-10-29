@@ -229,7 +229,9 @@ Weekly StandUp, this week's hours chart and the hours history.
   already existed is valid Markdown. The editor (`DocEditorView`) is a `textarea` with "Escribir /
   Vista previa" tabs, and opens on the preview unless the document is empty. The toolbar
   (B/I/H1/H2/list/table/code, Ctrl+B, Ctrl+I) inserts the syntax, and Enter inside a list opens the
-  next item; that logic is pure and lives in `src/lib/markdown.ts`. The preview uses `react-markdown` +
+  next item; that logic is pure and lives in `src/lib/markdown.ts`. The toolbar and its keyboard
+  handling are `MarkdownToolbar` / `useMarkdownEditor` (`src/components/ui/MarkdownToolbar.tsx`), so
+  other Markdown fields can reuse them. The preview uses `react-markdown` +
   `remark-gfm` (`src/components/ui/Markdown.tsx`), which does not render raw HTML.
   - A WYSIWYG editor (Tiptap/ProseMirror) was ruled out: it forced `content` into JSON, migrating what
     exists and adding a heavy dependency; with plain text the version diff is trivial.
