@@ -113,6 +113,9 @@ model Member {
   docVersions       DocVersion[]        @relation("DocVersionAuthor")
   docComments       DocComment[]        @relation("DocCommentAuthor")
   eventsCreated     CalendarEvent[]     @relation("EventCreator")
+  oauthApplications OauthApplication[]
+  oauthAccessTokens OauthAccessToken[]
+  oauthConsents     OauthConsent[]
 }
 
 model Project {
@@ -396,4 +399,67 @@ model Verification {
   expiresAt  DateTime
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Servidor OAuth del MCP (plugin mcp de Better Auth). Los clientes MCP se
+// registran solos (registro dinámico, sin sesión: por eso userId es opcional en
+// OauthApplication) y el código de autorización vive en Verification. name es
+// opcional porque el registro no exige client_name.
+// ---------------------------------------------------------------------------
+
+model OauthApplication {
+  id           String   @id
+  name         String?
+  icon         String?
+  metadata     String?
+  clientId     String   @unique
+  clientSecret String?
+  redirectUrls String
+  type         String
+  disabled     Boolean? @default(false)
+  userId       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  member       Member?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessTokens OauthAccessToken[]
+  consents     OauthConsent[]
+
+  @@index([userId])
+}
+
+model OauthAccessToken {
+  id                    String   @id
+  accessToken           String   @unique
+  refreshToken          String   @unique
+  accessTokenExpiresAt  DateTime
+  refreshTokenExpiresAt DateTime
+  clientId              String
+  userId                String?
+  scopes                String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  application OauthApplication @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  member      Member?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([userId])
+}
+
+model OauthConsent {
+  id           String   @id
+  clientId     String
+  userId       String
+  scopes       String
+  consentGiven Boolean
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  application OauthApplication @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  member      Member           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([userId])
 }

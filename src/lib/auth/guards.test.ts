@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthError, getCurrentMember, requireCoordinacion, requireMember } from "@/lib/auth/guards";
+import {
+  AuthError,
+  getCurrentMember,
+  requireCoordinacion,
+  requireMcpAccess,
+  requireMember,
+  runAsMember,
+} from "@/lib/auth/guards";
 
 const { getSession, findUnique } = vi.hoisted(() => ({ getSession: vi.fn(), findUnique: vi.fn() }));
 
@@ -64,6 +71,12 @@ describe("getCurrentMember", () => {
     await expect(getCurrentMember()).resolves.toMatchObject({ role: "EQUIPO" });
     expect(findUnique).toHaveBeenCalledWith({ where: { id: "m1" } });
   });
+
+  it("dentro de runAsMember usa ese id y no lee la sesión", async () => {
+    await runAsMember("m2", () => getCurrentMember());
+    expect(findUnique).toHaveBeenCalledWith({ where: { id: "m2" } });
+    expect(getSession).not.toHaveBeenCalled();
+  });
 });
 
 describe("requireMember", () => {
@@ -98,5 +111,22 @@ describe("requireCoordinacion", () => {
   it("revisa primero la aprobación: una cuenta pendiente no recibe FORBIDDEN_ROLE", async () => {
     findUnique.mockResolvedValue(memberRow({ role: "COORDINACION", isVerifiedByCoordinator: false }));
     await expect(requireCoordinacion()).rejects.toMatchObject({ code: "PENDING_APPROVAL" });
+  });
+});
+
+describe("requireMcpAccess", () => {
+  it("lanza 403 FORBIDDEN_ROLE para ROOKIE", async () => {
+    findUnique.mockResolvedValue(memberRow({ role: "ROOKIE" }));
+    await expect(requireMcpAccess()).rejects.toMatchObject({ status: 403, code: "FORBIDDEN_ROLE" });
+  });
+
+  it.each(["EQUIPO", "COORDINACION"])("deja pasar a %s", async (role) => {
+    findUnique.mockResolvedValue(memberRow({ role }));
+    await expect(requireMcpAccess()).resolves.toMatchObject({ role });
+  });
+
+  it("revisa primero la aprobación", async () => {
+    findUnique.mockResolvedValue(memberRow({ role: "ROOKIE", isVerifiedByCoordinator: false }));
+    await expect(requireMcpAccess()).rejects.toMatchObject({ code: "PENDING_APPROVAL" });
   });
 });

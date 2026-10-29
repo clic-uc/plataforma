@@ -167,6 +167,25 @@ export function addDaysInZone(instant: Date, days: number, timeZone: string): Da
   return new Date(result);
 }
 
+/** Instante de la hora de reloj `time` ("HH:mm") del día `dayKey` en `timeZone`. */
+export function zonedTimeToInstant(dayKey: string, time: string, timeZone: string = CALENDAR_TIME_ZONE): Date {
+  const [year, month, day] = dayKey.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  const wallClock = Date.UTC(year, month - 1, day, hour, minute);
+  // Igual que addDaysInZone: el offset se corrige con el del resultado, por si la
+  // hora pedida cae del otro lado de un cambio de horario.
+  let result = wallClock - zoneOffsetMinutes(new Date(wallClock), timeZone) * 60000;
+  result = wallClock - zoneOffsetMinutes(new Date(result), timeZone) * 60000;
+  return new Date(result);
+}
+
+/** Inverso de zonedTimeToInstant: día ("YYYY-MM-DD") y hora ("HH:mm") de reloj en `timeZone`. */
+export function instantToZonedTime(instant: Date, timeZone: string = CALENDAR_TIME_ZONE): { date: string; time: string } {
+  const p = zonedParts(instant, timeZone);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return { date: `${p.year}-${pad(p.month)}-${pad(p.day)}`, time: `${pad(p.hour)}:${pad(p.minute)}` };
+}
+
 // ─── Series semanales ───
 
 /**
