@@ -48,17 +48,17 @@ export function DescriptionEditor({
     <form onSubmit={handleSubmit}>
       <div className="form-field">
         <div className="f-label">Descripción</div>
-        <div className="md-toolbar-row">
+        <div className="md-frame">
           <MarkdownToolbar onFormat={format} />
+          <textarea
+            ref={textareaRef}
+            className="field-textarea desc-input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Sin descripción"
+          />
         </div>
-        <textarea
-          ref={textareaRef}
-          className="field-textarea desc-input"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="Sin descripción"
-        />
       </div>
 
       {error && <div className="modal-error">{errorMessage(error, "No se pudo guardar. Intenta de nuevo.")}</div>}

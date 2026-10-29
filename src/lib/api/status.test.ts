@@ -43,7 +43,7 @@ describe("mapeos", () => {
 
   it("cada prioridad tiene color", () => {
     for (const priority of Object.values(Priority)) {
-      expect(priorityColor[priorityLabel[priority]]).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(priorityColor[priorityLabel[priority]]).toBe(`var(--prio-${priorityLabel[priority]})`);
     }
   });
 });

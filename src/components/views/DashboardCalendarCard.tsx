@@ -1,109 +1,194 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { useState } from "react";
+import Link from "next/link";
+import { useEvents, type CalendarEventView } from "@/lib/api/events";
+import { eventKindColor, type EventColor } from "@/lib/api/status";
 import {
-  monthCalendar,
-  weekHours,
-  weekDays,
-  weekRangeLabel,
-  weekNumberLabel,
-  weekEvents,
-} from "../../../prisma/seed/data/dashboard";
+  WEEKDAY_SHORT,
+  addMonths,
+  eventDaySpan,
+  eventsByDay,
+  formatTime,
+  monthGrid,
+  monthTitle,
+  parseDayKey,
+  toDayKey,
+} from "@/lib/calendar";
+import { formatShortDay } from "@/lib/dashboard";
 
-const DOW = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+/** Punto de color por tipo de evento; la misma paleta que las clases .cal-ev-* del calendario. */
+export const EVENT_DOT: Record<EventColor, string> = {
+  accent: "bg-accent",
+  green: "bg-ok",
+  amber: "bg-[var(--badge-amber-fg)]",
+  gray: "bg-text-3",
+};
 
-export function DashboardCalendarCard() {
-  const [tab, setTab] = useState<"calendar" | "weekly">("calendar");
+const MAX_DOTS = 3;
+const MAX_LIST = 6;
 
-  const cells: { day: number; otherMonth: boolean }[] = [];
-  for (let d = 1; d <= monthCalendar.daysInMonth; d++) cells.push({ day: d, otherMonth: false });
-  for (let d = 1; d <= monthCalendar.trailingDays; d++) cells.push({ day: d, otherMonth: true });
+function calendarHref(view: "mes" | "semana", day: string): string {
+  return `/calendario?${new URLSearchParams({ vista: view, fecha: day })}`;
+}
 
-  const eventsByDay = new Map(monthCalendar.events.map((e) => [e.day, e]));
+/**
+ * Mes en miniatura con los eventos que quedan. Igual que /calendario, ubica los
+ * eventos con la hora del navegador, así que los pinta recién después de hidratar
+ * (`clientMinute` es null hasta entonces).
+ */
+export function DashboardCalendarCard({
+  today,
+  clientMinute,
+  onOpenEvent,
+  onCreateEvent,
+}: {
+  /** Hoy en Chile según el servidor: el mes que se abre. */
+  today: string;
+  clientMinute: number | null;
+  onOpenEvent: (event: CalendarEventView) => void;
+  onCreateEvent: (day: string) => void;
+}) {
+  const [anchor, setAnchor] = useState(today);
+  const anchorDate = parseDayKey(anchor);
+  const grid = monthGrid(anchorDate);
+  const { data: events = [], isFetching } = useEvents(grid.from, grid.to);
+
+  const now = clientMinute === null ? null : new Date(clientMinute * 60_000);
+  const localToday = now ? toDayKey(now) : null;
+  const shown = now ? events : [];
+  const byDay = eventsByDay(shown, grid.days);
+
+  const monthStart = toDayKey(new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1));
+  const nextMonthStart = toDayKey(new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 1));
+  const isCurrentMonth = !!localToday && localToday >= monthStart && localToday < nextMonthStart;
+  const monthName = monthTitle(anchorDate).split(" ")[0].toLowerCase();
+
+  const inMonth = shown.filter((e) => {
+    const { first, last } = eventDaySpan(e);
+    return last >= monthStart && first < nextMonthStart;
+  });
+  // En el mes en curso, solo lo que no terminó.
+  const list = now && isCurrentMonth ? inMonth.filter((e) => Date.parse(e.endsAt) > now.getTime()) : inMonth;
+  const listShown = list.slice(0, MAX_LIST);
 
   return (
-    <div className="dash-cal-card">
-      <div className="dash-cal-tabs-bar">
-        <button className={`dash-cal-tab${tab === "calendar" ? " active" : ""}`} onClick={() => setTab("calendar")}>
-          Calendario
-        </button>
-        <button className={`dash-cal-tab${tab === "weekly" ? " active" : ""}`} onClick={() => setTab("weekly")}>
-          Vista Semanal
-        </button>
+    <section className="rounded-lg border border-border bg-surface" aria-labelledby="calendario-dash">
+      <header className="flex items-center justify-between gap-2 px-5 pb-2 pt-4">
+        <h2 id="calendario-dash" className="text-sm font-semibold text-text-2">Calendario</h2>
+        <Link href={calendarHref("mes", anchor)} className="text-sm font-medium text-accent hover:underline">
+          Ver calendario
+        </Link>
+      </header>
+
+      <div className="px-4">
+        <div className="mb-1 flex items-center justify-between">
+          <button
+            type="button"
+            className="grid size-7 place-items-center rounded-md text-lg leading-none text-text-2 transition-colors duration-100 hover:bg-surface-2"
+            onClick={() => setAnchor(toDayKey(addMonths(anchorDate, -1)))}
+            aria-label="Mes anterior"
+          >
+            ‹
+          </button>
+          <div className="font-condensed text-lg font-bold text-text-1">
+            {monthTitle(anchorDate)}
+            {isFetching && <span className="sr-only"> (cargando)</span>}
+          </div>
+          <button
+            type="button"
+            className="grid size-7 place-items-center rounded-md text-lg leading-none text-text-2 transition-colors duration-100 hover:bg-surface-2"
+            onClick={() => setAnchor(toDayKey(addMonths(anchorDate, 1)))}
+            aria-label="Mes siguiente"
+          >
+            ›
+          </button>
+        </div>
+
+        <div className="grid grid-cols-7 text-center" aria-hidden>
+          {WEEKDAY_SHORT.map((d) => (
+            <div key={d} className="py-1 text-2xs text-text-3">{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7">
+          {grid.days.map((day) => {
+            const key = toDayKey(day);
+            const dayEvents = byDay.get(key) ?? [];
+            const otherMonth = day.getMonth() !== anchorDate.getMonth();
+            const isToday = key === localToday;
+            return (
+              <Link
+                key={key}
+                href={calendarHref("semana", key)}
+                className="flex h-10 flex-col items-center justify-start gap-0.5 rounded-md pt-1 transition-colors duration-100 hover:bg-surface-2"
+                aria-label={`${day.getDate()} ${monthTitle(day)}${dayEvents.length ? `, ${dayEvents.length} ${dayEvents.length === 1 ? "evento" : "eventos"}` : ""}`}
+              >
+                <span
+                  className={`grid size-6 place-items-center rounded-full text-sm tabular-nums ${
+                    isToday ? "bg-accent font-semibold text-white" : otherMonth ? "text-text-3" : "text-text-1"
+                  }`}
+                >
+                  {day.getDate()}
+                </span>
+                <span className="flex h-1.5 gap-0.5" aria-hidden>
+                  {dayEvents.slice(0, MAX_DOTS).map((e) => (
+                    <span key={e.id} className={`size-1.5 rounded-full ${EVENT_DOT[eventKindColor[e.kind]]}`} />
+                  ))}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
       </div>
 
-      {tab === "calendar" && (
-        <div className="dash-cal-panel">
-          <div className="month-cal-head">
-            <div className="month-cal-nav">
-              <button className="month-cal-arrow">‹</button>
-              <div className="month-cal-title">{monthCalendar.title}</div>
-              <button className="month-cal-arrow">›</button>
-            </div>
-            <div style={{ fontFamily: "var(--font-space-mono)", fontSize: 9, color: "var(--text-3)" }}>
-              {monthCalendar.weekRange}
-            </div>
-          </div>
-          <div className="month-dow-row">
-            {DOW.map((d) => (
-              <div key={d} className="month-dow">{d}</div>
-            ))}
-          </div>
-          <div className="month-grid">
-            {cells.map((cell, i) => {
-              const ev = !cell.otherMonth ? eventsByDay.get(cell.day) : undefined;
-              const isToday = !cell.otherMonth && cell.day === monthCalendar.today;
+      <div className="mt-2 border-t border-border px-5 pb-4 pt-3">
+        <h3 className="mb-1.5 text-xs font-semibold text-text-2">
+          {isCurrentMonth ? `Lo que queda de ${monthName}` : `Eventos de ${monthName}`}
+        </h3>
+        {now === null ? (
+          <div className="h-6" />
+        ) : list.length === 0 ? (
+          <p className="text-sm text-text-3">
+            {isCurrentMonth && inMonth.length > 0 ? "No quedan eventos este mes." : `Sin eventos en ${monthName}.`}{" "}
+            <button
+              type="button"
+              className="font-medium text-accent hover:underline"
+              onClick={() => onCreateEvent(isCurrentMonth && localToday ? localToday : monthStart)}
+            >
+              Nuevo evento
+            </button>
+          </p>
+        ) : (
+          <ul className="-mx-2 flex flex-col">
+            {listShown.map((event) => {
+              const day = eventDaySpan(event).first;
               return (
-                <div key={i} className={`month-day${cell.otherMonth ? " other-m" : ""}${isToday ? " today-d" : ""}`}>
-                  <div className="month-day-num">{cell.day}</div>
-                  {ev && <div className={`month-ev${ev.color ? ` ev-${ev.color}` : ""}`}>{ev.label}</div>}
-                </div>
+                <li key={event.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenEvent(event)}
+                    className="flex w-full items-baseline gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-100 hover:bg-surface-2"
+                  >
+                    <span className={`size-2 shrink-0 -translate-y-px rounded-full ${EVENT_DOT[eventKindColor[event.kind]]}`} aria-hidden />
+                    <span className="w-12 shrink-0 text-xs tabular-nums text-text-2">{day === localToday ? "Hoy" : formatShortDay(day)}</span>
+                    <span className="w-10 shrink-0 text-xs tabular-nums text-text-3">
+                      {event.allDay ? "Día" : formatTime(new Date(event.startsAt))}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm text-text-1">{event.title}</span>
+                  </button>
+                </li>
               );
             })}
-          </div>
-        </div>
-      )}
-
-      {tab === "weekly" && (
-        <div className="dash-cal-panel">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <div className="month-cal-nav">
-              <button className="month-cal-arrow">‹</button>
-              <div className="month-cal-title" style={{ fontSize: 14 }}>{weekRangeLabel}</div>
-              <button className="month-cal-arrow">›</button>
-            </div>
-            <div style={{ fontFamily: "var(--font-space-mono)", fontSize: 9, color: "var(--text-3)" }}>
-              {weekNumberLabel}
-            </div>
-          </div>
-          <div className="week-exp-wrap">
-            <div className="week-exp-grid">
-              <div className="week-exp-hcell" style={{ textAlign: "right", paddingRight: 6 }} />
-              {weekDays.map((d) => (
-                <div key={d} className="week-exp-hcell">{d}</div>
-              ))}
-
-              {weekHours.map((hour) => (
-                <Fragment key={hour}>
-                  <div className="week-exp-timecell">{hour}</div>
-                  {Array.from({ length: 5 }).map((_, dayIdx) => {
-                    const event = weekEvents.find((e) => e.hour === hour && e.day === dayIdx);
-                    return (
-                      <div key={`${hour}-${dayIdx}`} className="week-exp-slot">
-                        {event && (
-                          <div className={`week-exp-event${event.color ? ` ev-${event.color}` : ""}`}>
-                            {event.label}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </Fragment>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+            {list.length > MAX_LIST && (
+              <li className="px-2 pt-1">
+                <Link href={calendarHref("mes", anchor)} className="text-xs text-text-3 hover:text-accent">
+                  {list.length - MAX_LIST} más en el calendario
+                </Link>
+              </li>
+            )}
+          </ul>
+        )}
+      </div>
+    </section>
   );
 }

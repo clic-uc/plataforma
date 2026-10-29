@@ -1,6 +1,9 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { KanbanColumn, TimeEntryKind } from "@/generated/prisma/enums";
 import { assertOk } from "@/lib/api/http";
 import { membersKeys } from "@/lib/api/members";
+import { projectsKeys } from "@/lib/api/projects";
+import { dashboardKeys } from "@/lib/api/dashboard";
 
 // StandUp semanal y registro de horas. Ambos son de la persona que los consulta:
 // la API no expone los de otros miembros (los standups ajenos se ven en el perfil).
@@ -29,6 +32,13 @@ export interface TimeEntryView {
   minutes: number;
   description: string;
   project: { id: string; name: string };
+  /** MANUAL, o TRABAJO/REVISION si salió de mover una tarea (UpdateTaskInput.timeSpent). */
+  kind: TimeEntryKind;
+  /**
+   * Tarea de la que salen las horas, con su label vigente (los labels se renumeran; el de la
+   * descripción es el del momento del registro). null si es manual o la tarea se borró.
+   */
+  task: { label: string; name: string } | null;
 }
 
 export interface TimeEntryInput {
@@ -36,6 +46,22 @@ export interface TimeEntryInput {
   projectId: string;
   minutes: number;
   description: string;
+  /**
+   * Tarea del mismo proyecto a la que se vinculan las horas (Task.id, no el label: el id no se
+   * renumera). Obligatorio en el body aunque sea null. Con tarea, `kind` es TRABAJO o REVISION;
+   * sin tarea, MANUAL. Otra combinación, o una tarea de otro proyecto, es 400/422.
+   */
+  taskId: string | null;
+  kind: TimeEntryKind;
+}
+
+/** Tarea elegible para vincular horas en /tiempo (GET /api/tiempo/tasks?projectId=). */
+export interface TimeEntryTaskOption {
+  /** Task.id */
+  id: string;
+  label: string;
+  name: string;
+  column: KanbanColumn;
 }
 
 export interface TimeEntryFilter {
@@ -52,6 +78,12 @@ export const standupKeys = {
 export const timeEntriesKeys = {
   all: ["time-entries"] as const,
   list: (filter: TimeEntryFilter) => [...timeEntriesKeys.all, filter.week ?? "todas", filter.projectId ?? "todos"] as const,
+};
+
+/** Tareas de un proyecto para vincular horas; no se invalida con las horas (no cambian por registrarlas). */
+export const timeEntryTasksKeys = {
+  all: ["time-entry-tasks"] as const,
+  project: (projectId: string) => [...timeEntryTasksKeys.all, projectId] as const,
 };
 
 async function fetchStandup(weekStart: string): Promise<StandupView | null> {
@@ -76,6 +108,12 @@ async function fetchTimeEntries(filter: TimeEntryFilter): Promise<TimeEntryView[
   if (filter.projectId) params.set("projectId", filter.projectId);
   const res = await fetch(`/api/time-entries?${params}`);
   await assertOk(res, "No se pudieron cargar las horas");
+  return res.json();
+}
+
+async function fetchTimeEntryTaskOptions(projectId: string): Promise<TimeEntryTaskOption[]> {
+  const res = await fetch(`/api/tiempo/tasks?${new URLSearchParams({ projectId })}`);
+  await assertOk(res, "No se pudieron cargar las tareas del proyecto");
   return res.json();
 }
 
@@ -129,14 +167,33 @@ export function useTimeEntries(filter: TimeEntryFilter) {
   });
 }
 
+/** Tareas del proyecto elegido en el formulario de horas; no consulta nada sin proyecto. */
+export function useTimeEntryTaskOptions(projectId: string | null) {
+  return useQuery({
+    queryKey: timeEntryTasksKeys.project(projectId ?? ""),
+    queryFn: () => fetchTimeEntryTaskOptions(projectId ?? ""),
+    enabled: !!projectId,
+  });
+}
+
 // Las mutaciones invalidan todas las listas: el gráfico de la semana y el
-// historial filtrado pueden contener el mismo registro.
+// historial filtrado pueden contener el mismo registro. También el Dashboard (las
+// horas por registrar se resuelven con un registro vinculado a la tarea) y el
+// detalle de los proyectos (las horas dedicadas de cada tarea suman las vinculadas).
+
+function invalidateAfterTimeEntryChange(queryClient: ReturnType<typeof useQueryClient>) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: timeEntriesKeys.all }),
+    queryClient.invalidateQueries({ queryKey: dashboardKeys.all }),
+    queryClient.invalidateQueries({ queryKey: [...projectsKeys.all, "detail"] }),
+  ]);
+}
 
 export function useCreateTimeEntry() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createTimeEntryRequest,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: timeEntriesKeys.all }),
+    onSuccess: () => invalidateAfterTimeEntryChange(queryClient),
   });
 }
 
@@ -144,7 +201,7 @@ export function useUpdateTimeEntry() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: TimeEntryInput }) => updateTimeEntryRequest(id, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: timeEntriesKeys.all }),
+    onSuccess: () => invalidateAfterTimeEntryChange(queryClient),
   });
 }
 
@@ -152,6 +209,6 @@ export function useDeleteTimeEntry() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: deleteTimeEntryRequest,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: timeEntriesKeys.all }),
+    onSuccess: () => invalidateAfterTimeEntryChange(queryClient),
   });
 }

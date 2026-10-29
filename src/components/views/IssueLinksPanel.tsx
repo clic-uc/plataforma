@@ -35,7 +35,7 @@ export function IssueLinksPanel({ project, number }: { project: ProjectDetail; n
   const pendingLabel = link.isPending ? link.variables?.label : undefined;
 
   return (
-    <div className="doc-sc">
+    <div className="side-sec">
       <div className="ds-lbl">Vinculadas</div>
 
       {features.length === 0 && tasks.length === 0 ? (
@@ -46,7 +46,7 @@ export function IssueLinksPanel({ project, number }: { project: ProjectDetail; n
             <div key={f.id} className="issue-link-row">
               <span className="issue-link-label">{f.id}</span>
               <span className="issue-link-name" title={f.name}>{f.name}</span>
-              <Badge color={f.statusColor} style={{ fontSize: 8 }}>{f.status}</Badge>
+              <Badge color={f.statusColor}>{f.status}</Badge>
               <button
                 type="button"
                 className="issue-link-x"

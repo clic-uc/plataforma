@@ -14,6 +14,7 @@ import {
   formatHours,
   formatWeek,
   recentWeeks,
+  timeEntryKindLabel,
   todayKey,
 } from "@/lib/tiempo";
 import { WeekHoursChart } from "@/components/views/WeekHoursChart";
@@ -52,7 +53,7 @@ function StandupCard({ week }: { week: string }) {
 
   return (
     <div className="card" style={{ flex: 1 }}>
-      <div className="card-label">StandUp Semanal</div>
+      <div className="card-label">StandUp semanal</div>
       <div className="standup-week">
         Semana {formatWeek(week)}
         {!isPending && !error && (standup ? <Badge color="green">Enviado</Badge> : <Badge color="amber">Pendiente</Badge>)}
@@ -134,11 +135,11 @@ function WeekHoursCard({ week, onAdd }: { week: string; onAdd: () => void }) {
   return (
     <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
       <div className="card-head">
-        <div className="card-label" style={{ marginBottom: 0 }}>
-          Horas registradas esta semana
+        <div className="card-label">
+          Horas de esta semana
           {chart.totalMinutes > 0 && <span className="card-label-value">{formatHours(chart.totalMinutes)}</span>}
         </div>
-        <button type="button" className="btn-primary" onClick={onAdd}>+ Registrar horas</button>
+        <button type="button" className="btn-primary" onClick={onAdd}>Registrar horas</button>
       </div>
       {error ? (
         <div className="modal-error">No se pudieron cargar las horas. Recarga la página.</div>
@@ -164,11 +165,10 @@ function HistoryCard({ week, onEdit }: { week: string; onEdit: (entry: TimeEntry
   return (
     <div className="card">
       <div className="card-head">
-        <div className="card-label" style={{ marginBottom: 0 }}>Historial de horas</div>
+        <div className="card-label">Historial de horas</div>
         <div style={{ display: "flex", gap: 6 }}>
           <select
-            className="filter-select"
-            style={{ height: 28 }}
+            className="filter-select sm"
             value={projectFilter}
             onChange={(e) => setProjectFilter(e.target.value)}
             aria-label="Proyecto"
@@ -179,8 +179,7 @@ function HistoryCard({ week, onEdit }: { week: string; onEdit: (entry: TimeEntry
             ))}
           </select>
           <select
-            className="filter-select"
-            style={{ height: 28 }}
+            className="filter-select sm"
             value={weekFilter}
             onChange={(e) => setWeekFilter(e.target.value)}
             aria-label="Semana"
@@ -201,7 +200,7 @@ function HistoryCard({ week, onEdit }: { week: string; onEdit: (entry: TimeEntry
             <tr>
               <th style={{ width: 110 }}>Fecha</th>
               <th style={{ width: 180 }}>Proyecto</th>
-              <th style={{ width: 64 }}>Horas</th>
+              <th style={{ width: 72 }} className="num">Horas</th>
               <th>Descripción</th>
               <th style={{ width: 70 }} />
             </tr>
@@ -209,17 +208,22 @@ function HistoryCard({ week, onEdit }: { week: string; onEdit: (entry: TimeEntry
           <tbody>
             {entries.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ textAlign: "center", color: "var(--text-3)", padding: "18px 12px" }}>
-                  {weekFilter || projectFilter ? "Sin registros para estos filtros." : "Aún no registras horas."}
+                <td colSpan={5} style={{ color: "var(--text-3)", padding: "18px 16px" }}>
+                  {weekFilter || projectFilter
+                    ? "Sin registros para estos filtros."
+                    : "Aún no registras horas. Usa «Registrar horas» para anotar la primera."}
                 </td>
               </tr>
             )}
             {entries.map((entry) => (
               <tr key={entry.id}>
                 <td className="hist-date">{formatEntryDate(entry.date)}</td>
-                <td><span className="task-feat-tag">{entry.project.name}</span></td>
+                <td><span className="chip">{entry.project.name}</span></td>
                 <td className="hist-hours">{formatHours(entry.minutes)}</td>
-                <td style={{ fontSize: 13, color: "var(--text-2)" }}>{entry.description}</td>
+                <td style={{ color: "var(--text-1)" }}>
+                  {entry.description}
+                  <TaskMarker entry={entry} />
+                </td>
                 <td style={{ textAlign: "right" }}>
                   <button type="button" className="btn-ghost btn-sm" onClick={() => onEdit(entry)}>Editar</button>
                 </td>
@@ -232,5 +236,21 @@ function HistoryCard({ week, onEdit }: { week: string; onEdit: (entry: TimeEntry
         <div className="field-hint">Se muestran los {MAX_HISTORY_ENTRIES} registros más recientes. Filtra por semana para ver los anteriores.</div>
       )}
     </div>
+  );
+}
+
+/** "T-03 · trabajo" junto a las horas que salieron de mover una tarea; el label es el vigente. */
+function TaskMarker({ entry }: { entry: TimeEntryView }) {
+  const kind = timeEntryKindLabel[entry.kind];
+  if (!kind) return null;
+  return (
+    <span
+      className="ml-2 whitespace-nowrap text-xs text-text-3"
+      title={entry.task ? `Tarea ${entry.task.label}: ${entry.task.name}` : "La tarea ya no existe"}
+    >
+      {entry.task && <span className="font-mono">{entry.task.label}</span>}
+      {entry.task && " · "}
+      {kind}
+    </span>
   );
 }

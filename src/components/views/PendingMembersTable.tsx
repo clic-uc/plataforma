@@ -24,8 +24,8 @@ export function PendingMembersTable({ pending }: { pending: PendingMember[] }) {
 
   if (pending.length === 0) {
     return (
-      <div className="ph" style={{ minHeight: 160 }}>
-        <div className="ph-text">No hay solicitudes pendientes.</div>
+      <div className="ph">
+        <div className="ph-text">No hay solicitudes pendientes. Cuando alguien entre con GitHub por primera vez, aparecerá aquí.</div>
       </div>
     );
   }
@@ -42,7 +42,7 @@ export function PendingMembersTable({ pending }: { pending: PendingMember[] }) {
             <tr>
               <th>Cuenta</th>
               <th>Solicitó acceso</th>
-              <th style={{ textAlign: "right" }}>Acciones</th>
+              <th><span className="sr-only">Acciones</span></th>
             </tr>
           </thead>
           <tbody>
@@ -57,13 +57,12 @@ export function PendingMembersTable({ pending }: { pending: PendingMember[] }) {
                     </div>
                   </div>
                 </td>
-                <td style={{ fontFamily: "var(--font-space-mono)", fontSize: 11 }}>{m.requestedAt}</td>
+                <td style={{ fontVariantNumeric: "tabular-nums" }}>{m.requestedAt}</td>
                 <td>
                   <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                     <button
                       type="button"
-                      className="btn-danger"
-                      style={{ fontSize: 12, padding: "4px 10px" }}
+                      className="btn-ghost btn-sm"
                       disabled={reject.isPending && reject.variables === m.id}
                       onClick={() => handleReject(m)}
                     >
@@ -71,8 +70,7 @@ export function PendingMembersTable({ pending }: { pending: PendingMember[] }) {
                     </button>
                     <button
                       type="button"
-                      className="btn-primary"
-                      style={{ fontSize: 12, padding: "4px 10px" }}
+                      className="btn-primary btn-sm"
                       onClick={() => setApproving(m)}
                     >
                       Aprobar

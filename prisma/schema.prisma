@@ -55,6 +55,21 @@ enum KanbanColumn {
   LISTO
 }
 
+/// Estimación gruesa del esfuerzo de una tarea. Opcional: null = sin estimar.
+enum TaskDifficulty {
+  BAJA
+  MEDIA
+  ALTA
+}
+
+/// Origen de un registro de horas: cargado a mano o al sacar una tarea de una
+/// columna de trabajo (En progreso -> TRABAJO, En revisión -> REVISION).
+enum TimeEntryKind {
+  MANUAL
+  TRABAJO
+  REVISION
+}
+
 enum EventKind {
   REUNION
   ENTREGA
@@ -123,6 +138,8 @@ model Member {
   accounts          Account[]
   projects          ProjectMember[]
   assignedTasks     Task[]              @relation("TaskAssignee")
+  taskAssignments   TaskTransition[]    @relation("TaskTransitionAssignee")
+  taskMoves         TaskTransition[]    @relation("TaskTransitionBy")
   achievements      MemberAchievement[]
   standups          Standup[]
   timeEntries       TimeEntry[]
@@ -133,6 +150,7 @@ model Member {
   issuesAuthored    Issue[]             @relation("IssueAuthor")
   issuesClosed      Issue[]             @relation("IssueClosedBy")
   issueComments     IssueComment[]      @relation("IssueCommentAuthor")
+  issueReviews      IssueReview[]
   oauthApplications OauthApplication[]
   oauthAccessTokens OauthAccessToken[]
   oauthConsents     OauthConsent[]
@@ -160,7 +178,6 @@ model Project {
 model ProjectMember {
   projectId String
   memberId  String
-  role      String
 
   project Project @relation(fields: [projectId], references: [id])
   member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -186,7 +203,7 @@ model Feature {
 }
 
 model Task {
-  id          String       @id @default(cuid())
+  id          String          @id @default(cuid())
   label       String
   projectId   String
   featureId   String?
@@ -196,12 +213,16 @@ model Task {
   active      Boolean
   column      KanbanColumn
   description String?
+  difficulty  TaskDifficulty?
+  createdAt   DateTime        @default(now())
 
-  project  Project  @relation(fields: [projectId], references: [id])
-  feature  Feature? @relation(fields: [featureId], references: [id])
-  assignee Member?  @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  project     Project          @relation(fields: [projectId], references: [id])
+  feature     Feature?         @relation(fields: [featureId], references: [id])
+  assignee    Member?          @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   /// Issues de los que salió o a los que responde (muchos a muchos, del mismo proyecto).
-  issues   Issue[]  @relation("IssueTasks")
+  issues      Issue[]          @relation("IssueTasks")
+  transitions TaskTransition[]
+  timeEntries TimeEntry[]
 
   @@unique([projectId, label])
 }
@@ -239,9 +260,26 @@ model Issue {
   comments IssueComment[]
   tasks    Task[]         @relation("IssueTasks")
   features Feature[]      @relation("IssueFeatures")
+  reviews  IssueReview[]
 
   @@unique([projectId, number])
   @@index([projectId, status, lastActivityAt])
+}
+
+/// "Revisada" por persona: una issue está revisada por alguien si su reviewedAt es igual o
+/// posterior al lastActivityAt de la issue. Cualquier actividad nueva (comentario, edición,
+/// cierre, reapertura, vínculo) mueve lastActivityAt y la desmarca sola; la actividad de uno
+/// mismo actualiza también su propio reviewedAt, así que no se desmarca para quien la hizo.
+model IssueReview {
+  issueId    String
+  memberId   String
+  reviewedAt DateTime @default(now())
+
+  issue  Issue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@id([issueId, memberId])
+  @@index([memberId])
 }
 
 /// Comentario del hilo de un issue. Solo se agregan; cada autor puede editar el suyo
@@ -386,19 +424,49 @@ model Standup {
 ///
 /// Borrar el proyecto borra sus registros (deleteProject), igual que sus tareas.
 model TimeEntry {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   memberId    String
   projectId   String
   date        DateTime
   minutes     Int
   description String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  kind        TimeEntryKind @default(MANUAL)
+  /// Tarea de la que salen las horas (kind TRABAJO/REVISION). Borrar la tarea no borra las horas.
+  taskId      String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
   project Project @relation(fields: [projectId], references: [id])
+  task    Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
   @@index([memberId, date])
+  @@index([taskId])
+}
+
+/// Historial de una tarea: una fila por cada cambio de columna o de asignado (y una al
+/// crearla, con fromColumn null). Cada fila abre un período que dura hasta la siguiente:
+/// de ahí salen el tiempo en cada columna, quién la trabajó (asignado durante PROGRESO) y
+/// quién la revisó (asignado durante REVISION). La lógica vive en src/lib/task-history.ts.
+model TaskTransition {
+  id               String        @id @default(cuid())
+  taskId           String
+  fromColumn       KanbanColumn?
+  toColumn         KanbanColumn
+  /// Asignado vigente desde este momento.
+  assigneeId       String?
+  /// Quién hizo el cambio.
+  byId             String?
+  at               DateTime      @default(now())
+  /// El asignado de este período descartó registrarle horas (pendientes del Dashboard).
+  hoursDismissedAt DateTime?
+
+  task     Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  assignee Member? @relation("TaskTransitionAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  by       Member? @relation("TaskTransitionBy", fields: [byId], references: [id], onDelete: SetNull)
+
+  @@index([taskId, at])
+  @@index([toColumn, at])
 }
 
 /// Fechas: los eventos con hora guardan instantes UTC y el cliente los muestra en

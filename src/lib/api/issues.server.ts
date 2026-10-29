@@ -7,6 +7,7 @@ import { AuthError, requireCoordinacion, requireMember } from "@/lib/auth/guards
 import type { CurrentMember } from "@/lib/auth/current-member";
 import { formatDateTime } from "@/lib/api/format";
 import {
+  isIssueReviewed,
   MAX_ISSUE_BODY_LENGTH,
   MAX_ISSUE_COMMENT_LENGTH,
   MAX_ISSUE_TITLE_LENGTH,
@@ -24,23 +25,52 @@ import {
 // aprobado abre, comenta, cierra y reabre issues en cualquier proyecto; título, cuerpo
 // y tipo los edita el autor o coordinación; cada comentario, solo su autor; eliminar
 // es de coordinación.
+//
+// "Revisado" es por persona (IssueReview): mi marca vale si es de la última actividad
+// del issue o posterior. Toda actividad propia la renueva con el mismo instante y en
+// la misma escritura (ownActivity), así lo que hago no me desmarca a mí.
 
 /** Cuántas veces se reintenta tomar el siguiente número si otro issue lo ocupó en paralelo. */
 const CREATE_ATTEMPTS = 3;
 
-const listInclude = {
-  author: { select: { name: true } },
-  _count: { select: { comments: true } },
-} satisfies Prisma.IssueInclude;
+/** Lo de la lista, con la marca de revisión de `memberId` (a lo más una fila). */
+function listInclude(memberId: string) {
+  return {
+    author: { select: { name: true } },
+    _count: { select: { comments: true } },
+    reviews: { where: { memberId }, select: { reviewedAt: true } },
+  } satisfies Prisma.IssueInclude;
+}
 
-const detailInclude = {
-  ...listInclude,
-  closedBy: { select: { name: true } },
-  comments: { orderBy: { createdAt: "asc" }, include: { author: { select: { name: true } } } },
-} satisfies Prisma.IssueInclude;
+function detailInclude(memberId: string) {
+  return {
+    ...listInclude(memberId),
+    closedBy: { select: { name: true } },
+    comments: { orderBy: { createdAt: "asc" }, include: { author: { select: { name: true } } } },
+  } satisfies Prisma.IssueInclude;
+}
 
-type IssueListRow = Prisma.IssueGetPayload<{ include: typeof listInclude }>;
-type IssueDetailRow = Prisma.IssueGetPayload<{ include: typeof detailInclude }>;
+type IssueListRow = Prisma.IssueGetPayload<{ include: ReturnType<typeof listInclude> }>;
+type IssueDetailRow = Prisma.IssueGetPayload<{ include: ReturnType<typeof detailInclude> }>;
+
+/**
+ * Datos de una actividad de `memberId` sobre el issue, para el `data` de un
+ * `prisma.issue.update`: mueve lastActivityAt (lo que desmarca el issue para el resto)
+ * y deja la revisión de esa persona en el mismo instante. Prisma escribe ambas cosas
+ * en una transacción.
+ */
+export function ownActivity(issueId: string, memberId: string, at: Date) {
+  return {
+    lastActivityAt: at,
+    reviews: {
+      upsert: {
+        where: { issueId_memberId: { issueId, memberId } },
+        create: { memberId, reviewedAt: at },
+        update: { reviewedAt: at },
+      },
+    },
+  } satisfies Prisma.IssueUpdateInput;
+}
 
 function toListItem(issue: IssueListRow): IssueListItem {
   return {
@@ -53,6 +83,7 @@ function toListItem(issue: IssueListRow): IssueListItem {
     createdAt: formatDateTime(issue.createdAt),
     lastActivityAt: formatDateTime(issue.lastActivityAt),
     commentCount: issue._count.comments,
+    reviewedByMe: isIssueReviewed(issue.reviews[0]?.reviewedAt, issue.lastActivityAt),
   };
 }
 
@@ -133,7 +164,7 @@ export function parseIssueCommentInput(body: unknown): { body: string } | null {
 
 /** Issues del proyecto, del de actividad más reciente al más antiguo. null si el proyecto no existe. */
 export async function getProjectIssues(projectId: string): Promise<IssueListItem[] | null> {
-  await requireMember();
+  const member = await requireMember();
 
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
   if (!project) return null;
@@ -141,7 +172,7 @@ export async function getProjectIssues(projectId: string): Promise<IssueListItem
   const issues = await prisma.issue.findMany({
     where: { projectId },
     orderBy: { lastActivityAt: "desc" },
-    include: listInclude,
+    include: listInclude(member.id),
   });
 
   return issues.map(toListItem);
@@ -150,7 +181,7 @@ export async function getProjectIssues(projectId: string): Promise<IssueListItem
 async function loadDetail(projectId: string, number: number, member: CurrentMember): Promise<IssueDetail | null> {
   const issue = await prisma.issue.findUnique({
     where: { projectId_number: { projectId, number } },
-    include: detailInclude,
+    include: detailInclude(member.id),
   });
   return issue ? toDetail(issue, member) : null;
 }
@@ -175,9 +206,21 @@ export async function createIssue(projectId: string, input: IssueInput): Promise
       select: { number: true },
     });
     const number = (last?.number ?? 0) + 1;
+    const now = new Date();
     try {
+      // Quien lo abre ya lo leyó: nace revisado por esa persona.
       await prisma.issue.create({
-        data: { projectId, number, title: input.title, body: input.body, type: input.type, authorId: member.id },
+        data: {
+          projectId,
+          number,
+          title: input.title,
+          body: input.body,
+          type: input.type,
+          authorId: member.id,
+          createdAt: now,
+          lastActivityAt: now,
+          reviews: { create: { memberId: member.id, reviewedAt: now } },
+        },
       });
       return loadDetail(projectId, number, member);
     } catch (error) {
@@ -200,7 +243,7 @@ export async function updateIssue(projectId: string, number: number, input: Issu
 
   await prisma.issue.update({
     where: { id: issue.id },
-    data: { title: input.title, body: input.body, type: input.type, lastActivityAt: new Date() },
+    data: { title: input.title, body: input.body, type: input.type, ...ownActivity(issue.id, member.id, new Date()) },
   });
 
   return loadDetail(projectId, number, member);
@@ -214,14 +257,19 @@ export async function setIssueStatus(
 ): Promise<IssueDetail | null> {
   const member = await requireMember();
 
+  const issue = await prisma.issue.findUnique({
+    where: { projectId_number: { projectId, number } },
+    select: { id: true },
+  });
+  if (!issue) return null;
+
   const now = new Date();
   const data =
     input.status === "CERRADO"
-      ? { status: input.status, closeReason: input.closeReason, closedAt: now, closedById: member.id, lastActivityAt: now }
-      : { status: input.status, closeReason: null, closedAt: null, closedById: null, lastActivityAt: now };
+      ? { status: input.status, closeReason: input.closeReason, closedAt: now, closedById: member.id }
+      : { status: input.status, closeReason: null, closedAt: null, closedById: null };
 
-  const { count } = await prisma.issue.updateMany({ where: { projectId, number }, data });
-  if (count === 0) return null;
+  await prisma.issue.update({ where: { id: issue.id }, data: { ...data, ...ownActivity(issue.id, member.id, now) } });
 
   return loadDetail(projectId, number, member);
 }
@@ -246,7 +294,7 @@ export async function createIssueComment(projectId: string, number: number, body
   const now = new Date();
   await prisma.$transaction([
     prisma.issueComment.create({ data: { issueId: issue.id, authorId: member.id, body, createdAt: now } }),
-    prisma.issue.update({ where: { id: issue.id }, data: { lastActivityAt: now } }),
+    prisma.issue.update({ where: { id: issue.id }, data: ownActivity(issue.id, member.id, now) }),
   ]);
 
   return loadDetail(projectId, number, member);
@@ -273,6 +321,34 @@ export async function updateIssueComment(
   // Guardar el mismo texto no lo marca como editado.
   if (comment.body !== body) {
     await prisma.issueComment.update({ where: { id: commentId }, data: { body, editedAt: new Date() } });
+  }
+
+  return loadDetail(projectId, number, member);
+}
+
+/**
+ * Marca (reviewed = true) o desmarca el issue como revisado por quien llama. Marcar
+ * deja la revisión en este instante o, si el reloj de otro servidor escribió una
+ * actividad "del futuro", en esa actividad: lo que se marca tiene que quedar marcado.
+ */
+export async function setIssueReviewed(projectId: string, number: number, reviewed: boolean): Promise<IssueDetail | null> {
+  const member = await requireMember();
+
+  const issue = await prisma.issue.findUnique({
+    where: { projectId_number: { projectId, number } },
+    select: { id: true, lastActivityAt: true },
+  });
+  if (!issue) return null;
+
+  if (reviewed) {
+    const reviewedAt = new Date(Math.max(Date.now(), issue.lastActivityAt.getTime()));
+    await prisma.issueReview.upsert({
+      where: { issueId_memberId: { issueId: issue.id, memberId: member.id } },
+      create: { issueId: issue.id, memberId: member.id, reviewedAt },
+      update: { reviewedAt },
+    });
+  } else {
+    await prisma.issueReview.deleteMany({ where: { issueId: issue.id, memberId: member.id } });
   }
 
   return loadDetail(projectId, number, member);

@@ -14,12 +14,15 @@ export function FeatureDetailModal({
   feature,
   tasks,
   labelsToken: openedLabelsToken,
+  onEdit,
   onClose,
 }: {
   projectId: string;
   feature: ProjectFeature;
   tasks: ProjectTask[];
   labelsToken: string;
+  /** Cierra el detalle y abre la edición (nombre, prioridad, estado, eliminar). */
+  onEdit: () => void;
   onClose: () => void;
 }) {
   // Se fija al abrir el modal: los labels que se editan acá salen de ese snapshot.
@@ -40,17 +43,19 @@ export function FeatureDetailModal({
 
   return (
     <Modal title={`${feature.id} — ${feature.name}`} onClose={onClose}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+      <div className="modal-meta">
         <Badge color={feature.statusColor}>{feature.status}</Badge>
-        <span style={{ fontSize: 11, color: "var(--text-3)" }}>{feature.taskCount} tareas</span>
+        <span>Prioridad {feature.priority}</span>
+        <span>{feature.taskCount} {feature.taskCount === 1 ? "tarea" : "tareas"}</span>
+        <button type="button" className="btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={onEdit}>
+          Editar
+        </button>
       </div>
 
       <div className="form-field">
         <div className="f-label">Tareas asociadas</div>
         {tasks.length === 0 ? (
-          <div className="ph" style={{ height: 56 }}>
-            <div className="ph-text">Sin tareas asociadas</div>
-          </div>
+          <div className="empty-line">Ninguna tarea pertenece a esta feature todavía.</div>
         ) : (
           <div>
             {tasks.map((t) => (

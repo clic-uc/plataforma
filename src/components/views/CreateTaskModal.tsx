@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { TaskType } from "@/generated/prisma/enums";
+import type { TaskDifficulty, TaskType } from "@/generated/prisma/enums";
 import { Modal } from "@/components/ui/Modal";
 import { MarkdownToolbar, useMarkdownEditor } from "@/components/ui/MarkdownToolbar";
-import { TASK_TYPE_OPTIONS } from "@/lib/api/status";
+import { TASK_DIFFICULTY_OPTIONS, TASK_TYPE_OPTIONS } from "@/lib/api/status";
 import { errorMessage } from "@/lib/api/http";
 import { useCreateTask, type ProjectFeature, type ProjectTeamMember } from "@/lib/api/projects";
 
@@ -33,6 +33,7 @@ export function CreateTaskModal({
   const [name, setName] = useState(initial?.name ?? "");
   const [type, setType] = useState<TaskType>("FEATURE");
   const [assigneeId, setAssigneeId] = useState("");
+  const [difficulty, setDifficulty] = useState<TaskDifficulty | "">("");
   const [description, setDescription] = useState(initial?.description ?? "");
   const { textareaRef, format, onKeyDown } = useMarkdownEditor(description, setDescription);
 
@@ -49,6 +50,7 @@ export function CreateTaskModal({
           type,
           column: "PENDIENTE",
           description: description.trim() || null,
+          difficulty: difficulty || null,
           issueNumber: issueNumber ?? null,
         },
         labelsToken,
@@ -81,13 +83,28 @@ export function CreateTaskModal({
           />
         </div>
 
-        <div className="form-field">
-          <div className="f-label">Tipo</div>
-          <select className="field-select" value={type} onChange={(e) => setType(e.target.value as TaskType)}>
-            {TASK_TYPE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
+        <div className="field-row">
+          <div className="form-field">
+            <div className="f-label">Tipo</div>
+            <select className="field-select" value={type} onChange={(e) => setType(e.target.value as TaskType)}>
+              {TASK_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-field">
+            <div className="f-label">Dificultad</div>
+            <select
+              className="field-select"
+              value={difficulty}
+              onChange={(e) => setDifficulty(e.target.value as TaskDifficulty | "")}
+            >
+              <option value="">Sin estimar</option>
+              {TASK_DIFFICULTY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="form-field">
@@ -105,17 +122,17 @@ export function CreateTaskModal({
 
         <div className="form-field">
           <div className="f-label">Descripción</div>
-          <div className="md-toolbar-row">
+          <div className="md-frame">
             <MarkdownToolbar onFormat={format} />
+            <textarea
+              ref={textareaRef}
+              className="field-textarea"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Opcional"
+            />
           </div>
-          <textarea
-            ref={textareaRef}
-            className="field-textarea"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Opcional"
-          />
         </div>
 
         {mutation.isError && (

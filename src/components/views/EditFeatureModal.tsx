@@ -5,7 +5,7 @@ import type { FeatureStatus, Priority } from "@/generated/prisma/enums";
 import { Modal } from "@/components/ui/Modal";
 import { errorMessage } from "@/lib/api/http";
 import { FEATURE_STATUS_OPTIONS, PRIORITY_OPTIONS } from "@/lib/api/status";
-import { useUpdateFeature, type ProjectFeature } from "@/lib/api/projects";
+import { useDeleteFeature, useUpdateFeature, type ProjectFeature } from "@/lib/api/projects";
 
 export function EditFeatureModal({
   projectId,
@@ -25,6 +25,13 @@ export function EditFeatureModal({
   const [status, setStatus] = useState<FeatureStatus>(feature.statusValue);
 
   const mutation = useUpdateFeature(projectId);
+  const deleteFeature = useDeleteFeature(projectId);
+
+  // Mismo token fijado al abrir el detalle: si algo se renumeró desde entonces, el servidor responde 412.
+  function handleDelete() {
+    if (!window.confirm(`¿Eliminar ${feature.id} y sus ${feature.taskCount} tareas?`)) return;
+    deleteFeature.mutate({ featureId: feature.id, labelsToken }, { onSuccess: onClose });
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -78,8 +85,20 @@ export function EditFeatureModal({
         {mutation.isError && (
           <div className="modal-error">{errorMessage(mutation.error, "No se pudo guardar. Intenta de nuevo.")}</div>
         )}
+        {deleteFeature.isError && (
+          <div className="modal-error">{errorMessage(deleteFeature.error, "No se pudo eliminar. Intenta de nuevo.")}</div>
+        )}
 
         <div className="modal-footer" style={{ padding: 0, border: "none", marginTop: 4 }}>
+          <button
+            type="button"
+            className="btn-text-danger"
+            style={{ marginRight: "auto" }}
+            disabled={deleteFeature.isPending}
+            onClick={handleDelete}
+          >
+            {deleteFeature.isPending ? "Eliminando…" : "Eliminar feature"}
+          </button>
           <button type="button" className="btn-ghost" onClick={onClose}>Cancelar</button>
           <button type="submit" className="btn-primary" disabled={mutation.isPending}>
             {mutation.isPending ? "Guardando…" : "Guardar cambios"}

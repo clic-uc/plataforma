@@ -3,7 +3,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
-import { KanbanColumn, TaskType } from "@/generated/prisma/enums";
+import { KanbanColumn, TaskDifficulty, TaskType } from "@/generated/prisma/enums";
 import {
   createTask,
   getAssignedTasks,
@@ -17,6 +17,7 @@ import {
 } from "@/lib/api/projects.server";
 import type { ProjectDetail, ProjectTask } from "@/lib/api/projects";
 import { labelNumber } from "@/lib/api/labels";
+import { MAX_ENTRY_MINUTES, MINUTES_STEP, isValidEntryMinutes } from "@/lib/tiempo";
 import { fail, json, run } from "@/lib/mcp/result";
 
 const projectId = z.string().describe("id del proyecto (de list_projects)");
@@ -35,9 +36,25 @@ function taskView(task: ProjectTask) {
     active: task.active,
     description: task.description,
     assignee: task.assignee ? { id: task.assignee.id, name: task.assignee.name } : null,
+    difficulty: task.difficulty,
     issues: task.issues,
   };
 }
+
+/** En get_project: quién la trabajó y la revisó, y las horas dedicadas (totales del equipo). */
+function taskWithHistoryView(task: ProjectTask) {
+  const { history } = task;
+  return {
+    ...taskView(task),
+    workedBy: history.workedBy.map((m) => m.name),
+    reviewedBy: history.reviewedBy.map((m) => m.name),
+    minutesWorked: history.minutesWorked,
+    minutesReviewed: history.minutesReviewed,
+    completedAt: history.completedAt,
+  };
+}
+
+const difficultyDescription = "Dificultad estimada: BAJA, MEDIA o ALTA";
 
 function projectView(project: ProjectDetail) {
   return {
@@ -50,7 +67,7 @@ function projectView(project: ProjectDetail) {
     archived: project.archived,
     startDate: project.startDateISO,
     labelsToken: project.labelsToken,
-    team: project.team.map((m) => ({ id: m.id, name: m.name, role: m.role })),
+    team: project.team.map((m) => ({ id: m.id, name: m.name })),
     features: project.features.map((f) => ({
       id: f.id,
       name: f.name,
@@ -60,7 +77,7 @@ function projectView(project: ProjectDetail) {
       taskCount: f.taskCount,
       issues: f.issues,
     })),
-    tasks: project.tasks.map(taskView),
+    tasks: project.tasks.map(taskWithHistoryView),
     documents: project.docs.map((d) => ({ docId: d.key, name: d.name, filled: d.filled, author: d.author, date: d.date })),
     actas: project.actas.map((a) => ({ docId: a.id, title: a.title, date: a.date })),
   };
@@ -100,7 +117,7 @@ export function registerProjectTools(server: McpServer): void {
               progress: p.progress,
               archived: p.archived,
               startDate: p.startDateISO,
-              team: p.team.map((m) => ({ id: m.id, name: m.name, role: m.role })),
+              team: p.team.map((m) => ({ id: m.id, name: m.name })),
             })),
         );
       }),
@@ -111,7 +128,7 @@ export function registerProjectTools(server: McpServer): void {
     {
       title: "Ver proyecto",
       description:
-        "Detalle de un proyecto: equipo, features (F-01…), tareas (T-01…), documentos y actas. Devuelve el labelsToken que piden las tools que editan tareas.",
+        "Detalle de un proyecto: equipo, features (F-01…), tareas (T-01…), documentos y actas. Devuelve el labelsToken que piden las tools que editan tareas. Cada tarea trae su dificultad, quién la trabajó (workedBy: asignados mientras estuvo En progreso) y quién la revisó (reviewedBy: asignados mientras estuvo En revisión), y los minutos dedicados registrados por todo el equipo (minutesWorked, minutesReviewed).",
       inputSchema: z.object({ projectId }),
       annotations: { readOnlyHint: true },
     },
@@ -146,6 +163,7 @@ export function registerProjectTools(server: McpServer): void {
             column: t.columnValue,
             active: t.active,
             description: t.description,
+            difficulty: t.difficulty,
           })),
         );
       }),
@@ -156,15 +174,16 @@ export function registerProjectTools(server: McpServer): void {
     {
       title: "Crear tarea",
       description:
-        "Crea una tarea en un proyecto. Solo se puede asignar a miembros del equipo del proyecto. Una tarea queda terminada cuando está en la columna LISTO.",
+        "Crea una tarea en un proyecto. Solo se puede asignar a miembros del equipo del proyecto. Para crearla en PROGRESO o REVISION hay que asignarla. Una tarea queda terminada cuando está en la columna LISTO.",
       inputSchema: z.object({
         projectId,
         name: z.string().min(1),
         type: z.enum(TaskType),
         column: z.enum(KanbanColumn).default(KanbanColumn.PENDIENTE),
         featureId: z.string().optional().describe("Label de la feature (F-01). Requiere labelsToken."),
-        assigneeId: z.string().optional().describe("id del miembro asignado"),
+        assigneeId: z.string().optional().describe("id del miembro asignado (obligatorio en PROGRESO y REVISION)"),
         description: z.string().optional(),
+        difficulty: z.enum(TaskDifficulty).optional().describe(`${difficultyDescription}. Si se omite, queda sin estimar`),
         issueNumber: z
           .number()
           .int()
@@ -186,6 +205,7 @@ export function registerProjectTools(server: McpServer): void {
           featureId: args.featureId ?? null,
           assigneeId: args.assigneeId ?? null,
           description: args.description ?? null,
+          difficulty: args.difficulty ?? null,
           issueNumber: args.issueNumber ?? null,
         });
         if (!input) return fail("Datos inválidos");
@@ -204,7 +224,7 @@ export function registerProjectTools(server: McpServer): void {
     {
       title: "Editar tarea",
       description:
-        "Edita una tarea: solo cambian los campos que se envían. Sirve para moverla de columna, asignarla o desasignarla.",
+        "Edita una tarea: solo cambian los campos que se envían. Sirve para moverla de columna, asignarla o desasignarla. PROGRESO y REVISION exigen asignado: al moverla ahí sin asignado, envía también assigneeId. Al sacarla de PROGRESO o REVISION, si la persona conectada la tenía asignada, puede registrar en minutesSpent el tiempo que le dedicó (queda en sus horas, vinculado a la tarea); es opcional.",
       inputSchema: z.object({
         projectId,
         taskId: z.string().describe("Label de la tarea (T-01)"),
@@ -216,6 +236,14 @@ export function registerProjectTools(server: McpServer): void {
         assigneeId: z.string().nullable().optional().describe("id del miembro, o null para desasignar"),
         active: z.boolean().optional(),
         description: z.string().nullable().optional(),
+        difficulty: z.enum(TaskDifficulty).nullable().optional().describe(`${difficultyDescription}, o null para dejarla sin estimar`),
+        minutesSpent: z
+          .number()
+          .int()
+          .optional()
+          .describe(
+            `Minutos que la persona conectada le dedicó, al sacarla de PROGRESO o REVISION. Múltiplo de ${MINUTES_STEP}, entre ${MINUTES_STEP} y ${MAX_ENTRY_MINUTES}`,
+          ),
       }),
     },
     (args) =>
@@ -228,6 +256,9 @@ export function registerProjectTools(server: McpServer): void {
         const task = current.tasks.find((t) => t.id === args.taskId);
         if (!task) return fail(`No existe la tarea ${args.taskId}`);
 
+        if (args.minutesSpent !== undefined && !isValidEntryMinutes(args.minutesSpent)) {
+          return fail(`minutesSpent tiene que ser un múltiplo de ${MINUTES_STEP}, entre ${MINUTES_STEP} y ${MAX_ENTRY_MINUTES}.`);
+        }
         const input = parseUpdateTaskInput({
           name: args.name ?? task.name,
           type: args.type ?? task.typeValue,
@@ -236,6 +267,8 @@ export function registerProjectTools(server: McpServer): void {
           assigneeId: args.assigneeId !== undefined ? args.assigneeId : (task.assignee?.id ?? null),
           active: args.active ?? task.active,
           description: args.description !== undefined ? args.description : task.description,
+          difficulty: args.difficulty !== undefined ? args.difficulty : task.difficulty,
+          timeSpent: args.minutesSpent !== undefined ? { minutes: args.minutesSpent } : null,
         });
         if (!input) return fail("Datos inválidos");
 

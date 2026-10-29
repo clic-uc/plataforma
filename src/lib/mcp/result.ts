@@ -27,6 +27,17 @@ export async function run(fn: () => Promise<CallToolResult>): Promise<CallToolRe
         "Alguien eliminó features o tareas del proyecto y sus identificadores cambiaron. Vuelve a leerlo con get_project y usa el labelsToken nuevo.",
       );
     }
+    // Las reglas del flujo de tareas: el mensaje de la API se completa con qué enviar.
+    if (error instanceof ApiError && error.code === "ASSIGNEE_REQUIRED") {
+      return fail(
+        `${error.message}. Envía assigneeId con un miembro del equipo del proyecto (el equipo está en get_project) o deja la tarea en otra columna.`,
+      );
+    }
+    if (error instanceof ApiError && error.code === "TIME_NOT_ALLOWED") {
+      return fail(
+        `${error.message}. minutesSpent solo se acepta al cambiar la columna de una tarea que está en PROGRESO o REVISION y que la persona conectada tiene asignada; si no es el caso, vuelve a intentarlo sin minutesSpent y registra las horas con log_time (con taskLabel para vincularlas a la tarea).`,
+      );
+    }
     if (error instanceof AuthError || error instanceof ApiError) return fail(error.message);
     throw error;
   }

@@ -42,8 +42,8 @@ const comunidad: NavItem[] = [
 ];
 
 const coordinacion: NavItem[] = [
-  { label: "Analíticas", icon: <AnalyticsIcon className="nav-icon" /> },
-  { label: "Postulaciones", icon: <PostulacionesIcon className="nav-icon" />, count: 3 },
+  { label: "Analíticas", href: "/analiticas", icon: <AnalyticsIcon className="nav-icon" />, matchPrefix: "/analiticas" },
+  { label: "Postulaciones", icon: <PostulacionesIcon className="nav-icon" /> },
 ];
 
 function NavRow({ item, active }: { item: NavItem; active: boolean }) {
@@ -58,7 +58,13 @@ function NavRow({ item, active }: { item: NavItem; active: boolean }) {
     </>
   );
   if (!item.href) {
-    return <div className="nav-item">{content}</div>;
+    return (
+      <div className="nav-item is-soon" aria-disabled="true" title="Todavía no está disponible">
+        {item.icon}
+        <span className="nav-lbl">{item.label}</span>
+        <span className="nav-soon">Pronto</span>
+      </div>
+    );
   }
   return (
     <Link href={item.href} className={`nav-item${active ? " active" : ""}`}>
@@ -86,8 +92,10 @@ export function Sidebar({ member }: { member: CurrentMember }) {
     return item;
   };
 
-  const isActive = (item: NavItem) =>
-    !!item.matchPrefix && pathname.startsWith(item.matchPrefix);
+  const isActive = (item: NavItem) => {
+    const prefix = item.matchPrefix ?? item.href;
+    return !!prefix && pathname.startsWith(prefix);
+  };
 
   return (
     <aside className="sidebar">
@@ -95,7 +103,6 @@ export function Sidebar({ member }: { member: CurrentMember }) {
         <div className="logo-wordmark">
           C<em>L</em>IC
         </div>
-        <div className="logo-tagline">PLATAFORMA INTERNA</div>
       </div>
 
       <nav className="sidebar-nav">
@@ -106,7 +113,7 @@ export function Sidebar({ member }: { member: CurrentMember }) {
           ))}
         </div>
 
-        <div className="nav-section" style={{ marginTop: 14 }}>
+        <div className="nav-section">
           <div className="nav-section-label">Comunidad</div>
           {comunidad.map((item) => (
             <NavRow key={item.label} item={withCounts(item)} active={isActive(item)} />
@@ -115,7 +122,7 @@ export function Sidebar({ member }: { member: CurrentMember }) {
 
         {/* Solo presentación: lo que haya detrás lo sigue protegiendo el servidor. */}
         {isCoordinacion && (
-          <div className="nav-section" style={{ marginTop: 14 }}>
+          <div className="nav-section">
             <div className="nav-section-label">Coordinación</div>
             {coordinacion.map((item) => (
               <NavRow key={item.label} item={item} active={isActive(item)} />

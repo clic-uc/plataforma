@@ -47,14 +47,38 @@ it sets are placeholders.
 - **Prisma 7** against **PostgreSQL on Neon**, via the driver adapter (`@prisma/adapter-neon`)
 - **TanStack Query v5** for server-state caching
 - **Better Auth** with GitHub OAuth
-- **Tailwind CSS v4**, but the UI is overwhelmingly hand-written CSS in `src/app/globals.css`
-- **Barlow / Barlow Condensed / Space Mono** fonts, loaded via `next/font/google`
+- **Tailwind CSS v4**, migrating gradually from the hand-written CSS in `src/app/globals.css`
+  (plan in `docs/tailwind-migration.md`). See **Styling** below.
+- **Barlow / Barlow Condensed / IBM Plex Mono** fonts, loaded via `next/font/google`
 - **`mcp-handler` 2** + **`@modelcontextprotocol/server` 2** for the MCP server (`/api/mcp`)
 
 There is no component library (no shadcn/ui, no Radix) and no form library (no react-hook-form).
 `zod` is a dependency only because the MCP SDK takes tool input schemas in it: use it in
 `src/lib/mcp/`, not for forms or API validation, which stay with the hand-written `parse*Input`. Primitives are hand-written in `src/components/ui/`; forms are native `<form onSubmit>` with
 one `useState` per field. Follow those conventions rather than introducing dependencies.
+
+### Styling
+
+- **Everything new is written in Tailwind**, with the project's tokens exposed in the `@theme inline`
+  block of `globals.css` (`bg-surface`, `text-text-2`, `border-border`, `text-accent`, `bg-series-1`…,
+  `font-condensed`, `font-mono`) and its own type scale (`text-2xs` 11px … `text-3xl` 36px). The
+  Dashboard and Analíticas are written that way. `globals.css` keeps the tokens (light and dark), the
+  classes of views not migrated yet, `.md` and resets; do not add new global classes.
+- **Any rule outside a `@layer` beats every Tailwind utility**, whatever its specificity. That is why
+  the reset is left to Tailwind's preflight and the generic element rules (`table`, `thead th`,
+  `tbody td`, focus) live in `@layer base`. A new unlayered rule there would silently cancel
+  `p-*`/`m-*`/`text-*` on the elements it matches.
+- **Visual rules**: neutrals tinted toward the CLIC blue, ink-blue sidebar. Section labels are Barlow
+  in sentence case, not uppercase monospace; IBM Plex Mono is only for identifiers (T-03, F-01, #12),
+  code and diffs; numbers use `tabular-nums`. Nothing below 11px; `--text-3` is the lightest text
+  color and meets 4.5:1. Radii: 4 chips, 6 controls, 10 panels. Shadows only on what floats
+  (`--shadow-float`). No buttons that do nothing: unbuilt modules show "Pronto" in the sidebar.
+- **Badges**: `green`, `amber` (real amber: En pausa, Entrega, pending), `violet` (only the Spike task
+  type), `gray`, `blue`, `red`.
+- **Tabs**: `.utabs` (underlined) switch sections of a page; `.tabs` (segmented) switch views of the
+  same list.
+- **The sidebar is compact on purpose** so the 9 modules plus the user fit at ~460px of height with
+  no scrollbar on a laptop. Check that it still fits when adding a module.
 
 ## Path alias
 
@@ -66,9 +90,10 @@ one `useState` per field. Follow those conventions rather than introducing depen
 
 Each domain has two files in `src/lib/api/`:
 
-- `projects.ts`, `members.ts`, `events.ts`, `tiempo.ts`, `issues.ts` — client-safe. Types, `fetch()` wrappers,
-  TanStack Query hooks and query-key factories.
-- `projects.server.ts`, `members.server.ts`, `events.server.ts`, `tiempo.server.ts`, `issues.server.ts` — the **only**
+- `projects.ts`, `members.ts`, `events.ts`, `tiempo.ts`, `issues.ts`, `dashboard.ts`, `analytics.ts` —
+  client-safe. Types, `fetch()` wrappers, TanStack Query hooks and query-key factories.
+- `projects.server.ts`, `members.server.ts`, `events.server.ts`, `tiempo.server.ts`, `issues.server.ts`,
+  `dashboard.server.ts`, `analytics.server.ts` — the **only**
   files in `src/lib/api` that import `@/lib/prisma` (besides `src/lib/auth*`). Prisma queries plus
   mapping to view models. All carry `import "server-only"`.
 
@@ -135,6 +160,67 @@ hook. And deleting a member's row deletes the person entirely, sessions included
 How each module works today, including the decisions that were made deliberately (so they are not
 mistaken for omissions). What is still missing lives in `docs/TODO.md`.
 
+### Dashboard (`/dashboard`)
+
+Real data, no model of its own: `getDashboard` (`dashboard.server.ts`) reads existing tables and the
+pure logic lives in `src/lib/dashboard.ts`.
+
+- **"Tu semana"** opens the page: this week's hours per day and project (same colors as `/tiempo`),
+  the week's events, the StandUp status and "Registrar horas". Below it, open tasks, StandUp streak and
+  next meeting.
+- **Open tasks**: mine not in `LISTO`, in non-archived projects. "En revisión" counts `REVISAR` and
+  `REVISION`: in both the task waits on someone else.
+- **Hours delta** compares with last week *up to the same weekday*, not the whole week, so Mondays do
+  not always look low.
+- **StandUp streak** is derived from `Standup` (consecutive weeks; the current week counts once sent
+  and the streak stays alive until Sunday). `Member.streak` is not used for it.
+- **Next meeting**: the first `REUNION` whose `endsAt` is still ahead (a meeting in progress shows as
+  "Ahora").
+- **Mis proyectos**: non-archived projects where I am on the team or have open tasks, by name (a large
+  link); client and team size are left to the project page. Each shows its
+  open issues and how many I have not reviewed (linking to `/proyectos/<id>?tab=issues`); the summary
+  carries the total of unreviewed issues.
+- **Activity feed** covers only *my projects* (the same set as "Mis proyectos"), derived from
+  timestamped rows: document and acta versions and comments, issues opened/closed/commented, events
+  created with that project, tasks reaching Listo (real moves only: `fromColumn` in a non-Listo
+  column, so creation, backfill rows and reassigning a finished task do not count), and **only my
+  own** hours. Organization-wide items (StandUps, new
+  members, events without a project) are left out on purpose; `describeActivity` still knows how to
+  render them, for a future coordination feed. Last 14 days, at most 12 items, saves of the same
+  document by the same person on the same day merged, one row per event series.
+- "Tu semana" and the next meeting use Chile's time (server-rendered); the month calendar uses the
+  browser's, after hydration, like `/calendario`. Hours and events reuse the `tiempo`/`events` query
+  keys, so their mutations refresh the Dashboard; the summary lives under `["dashboard", week]`.
+
+### Analytics (`/analiticas`)
+
+Coordination only (`requireCoordinacion()` in every endpoint; the page checks the role before
+prefetching and shows a plain message to anyone else). Tabs Tiempo · StandUps · Proyectos · Kanban ·
+Equipo, read-only; endpoints under `/api/analytics/{activity,standups,projects,kanban,team}`,
+aggregated with `groupBy` (no N+1). Pure aggregation in `src/lib/analytics.ts` and
+`src/lib/kanban-metrics.ts`.
+
+- **Who counts**: approved members only. Members in `HIATUS` are listed last, dimmed, and never count
+  as missing hours or StandUp. Weeks before someone's `joinedAt` show as "aún no era miembro".
+- **Tiempo**: heatmap person × week (4/8/12 weeks) with fixed buckets (<2h, 2–4h, 4–8h, 8h+), hours
+  per project in the range, and who has no hours this week.
+- **StandUps**: grid person × week with the streak (computed over 52 weeks) and a reader for one
+  week's StandUps, including who is missing.
+- **Proyectos**: non-archived projects with tasks per kanban column, features done, open issues,
+  unassigned open tasks, team size; workload per person.
+- **Kanban** (4/8/12 weeks, all projects or one): throughput (tasks reaching Listo per week), cycle
+  time (first entry to En progreso to Listo) and lead time (creation to Listo), time spent in each
+  column (including the wait in Por revisar), work in progress with how long each task has been in its
+  column, and per project and per difficulty the hours logged from tasks next to calendar time.
+  - **Medians and p85, never averages**; p85 only with 5+ tasks.
+  - History starts at migration `20261029130000_task_history_issue_reviews`. The starting rows it
+    created (no `fromColumn`, no `byId`: `isBackfillRow`) never count as a duration, an arrival at
+    Listo or a cycle start. Tasks that were already in a column show "Desde antes del 29 oct".
+  - Times are calendar time; hours per task are the median of *logged* hours, skipping tasks with
+    none (logging on move is optional).
+- **Equipo**: counts by role and status, pending requests, and the aggregated availability map
+  (active members only; clicking a block lists who is free).
+
 ### Calendar (`/calendario`)
 
 Month and week views.
@@ -165,9 +251,28 @@ Weekly StandUp, this week's hours chart and the hours history.
   accepted (for a form opened on Sunday and sent after midnight); any other week answers 422
   `WEEK_CLOSED`. It carries "¿Qué hice?" (`text`, required) and "¿Qué aprendí?" (`learned`, optional).
   The profile shows the 6 most recent.
-- **Hours are personal.** A `TimeEntry` (date, project, minutes, description) is visible, editable and
-  deletable only by whoever logged it; someone else's answers 404, like a missing one. Coordination
-  cannot see the team's hours.
+- **Hours are personal.** A `TimeEntry` (date, project, minutes, description) is editable and
+  deletable only by whoever logged it; someone else's answers 404, like a missing one. The one
+  exception to visibility is `/analiticas`: coordination sees everyone's hours and StandUps there
+  (aggregated and per person), read-only. Nobody else sees another person's hours, not even in the
+  Dashboard's activity feed.
+- **Hours can be linked to a task** (`TimeEntry.kind` `TRABAJO`/`REVISION` + `taskId`): logged when
+  moving the task (see Features and tasks), from the Dashboard's pending hours, or by hand in
+  `TimeEntryModal` ("Tarea (opcional)" + "Trabajo / Revisión", any task of the project, options from
+  `GET /api/tiempo/tasks?projectId=`). `taskId` is required in every POST/PATCH body even if null:
+  with a task the kind is `TRABAJO`/`REVISION`, without one `MANUAL`; a task from another project is
+  422 `INVALID_TASK`. Editing writes exactly the link the body sends (the client clears it when the
+  project changes). The history marks linked entries "T-03 · trabajo". Deleting the task keeps the
+  hours; editing such an orphan turns it `MANUAL`. Linked hours, however they were logged, count in
+  the task's totals and in Analíticas.
+- **Pending hours** (Dashboard, "Horas por registrar"): each person sees the periods in which they
+  were the assignee of a task in En progreso or En revisión that already ended (the task moved or was
+  reassigned) in the last 30 days, with no linked entry of theirs (same task and kind, created since
+  the period began) and not dismissed. It covers whoever else moved the task and whoever skipped the
+  question in the move dialog. "Registrar" logs on the day the period ended; "Descartar" sets
+  `TaskTransition.hoursDismissedAt` on the row that opened the period (own rows only, otherwise 404)
+  and has no undo. Logic in `src/lib/pending-hours.ts`. The hours field is `HoursPicker`
+  (`src/components/ui/`), shared with the move dialog and the task edit modal.
 - **Minutes come in 15-minute steps**, from 15 min to 24 h per entry. The sum of a day is not checked
   against 24 h. Hours cannot be logged in the future (by Chile's "today").
 - **Any existing project**: being on its team is not required, in line with the rest of the
@@ -199,6 +304,8 @@ Weekly StandUp, this week's hours chart and the hours history.
 - **Deleting a member deletes the row**, which is also their Better Auth identity: sessions and the
   GitHub account cascade, they leave the teams, their tasks become unassigned and their documents and
   events lose their author. To set someone aside without deleting them there is the **Hiatus** status.
+- **The page has two tabs, Miembros and Pendientes** (the latter for coordination). A "Gestionar
+  equipos" placeholder was removed: project teams are managed from each project.
 - **Inviting is sharing the `/login` link**: there is no pre-registration (see `Member` is the user).
 - **Approving** is done from `/miembros`, "Pendientes" tab (coordination only; the sidebar shows how
   many requests wait). Approving sets the role and sets `joinedAt` to the approval date. Rejecting
@@ -214,13 +321,17 @@ Weekly StandUp, this week's hours chart and the hours history.
 
 ### Projects (`/proyectos`)
 
-- **Project team**: managed from the member counter in the detail (`ProjectTeamModal`). Adding,
-  removing or changing someone's role is `COORDINACION` only, like editing the project; everyone else
-  sees the team read-only. Removing someone unassigns them from that project's tasks.
-  `ProjectMember.role` is free text (max 60 characters).
+- **Project team**: managed from the member counter in the detail (`ProjectTeamModal`). Adding or
+  removing someone is `COORDINACION` only, like editing the project; everyone else sees the team
+  read-only. Removing someone unassigns them from that project's tasks. The team is just a list of
+  people: the free-text `ProjectMember.role` was dropped (migration
+  `20261029120000_drop_project_member_role`) because nobody kept it up to date.
 - The original mock's `prCount` (PR counter), `teamLabel` (internal pod) and per-project color were
   dropped when migrating: there is no GitHub integration or equivalent column, and the app uses its
   single accent color everywhere.
+- **Detail layout**: compact header, then the work panel (Backlog / Tareas / Kanban / Issues tabs) on
+  the left and a narrow column with Documentos and Actas on the right (stacked below 1180px). An empty
+  document slot is created by clicking its row.
 - The document editor is a feature of its own, described next.
 
 ### Documents and actas
@@ -233,6 +344,9 @@ Weekly StandUp, this week's hours chart and the hours history.
   handling are `MarkdownToolbar` / `useMarkdownEditor` (`src/components/ui/MarkdownToolbar.tsx`), shared
   with issues, their comments and the descriptions of features and tasks. The preview uses `react-markdown` +
   `remark-gfm` (`src/components/ui/Markdown.tsx`), which does not render raw HTML.
+  - **The editor is one frame**: the tabs sit in a strip fused with the body, the toolbar on its right
+    while writing. Wherever the toolbar is used it goes inside a `.md-frame` (toolbar and textarea
+    share one border). "Guardar cambios" sits above the frame and is disabled with no changes.
   - A WYSIWYG editor (Tiptap/ProseMirror) was ruled out: it forced `content` into JSON, migrating what
     exists and adding a heavy dependency; with plain text the version diff is trivial.
   - **No task lists (`- [ ]`)** on purpose: they would clash with the project's `Task` entity. There is
@@ -291,6 +405,36 @@ Weekly StandUp, this week's hours chart and the hours history.
   "Editar" opens the toolbar (`DescriptionEditor`); creation modals have the toolbar too.
 - Kanban drag & drop uses native HTML5 DnD, with optimistic updates and rollback (`useMoveTask`).
   `EditTaskModal` still lets you change the column by hand.
+- **Task flow** (rules in `updateTask`/`createTask`; the UI anticipates them in `src/lib/task-move.ts`):
+  - **Entering `PROGRESO` or `REVISION` requires an assignee** (422 `ASSIGNEE_REQUIRED`), and so does
+    removing the assignee of a task there. Older tasks already sitting there without one can still be
+    edited while their column and assignee stay the same.
+  - **History**: every creation, column change or assignee change writes a `TaskTransition` (`byId` who
+    did it, `assigneeId` from then on) in the same transaction. An assignee-only change has
+    `fromColumn === toColumn`: anything counting moves must skip those. `src/lib/task-history.ts`
+    turns the rows into periods (`taskPeriods`, `columnStints`) and a summary (time per column, who
+    worked it = assignee during En progreso, who reviewed it = assignee during En revisión, cycle and
+    lead time). These are calendar durations, not effort.
+  - **Hours on move**: leaving `PROGRESO` or `REVISION`, whoever was the assignee *before the change*
+    may send `timeSpent.minutes`; it becomes their own `TimeEntry` (kind `TRABAJO`/`REVISION`,
+    `taskId`, today in Chile, description `"T-03 · name"`), with the usual 15-minute validation.
+    Optional; anyone else, or any other move, gets 422 `TIME_NOT_ALLOWED`.
+  - **Move dialog** (`MoveTaskDialog`, and the same fields inside `EditTaskModal`): asks for an
+    assignee when entering a work column without one; from En progreso to Por revisar offers
+    reassigning to the reviewer, defaulting to "Sin asignar"; asks the mover's hours when they were the
+    assignee. With nothing to ask, the kanban moves directly as before.
+  - **Difficulty** (`BAJA`/`MEDIA`/`ALTA`, null = "Sin estimar") is required in the body even if null,
+    like `assigneeId`. Shown as three bars (`DifficultyMeter`).
+  - **The task detail shows its history** (`TaskHistory`): who worked and reviewed it, time per
+    column, the cycle (same definition as Analíticas) and the **total** hours logged from the task, by
+    everyone (work / review). That total is project information; each person's own breakdown stays in
+    their `/tiempo`.
+  - The project page reads `?tab=backlog|tareas|kanban|issues` as its starting tab.
+- **No right-click menus.** Every edit goes through modals: clicking a feature or task opens its
+  detail (`FeatureDetailModal` / `TaskDetailModal`), "Editar" there opens `EditFeatureModal` /
+  `EditTaskModal`, and deleting is a red text action at the left of that modal's footer, with the same
+  confirmation as before. The `labelsToken` is pinned when the detail opens and travels to the edit and
+  the delete without being reread. Deleting a project likewise lives in `EditProjectModal`.
 - **Task assignment**: any member can assign, but only people on the project's team
   (`assertAssignable` in `projects.server.ts` answers 422 otherwise). A project without a team does not
   allow assigning until coordination builds it. `assigneeId` is required in the body of task
@@ -345,6 +489,13 @@ features or tasks. `Issue` + `IssueComment` (migration `20261028130000_issues`).
 - The list is ordered by `lastActivityAt` (creation, edit, comment, close or reopen).
 - `Issue.authorId`, `closedById` and `IssueComment.authorId` are `ON DELETE SET NULL`: deleting a
   member keeps what they wrote. Deleting a project deletes its issues.
+- **"Revisado" is per person** (`IssueReview`): an issue counts as reviewed by me when my
+  `reviewedAt` is at or after its `lastActivityAt`. Any new activity (creating, editing, commenting,
+  closing, reopening, linking, or creating a task/feature from it) moves `lastActivityAt` and so
+  unmarks it for everyone else; my own activity renews my mark in the same write (`ownActivity` in
+  `issues.server.ts`), so it does not unmark it for me. Editing a comment is not activity. Marked and
+  unmarked by hand (`PUT`/`DELETE /api/projects/[id]/issues/[number]/review`); opening an issue does
+  not mark it. The list shows unreviewed ones with a dot and can filter to them.
 - No assignee, mentions, reactions or notifications yet; an issue belongs to exactly one project.
 
 ### MCP (`/api/mcp`)
@@ -372,13 +523,16 @@ Claude Code) or any MCP client. Streamable HTTP, stateless.
   Names are English `snake_case`, descriptions Spanish.
 - **Scope**: read projects, my tasks, calendar, members, my hours and StandUp; submit the StandUp;
   log, edit and delete own hours; create and edit tasks; create events; read and edit documents and
-  actas; list, read, open, comment, close and reopen issues (by number, no token); link and unlink them to
+  actas; list, read, open, comment, close, reopen and mark as reviewed issues (by number, no token); link and unlink them to
   features and tasks (labelsToken), and create a task already linked (`issueNumber`). Coordination actions (projects, teams, approvals, roles) and every other delete are left out
   on purpose: rare, and some cannot be undone.
 - **Tasks go by label with `labelsToken`**, like the UI: `get_project` returns it and `update_task` /
   `create_task` (with a feature) require it. `update_task` takes partial fields and fills the rest
   from the current task; that read cannot mix two tasks because `updateTask` rejects a stale token
-  first.
+  first. Both take `difficulty`; `update_task` takes `minutesSpent` (hours on move, same rules as the
+  UI) and `get_project` returns who worked and reviewed each task. `log_time` / `update_time_entry`
+  take an optional `taskLabel` + `labelsToken` + `kind` to link hours to a task; `update_time_entry`
+  keeps the current link when `taskLabel` is omitted and the project does not change.
 - **Documents**: `update_document` replaces the whole content and requires the `version` (a hash of
   the content) that `get_document` returned, so an edit does not silently overwrite someone else's
   save made while the model was writing. Not atomic; the version history covers the rest.
@@ -411,11 +565,9 @@ Claude Code) or any MCP client. Streamable HTTP, stateless.
 There is no seed. `prisma db seed`, `prisma/seed/seed.ts` and the member/project demo data were
 removed, together with the `tsx` dependency only they used: the database holds real data and the seed
 wiped demo records nobody reseeded. To get test data in a fresh database, sign in with GitHub and
-approve the account from "Pendientes". `prisma/seed/data/dashboard.ts` is the one file left, because
-the Dashboard imports it.
+approve the account from "Pendientes". The `prisma/seed` folder is gone.
 
 ## Known state
 
 `docs/TODO.md` lists only what is pending: gaps and ideas not built yet. This file describes how
-things work today, including the decisions that were made deliberately. Notably, the Dashboard view
-still imports mock data directly from `prisma/seed/data/dashboard.ts`.
+things work today, including the decisions that were made deliberately.
