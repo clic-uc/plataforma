@@ -34,7 +34,7 @@ export function DocVersionModal({
         {!previous && " · primera versión"}
       </div>
 
-      <div className="tabs" style={{ marginBottom: 12 }}>
+      <div className="tabs" style={{ marginBottom: 12 }} role="tablist">
         <button type="button" className={`tab-item${view === "changes" ? " active" : ""}`} onClick={() => setView("changes")}>
           Cambios
         </button>

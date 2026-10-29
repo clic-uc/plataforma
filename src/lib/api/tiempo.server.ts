@@ -2,6 +2,7 @@ import "server-only";
 
 import type { Prisma, Standup } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { TimeEntryKind } from "@/generated/prisma/enums";
 import { requireMember } from "@/lib/auth/guards";
 import { ApiError } from "@/lib/api/errors";
 import {
@@ -17,11 +18,14 @@ import {
   todayKey,
 } from "@/lib/tiempo";
 import { isDayKey } from "@/lib/calendar";
+import { labelNumber } from "@/lib/api/labels";
+import { resolveLabels } from "@/lib/api/projects.server";
 import type {
   SaveStandupInput,
   StandupView,
   TimeEntryFilter,
   TimeEntryInput,
+  TimeEntryTaskOption,
   TimeEntryView,
 } from "@/lib/api/tiempo";
 
@@ -100,6 +104,7 @@ export async function saveStandup(input: SaveStandupInput, now: Date = new Date(
 
 const entryInclude = {
   project: { select: { id: true, name: true } },
+  task: { select: { label: true, name: true } },
 } satisfies Prisma.TimeEntryInclude;
 
 type EntryRow = Prisma.TimeEntryGetPayload<{ include: typeof entryInclude }>;
@@ -111,6 +116,8 @@ function toEntryView(entry: EntryRow): TimeEntryView {
     minutes: entry.minutes,
     description: entry.description,
     project: entry.project,
+    kind: entry.kind,
+    task: entry.task,
   };
 }
 
@@ -140,7 +147,15 @@ export async function getTimeEntries(filter: TimeEntryFilter): Promise<TimeEntry
   return entries.map(toEntryView);
 }
 
-/** `today` es el "hoy" de Chile: no se registran horas a futuro. */
+function isTimeEntryKind(value: unknown): value is TimeEntryKind {
+  return typeof value === "string" && Object.values(TimeEntryKind).includes(value as TimeEntryKind);
+}
+
+/**
+ * `today` es el "hoy" de Chile: no se registran horas a futuro. `taskId` es obligatorio
+ * aunque sea null, para que un cliente que no conoce el campo no desvincule por accidente
+ * al editar. Con tarea, `kind` es TRABAJO o REVISION; sin tarea, MANUAL.
+ */
 export function parseTimeEntryInput(body: unknown, today: string = todayKey()): TimeEntryInput | null {
   if (typeof body !== "object" || body === null) return null;
   const b = body as Record<string, unknown>;
@@ -155,12 +170,31 @@ export function parseTimeEntryInput(body: unknown, today: string = todayKey()): 
   const description = typeof b.description === "string" ? b.description.trim() : "";
   if (!description || description.length > MAX_DESCRIPTION_LENGTH) return null;
 
-  return { date: b.date, projectId, minutes: b.minutes, description };
+  if (b.taskId !== null && (typeof b.taskId !== "string" || !b.taskId.trim())) return null;
+  const taskId = b.taskId === null ? null : b.taskId.trim();
+  if (!isTimeEntryKind(b.kind)) return null;
+  if ((taskId === null) !== (b.kind === TimeEntryKind.MANUAL)) return null;
+
+  return { date: b.date, projectId, minutes: b.minutes, description, taskId, kind: b.kind };
 }
 
 async function assertProjectExists(projectId: string): Promise<void> {
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
   if (!project) throw new ApiError(422, "INVALID_PROJECT", "El proyecto no existe");
+}
+
+/** Cualquier tarea del proyecto, de cualquier columna y de quien sea: las horas son de quien las registra. */
+async function assertTaskInProject(taskId: string | null, projectId: string): Promise<void> {
+  if (!taskId) return;
+  const task = await prisma.task.findUnique({ where: { id: taskId }, select: { projectId: true } });
+  if (task?.projectId !== projectId) {
+    throw new ApiError(422, "INVALID_TASK", "La tarea no existe en ese proyecto");
+  }
+}
+
+async function assertEntryTargets(input: TimeEntryInput): Promise<void> {
+  await assertProjectExists(input.projectId);
+  await assertTaskInProject(input.taskId, input.projectId);
 }
 
 function entryData(input: TimeEntryInput) {
@@ -169,12 +203,47 @@ function entryData(input: TimeEntryInput) {
     projectId: input.projectId,
     minutes: input.minutes,
     description: input.description,
+    taskId: input.taskId,
+    kind: input.kind,
   };
+}
+
+/**
+ * Task.id de una tarea dada por label, para el MCP (la API y la UI ya mandan el id). Los
+ * labels se renumeran, así que exige el labelsToken como cualquier mutación por label.
+ */
+export async function resolveTaskLabel(projectId: string, label: string, token: string): Promise<string> {
+  await requireMember();
+  const taskId = (await resolveLabels(projectId, token)).taskId(label.trim());
+  if (!taskId) throw new ApiError(422, "INVALID_TASK", `La tarea ${label} no existe en este proyecto`);
+  return taskId;
+}
+
+/** Proyecto y vínculo de un registro propio, o null si no existe o es ajeno. */
+export async function getTimeEntryLink(
+  id: string,
+): Promise<Pick<TimeEntryInput, "projectId" | "taskId" | "kind"> | null> {
+  const member = await requireMember();
+  return prisma.timeEntry.findFirst({
+    where: { id, memberId: member.id },
+    select: { projectId: true, taskId: true, kind: true },
+  });
+}
+
+/** Tareas del proyecto para vincular horas en /tiempo, por número de label; null si el proyecto no existe. */
+export async function getTimeEntryTaskOptions(projectId: string): Promise<TimeEntryTaskOption[] | null> {
+  await requireMember();
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { tasks: { select: { id: true, label: true, name: true, column: true } } },
+  });
+  if (!project) return null;
+  return project.tasks.sort((a, b) => labelNumber("T", a.label) - labelNumber("T", b.label));
 }
 
 export async function createTimeEntry(input: TimeEntryInput): Promise<TimeEntryView> {
   const member = await requireMember();
-  await assertProjectExists(input.projectId);
+  await assertEntryTargets(input);
 
   const entry = await prisma.timeEntry.create({
     data: { ...entryData(input), memberId: member.id },
@@ -186,15 +255,24 @@ export async function createTimeEntry(input: TimeEntryInput): Promise<TimeEntryV
 // Editar y borrar filtran por memberId: un registro ajeno responde 404, igual
 // que uno que no existe, porque la API no expone las horas de otros.
 
+/**
+ * Reemplaza el registro entero, vínculo incluido: el body trae la tarea (o null) y el
+ * tipo, así que se puede cambiar, quitar o agregar. Cambiar de proyecto sin elegir una
+ * tarea del nuevo deja el registro manual; una tarea de otro proyecto es 422 INVALID_TASK.
+ */
 export async function updateTimeEntry(id: string, input: TimeEntryInput): Promise<TimeEntryView | null> {
   const member = await requireMember();
-  await assertProjectExists(input.projectId);
+  await assertEntryTargets(input);
 
-  const { count } = await prisma.timeEntry.updateMany({ where: { id, memberId: member.id }, data: entryData(input) });
-  if (count === 0) return null;
+  const current = await prisma.timeEntry.findFirst({ where: { id, memberId: member.id }, select: { id: true } });
+  if (!current) return null;
 
-  const entry = await prisma.timeEntry.findUnique({ where: { id }, include: entryInclude });
-  return entry ? toEntryView(entry) : null;
+  const entry = await prisma.timeEntry.update({
+    where: { id },
+    data: entryData(input),
+    include: entryInclude,
+  });
+  return toEntryView(entry);
 }
 
 export async function deleteTimeEntry(id: string): Promise<boolean> {

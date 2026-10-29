@@ -24,10 +24,11 @@ export function LoginCard() {
         <div className="logo-wordmark">
           C<em>L</em>IC
         </div>
-        <div className="logo-tagline">PLATAFORMA INTERNA</div>
+        <div className="logo-tagline">Plataforma interna</div>
       </div>
 
-      <p className="auth-lead">Ingresa con tu cuenta de GitHub para continuar.</p>
+      <h1 className="auth-title">Ingresar</h1>
+      <p className="auth-lead">Usa tu cuenta de GitHub para entrar a proyectos, calendario y StandUps.</p>
 
       {error && (
         <div className="auth-error">

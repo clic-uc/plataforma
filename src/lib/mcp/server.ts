@@ -13,8 +13,8 @@ export const SERVER_INSTRUCTIONS = `Plataforma interna de CLIC: proyectos, tarea
 - Todas las acciones se hacen en nombre de la persona conectada (get_me), con sus permisos.
 - Fechas en "YYYY-MM-DD" y horas en hora de Chile (America/Santiago). "Hoy" es la fecha de Chile.
 - Features y tareas se identifican por label (F-01, T-01). Los labels se renumeran cuando alguien borra una, así que las tools que editan exigen el labelsToken de get_project; si responden que los identificadores cambiaron, vuelve a llamar a get_project.
-- Una tarea está terminada cuando está en la columna LISTO.
-- Los issues se identifican por su número dentro del proyecto (#12), que nunca se renumera, así que no necesitan labelsToken. Al crear una tarea a partir de un issue, pasa su issueNumber para que quede vinculada; link_issue y unlink_issue vinculan o desvinculan features y tareas que ya existen (exigen el labelsToken, porque las direccionan por label).
+- Una tarea está terminada cuando está en la columna LISTO. Para estar en PROGRESO o REVISION tiene que tener a alguien asignado; al sacarla de una de esas columnas, quien la tenía asignada puede registrar el tiempo que le dedicó (minutesSpent en update_task).
+- Los issues se identifican por su número dentro del proyecto (#12), que nunca se renumera, así que no necesitan labelsToken. Al crear una tarea a partir de un issue, pasa su issueNumber para que quede vinculada; link_issue y unlink_issue vinculan o desvinculan features y tareas que ya existen (exigen el labelsToken, porque las direccionan por label). "Revisado" es personal: reviewed dice si la persona conectada ya vio la última actividad de un issue, y mark_issue_reviewed lo marca o desmarca.
 - Antes de editar un documento, léelo con get_document y envía el texto completo con la version recibida.`;
 
 export function registerTools(server: McpServer): void {

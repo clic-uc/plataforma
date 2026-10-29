@@ -68,7 +68,7 @@ export function registerMemberTools(server: McpServer): void {
           birthday: member.birthdayValue,
           skills: member.skills,
           availability: member.availability,
-          projects: member.projects.map((p) => ({ id: p.id, name: p.name, role: p.role })),
+          projects: member.projects.map((p) => ({ id: p.id, name: p.name })),
           standups: member.standups,
         });
       }),

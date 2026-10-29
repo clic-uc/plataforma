@@ -6,19 +6,25 @@ import {
   deleteTimeEntry,
   getStandup,
   getTimeEntries,
+  getTimeEntryTaskOptions,
   parseSaveStandupInput,
   parseTimeEntryFilter,
   parseTimeEntryInput,
+  resolveTaskLabel,
   saveStandup,
   updateTimeEntry,
 } from "@/lib/api/tiempo.server";
+import type { TimeEntryInput } from "@/lib/api/tiempo";
+import { labelsToken } from "@/lib/api/labels";
 import { MAX_HISTORY_ENTRIES } from "@/lib/tiempo";
 
 const { prisma } = vi.hoisted(() => ({
   prisma: {
     project: { findUnique: vi.fn() },
+    task: { findUnique: vi.fn(), findMany: vi.fn() },
+    feature: { findMany: vi.fn() },
     standup: { findUnique: vi.fn(), upsert: vi.fn() },
-    timeEntry: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
+    timeEntry: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
   },
 }));
 
@@ -59,11 +65,21 @@ function entryRow(overrides: Record<string, unknown> = {}) {
     createdAt: new Date(),
     updatedAt: new Date(),
     project: { id: "p1", name: "San Miguel" },
+    kind: "MANUAL",
+    taskId: null,
+    task: null,
     ...overrides,
   };
 }
 
-const validEntry = { date: "2026-10-13", projectId: "p1", minutes: 150, description: "Revisión de PRs" };
+const validEntry: TimeEntryInput = {
+  date: "2026-10-13",
+  projectId: "p1",
+  minutes: 150,
+  description: "Revisión de PRs",
+  taskId: null,
+  kind: "MANUAL",
+};
 
 // ─── StandUp ───
 
@@ -176,7 +192,15 @@ describe("getTimeEntries", () => {
     const entries = await getTimeEntries({ week: "2026-10-12", projectId: "p1" });
 
     expect(entries).toEqual([
-      { id: "t1", date: "2026-10-13", minutes: 150, description: "Revisión de PRs", project: { id: "p1", name: "San Miguel" } },
+      {
+        id: "t1",
+        date: "2026-10-13",
+        minutes: 150,
+        description: "Revisión de PRs",
+        project: { id: "p1", name: "San Miguel" },
+        kind: "MANUAL",
+        task: null,
+      },
     ]);
     expect(prisma.timeEntry.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -214,9 +238,12 @@ describe("createTimeEntry / updateTimeEntry / deleteTimeEntry", () => {
           date: new Date("2026-10-13T00:00:00.000Z"),
           minutes: 150,
           description: "Revisión de PRs",
+          taskId: null,
+          kind: "MANUAL",
         },
       }),
     );
+    expect(prisma.task.findUnique).not.toHaveBeenCalled();
   });
 
   it("rechaza un proyecto inexistente con 422 INVALID_PROJECT", async () => {
@@ -227,20 +254,155 @@ describe("createTimeEntry / updateTimeEntry / deleteTimeEntry", () => {
 
   it("editar o borrar un registro ajeno se comporta como si no existiera", async () => {
     prisma.project.findUnique.mockResolvedValue({ id: "p1" });
-    prisma.timeEntry.updateMany.mockResolvedValue({ count: 0 });
+    prisma.timeEntry.findFirst.mockResolvedValue(null);
     prisma.timeEntry.deleteMany.mockResolvedValue({ count: 0 });
 
     expect(await updateTimeEntry("ajeno", validEntry)).toBeNull();
     expect(await deleteTimeEntry("ajeno")).toBe(false);
-    expect(prisma.timeEntry.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "ajeno", memberId: "yo" } }));
+    expect(prisma.timeEntry.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "ajeno", memberId: "yo" } }));
+    expect(prisma.timeEntry.update).not.toHaveBeenCalled();
     expect(prisma.timeEntry.deleteMany).toHaveBeenCalledWith({ where: { id: "ajeno", memberId: "yo" } });
   });
 
   it("devuelve el registro editado", async () => {
     prisma.project.findUnique.mockResolvedValue({ id: "p1" });
-    prisma.timeEntry.updateMany.mockResolvedValue({ count: 1 });
-    prisma.timeEntry.findUnique.mockResolvedValue(entryRow({ minutes: 60 }));
+    prisma.timeEntry.findFirst.mockResolvedValue({ id: "t1" });
+    prisma.timeEntry.update.mockResolvedValue(entryRow({ minutes: 60 }));
 
     expect(await updateTimeEntry("t1", { ...validEntry, minutes: 60 })).toMatchObject({ id: "t1", minutes: 60 });
+  });
+});
+
+describe("horas que salen de mover una tarea", () => {
+  const linked = { kind: "TRABAJO", taskId: "ta", task: { label: "T-02", name: "Login" } };
+
+  it("se listan con su tipo y la tarea con su label vigente", async () => {
+    prisma.timeEntry.findMany.mockResolvedValue([entryRow({ ...linked, description: "T-03 · Login" })]);
+    const [entry] = await getTimeEntries({ week: null, projectId: null });
+    expect(entry).toMatchObject({ kind: "TRABAJO", task: { label: "T-02", name: "Login" }, description: "T-03 · Login" });
+  });
+
+  it("si la tarea se borró, conservan el tipo sin tarea", async () => {
+    prisma.timeEntry.findMany.mockResolvedValue([entryRow({ kind: "REVISION", taskId: null, task: null })]);
+    const [entry] = await getTimeEntries({ week: null, projectId: null });
+    expect(entry).toMatchObject({ kind: "REVISION", task: null });
+  });
+});
+
+// ─── Horas vinculadas a una tarea ───
+
+describe("parseTimeEntryInput con tarea", () => {
+  const today = "2026-10-13";
+
+  it("acepta una tarea con trabajo o revisión, y sin tarea solo manual", () => {
+    expect(parseTimeEntryInput({ ...validEntry, taskId: " ta ", kind: "TRABAJO" }, today)).toMatchObject({ taskId: "ta", kind: "TRABAJO" });
+    expect(parseTimeEntryInput({ ...validEntry, taskId: "ta", kind: "REVISION" }, today)).toMatchObject({ kind: "REVISION" });
+    expect(parseTimeEntryInput({ ...validEntry, taskId: "ta", kind: "MANUAL" }, today)).toBeNull();
+    expect(parseTimeEntryInput({ ...validEntry, taskId: null, kind: "TRABAJO" }, today)).toBeNull();
+  });
+
+  it("exige taskId aunque sea null, y un kind conocido", () => {
+    const withoutTask: Partial<TimeEntryInput> = { ...validEntry };
+    delete withoutTask.taskId;
+    expect(parseTimeEntryInput(withoutTask, today)).toBeNull();
+    expect(parseTimeEntryInput({ ...validEntry, taskId: " " }, today)).toBeNull();
+    expect(parseTimeEntryInput({ ...validEntry, taskId: 3 }, today)).toBeNull();
+    expect(parseTimeEntryInput({ ...validEntry, kind: undefined }, today)).toBeNull();
+    expect(parseTimeEntryInput({ ...validEntry, kind: "OTRO" }, today)).toBeNull();
+  });
+});
+
+describe("createTimeEntry / updateTimeEntry con tarea", () => {
+  const linked: TimeEntryInput = { ...validEntry, taskId: "ta", kind: "REVISION" };
+
+  beforeEach(() => {
+    prisma.project.findUnique.mockResolvedValue({ id: "p1" });
+  });
+
+  it("crea el registro vinculado si la tarea es del proyecto", async () => {
+    prisma.task.findUnique.mockResolvedValue({ projectId: "p1" });
+    prisma.timeEntry.create.mockResolvedValue(entryRow({ kind: "REVISION", taskId: "ta", task: { label: "T-02", name: "Login" } }));
+
+    expect(await createTimeEntry(linked)).toMatchObject({ kind: "REVISION", task: { label: "T-02", name: "Login" } });
+    expect(prisma.task.findUnique).toHaveBeenCalledWith({ where: { id: "ta" }, select: { projectId: true } });
+    expect(prisma.timeEntry.create.mock.calls[0][0].data).toMatchObject({ taskId: "ta", kind: "REVISION", memberId: "yo" });
+  });
+
+  it("rechaza una tarea de otro proyecto o inexistente con 422 INVALID_TASK", async () => {
+    for (const task of [{ projectId: "p2" }, null]) {
+      prisma.task.findUnique.mockResolvedValue(task);
+      await expect(createTimeEntry(linked)).rejects.toMatchObject({ status: 422, code: "INVALID_TASK" });
+      await expect(updateTimeEntry("t1", linked)).rejects.toMatchObject({ status: 422, code: "INVALID_TASK" });
+    }
+    expect(prisma.timeEntry.create).not.toHaveBeenCalled();
+    expect(prisma.timeEntry.update).not.toHaveBeenCalled();
+  });
+
+  it("editar escribe el vínculo que viene en el body: cambiarlo, agregarlo o quitarlo", async () => {
+    prisma.task.findUnique.mockResolvedValue({ projectId: "p1" });
+    prisma.timeEntry.findFirst.mockResolvedValue({ id: "t1" });
+    prisma.timeEntry.update.mockResolvedValue(entryRow());
+
+    await updateTimeEntry("t1", linked);
+    expect(prisma.timeEntry.update.mock.calls[0][0].data).toMatchObject({ taskId: "ta", kind: "REVISION" });
+
+    await updateTimeEntry("t1", validEntry);
+    expect(prisma.timeEntry.update.mock.calls[1][0].data).toMatchObject({ taskId: null, kind: "MANUAL" });
+  });
+
+  it("cambiar de proyecto sin tarea del nuevo lo deja manual", async () => {
+    prisma.project.findUnique.mockResolvedValue({ id: "p2" });
+    prisma.timeEntry.findFirst.mockResolvedValue({ id: "t1" });
+    prisma.timeEntry.update.mockResolvedValue(entryRow({ projectId: "p2" }));
+
+    await updateTimeEntry("t1", { ...validEntry, projectId: "p2" });
+    expect(prisma.timeEntry.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ projectId: "p2", taskId: null, kind: "MANUAL" }) }),
+    );
+  });
+});
+
+describe("getTimeEntryTaskOptions", () => {
+  it("lista todas las tareas del proyecto, de cualquier columna, por número de label", async () => {
+    prisma.project.findUnique.mockResolvedValue({
+      tasks: [
+        { id: "c", label: "T-100", name: "C", column: "PENDIENTE" },
+        { id: "b", label: "T-10", name: "B", column: "LISTO" },
+        { id: "a", label: "T-02", name: "A", column: "PROGRESO" },
+      ],
+    });
+    expect((await getTimeEntryTaskOptions("p1"))?.map((t) => t.label)).toEqual(["T-02", "T-10", "T-100"]);
+  });
+
+  it("devuelve null si el proyecto no existe", async () => {
+    prisma.project.findUnique.mockResolvedValue(null);
+    expect(await getTimeEntryTaskOptions("nope")).toBeNull();
+  });
+});
+
+describe("resolveTaskLabel", () => {
+  const features = [{ id: "fa", label: "F-01" }];
+  const tasks = [
+    { id: "ta", label: "T-01" },
+    { id: "tb", label: "T-02" },
+  ];
+
+  beforeEach(() => {
+    prisma.feature.findMany.mockResolvedValue(features);
+    prisma.task.findMany.mockResolvedValue(tasks);
+  });
+
+  it("resuelve el label al id con un token vigente", async () => {
+    expect(await resolveTaskLabel("p1", "T-02", labelsToken(features, tasks))).toBe("tb");
+  });
+
+  it("rechaza un token de antes de un borrado con 412 y un label que no existe con 422", async () => {
+    // El snapshot vio T-02 apuntando a otra tarea: se borró algo y se renumeró.
+    const stale = labelsToken(features, [tasks[0], { id: "tx", label: "T-02" }]);
+    await expect(resolveTaskLabel("p1", "T-02", stale)).rejects.toMatchObject({ status: 412, code: "LABELS_CHANGED" });
+    await expect(resolveTaskLabel("p1", "T-09", labelsToken(features, tasks))).rejects.toMatchObject({
+      status: 422,
+      code: "INVALID_TASK",
+    });
   });
 });

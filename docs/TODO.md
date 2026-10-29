@@ -5,12 +5,26 @@ en `CLAUDE.md` (sección "Domain behaviour").
 
 ## Dashboard
 
-- **El Dashboard sigue 100% hardcodeado** (`prisma/seed/data/dashboard.ts`, importado directo por
-  `DashboardView`, `DashboardCalendarCard` y `StatCard`). No hay modelo para el feed de actividad
-  (`ActivityFeedItem` o similar). El calendario y las horas ya tienen modelo y vista propia
-  (`/calendario` y `/tiempo`), pero las tarjetas del dashboard siguen mostrando el mock.
-- Cuando el Dashboard tenga datos reales, borrar `prisma/seed/data/dashboard.ts` y con él la carpeta
-  `prisma/seed`, que es lo único que queda del seed.
+- **Crear un acta no aparece en la actividad**: `Acta` no tiene `createdAt` (`date` es la fecha de la
+  reunión); hoy solo aparece cuando alguien guarda una versión.
+- **Actividad de la organización, solo para coordinación**: el feed del Dashboard muestra solo la
+  actividad de mis proyectos. Coordinación podría tener además un bloque con lo que no cuelga de un
+  proyecto: StandUps enviados, miembros aprobados, eventos sin proyecto (y quizá proyectos creados o
+  archivados). `describeActivity` en `src/lib/dashboard.ts` ya sabe mostrar `standup` y
+  `member_joined`; falta la query (como la que había en `getActivity` antes de acotarla) y el panel.
+- Asistentes de reuniones (el mock mostraba "5 asistentes"): no hay modelo (`EventAttendee`).
+- `Member.streak` no lo usa nadie: la racha se deriva de los StandUps en el Dashboard y en
+  Analíticas, pero el perfil todavía muestra la columna (siempre 0). Mostrar ahí la derivada y borrar
+  la columna.
+
+## Analíticas
+
+- Burndown por feature o proyecto (hay historial desde el 29 oct, falta la vista).
+- Horas por feature (las de tarea ya existen: `TimeEntry.taskId`).
+- Issues abiertos vs. cerrados por semana y tiempo de cierre (se puede con `createdAt`/`closedAt`, sin
+  migrar).
+- Exportar a CSV.
+- Historial de estado de miembro (desde cuándo alguien está en Hiatus) y `verifiedAt` (ver Auditoría).
 
 ## Calendario
 
@@ -18,15 +32,14 @@ en `CLAUDE.md` (sección "Domain behaviour").
 - Editar o borrar "esta y las siguientes" de una serie.
 - Filtros por proyecto o tipo (el `projectId` ya está para eso).
 - Asistentes y RSVP, recordatorios, exportar `.ics` o sincronizar con Google Calendar.
-- Conectar `DashboardCalendarCard` a datos reales y agregarle un link "Ver calendario →".
 
 ## Tiempo y StandUp
 
-- Vista de coordinación: horas y StandUps del equipo por persona o proyecto, y quién está pendiente.
 - Recordatorio del StandUp (notificación o correo) y badge en el sidebar.
-- Vincular horas a tareas del kanban (hoy solo proyecto + descripción).
+- `TimeEntryView.task` no trae el id: al editar, `TimeEntryModal` reconoce la tarea por su label
+  vigente. Agregar el id lo simplificaría.
+- Deshacer "Descartar" en las horas pendientes (hoy no hay forma desde la UI).
 - Exportar horas (CSV) para informes a clientes.
-- La racha (`Member.streak`) podría derivarse de semanas consecutivas con StandUp; hoy no se calcula.
 
 ## Miembros
 
@@ -36,10 +49,6 @@ en `CLAUDE.md` (sección "Domain behaviour").
   `rankNumber`/`ranking` (esto se pensaba calcular, no persistir), `areaLabel` (categoría corta tipo
   "PROYECTOS"/"WEB"/"LAB"), color propio por miembro. Si se quieren recuperar, hay que agregar
   columnas reales.
-
-## Documentos y Actas
-
-- "Compartir enlace" en el editor no hace nada.
 
 ## MCP
 
@@ -71,6 +80,17 @@ en `CLAUDE.md` (sección "Domain behaviour").
   recupera.
 - **Auditoría de acciones.** `requireMember()` devuelve el `Member` que actúa, pero eso no se registra
   en ninguna parte salvo `Document.authorId`, `DocVersion.authorId` y `DocComment.authorId`.
+
+## Diseño
+
+- **Contraste del botón primario en modo oscuro**: `--accent` #3d95dc con texto blanco da ~3.2:1.
+  Oscurecerlo (≈#2b7cc0) lo arregla para botones pero baja los links en `text-accent` a ~3.8:1;
+  hay que separar un token para fondo de botón y otro para texto.
+- **Checkbox "activa" en Tareas**: marcada significa "visible en el kanban" y desmarcada se ve gris,
+  como si estuviera terminada. Mejor un toggle "En kanban" o moverlo al modal de edición.
+- **Título duplicado** en el editor y en la página de issue (breadcrumb y contenido).
+- **Tema oscuro con destello**: el tema se aplica después de hidratar; un script inline en `<head>`
+  lo evitaría.
 
 ## Tailwind
 

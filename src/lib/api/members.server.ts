@@ -109,7 +109,6 @@ export async function getMember(id: string): Promise<MemberDetail | null> {
     projects: member.projects.map((pm) => ({
       id: pm.project.id,
       name: pm.project.name,
-      role: pm.role,
       status: projectStatusLabel[pm.project.status],
       statusColor: projectStatusColor[pm.project.status],
     })),

@@ -1,14 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthError, requireCoordinacion, requireMember } from "@/lib/auth/guards";
 import { MAX_ISSUE_BODY_LENGTH, MAX_ISSUE_COMMENT_LENGTH, MAX_ISSUE_TITLE_LENGTH } from "@/lib/api/issues";
 import {
   createIssue,
   createIssueComment,
   deleteIssue,
+  getProjectIssues,
+  ownActivity,
   parseIssueCommentInput,
   parseIssueInput,
   parseIssueNumber,
   parseIssueStatusInput,
+  setIssueReviewed,
   setIssueStatus,
   updateIssue,
   updateIssueComment,
@@ -18,6 +21,7 @@ const { prisma } = vi.hoisted(() => ({
   prisma: {
     project: { findUnique: vi.fn() },
     issue: {
+      findMany: vi.fn(),
       findFirst: vi.fn(),
       findUnique: vi.fn(),
       create: vi.fn(),
@@ -26,6 +30,7 @@ const { prisma } = vi.hoisted(() => ({
       deleteMany: vi.fn(),
     },
     issueComment: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
+    issueReview: { upsert: vi.fn(), deleteMany: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -66,6 +71,7 @@ function detailRow(overrides: Record<string, unknown> = {}) {
     closedBy: null,
     _count: { comments: 0 },
     comments: [],
+    reviews: [],
     ...overrides,
   };
 }
@@ -78,6 +84,19 @@ function mockIssue(row: { id: string; authorId: string | null } | null) {
   prisma.issue.findUnique.mockImplementation(async (args: { include?: unknown }) =>
     args.include ? detailRow(row ?? {}) : row,
   );
+}
+
+/** Lo que ownActivity escribe para "yo" en el issue `issueId`, con el instante de lastActivityAt. */
+function expectOwnActivity(data: Record<string, unknown>, issueId: string) {
+  const at = data.lastActivityAt;
+  expect(at).toBeInstanceOf(Date);
+  expect(data.reviews).toEqual({
+    upsert: {
+      where: { issueId_memberId: { issueId, memberId: "yo" } },
+      create: { memberId: "yo", reviewedAt: at },
+      update: { reviewedAt: at },
+    },
+  });
 }
 
 const uniqueViolation = () => Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
@@ -179,6 +198,18 @@ describe("createIssue", () => {
     expect(prisma.issue.create.mock.calls[0][0].data).toMatchObject({ projectId: "p1", number: 8, authorId: "yo" });
   });
 
+  it("nace revisado por quien lo abre, con el mismo instante que su actividad", async () => {
+    prisma.issue.findFirst.mockResolvedValue(null);
+    prisma.issue.create.mockResolvedValue({});
+
+    await createIssue("p1", input);
+
+    const { data } = prisma.issue.create.mock.calls[0][0];
+    expect(data.lastActivityAt).toBeInstanceOf(Date);
+    expect(data.createdAt).toBe(data.lastActivityAt);
+    expect(data.reviews).toEqual({ create: { memberId: "yo", reviewedAt: data.lastActivityAt } });
+  });
+
   it("empieza en 1 si el proyecto no tiene issues", async () => {
     prisma.issue.findFirst.mockResolvedValue(null);
     prisma.issue.create.mockResolvedValue({});
@@ -250,7 +281,7 @@ describe("updateIssue", () => {
       where: { id: "i1" },
       data: { title: "Nuevo", body: "b", type: "IDEA" },
     });
-    expect(prisma.issue.update.mock.calls[0][0].data.lastActivityAt).toBeInstanceOf(Date);
+    expectOwnActivity(prisma.issue.update.mock.calls[0][0].data, "i1");
     expect(issue?.canEdit).toBe(true);
   });
 
@@ -274,38 +305,34 @@ describe("updateIssue", () => {
 
 describe("setIssueStatus", () => {
   beforeEach(() => {
-    prisma.issue.findUnique.mockImplementation(async () => detailRow());
+    mockIssue({ id: "i1", authorId: "otra" });
+    prisma.issue.update.mockResolvedValue({});
   });
 
   it("cerrar registra motivo, fecha y quién lo cerró", async () => {
-    prisma.issue.updateMany.mockResolvedValue({ count: 1 });
-
     await setIssueStatus("p1", 3, { status: "CERRADO", closeReason: "DUPLICADO" });
 
-    const { where, data } = prisma.issue.updateMany.mock.calls[0][0];
-    expect(where).toEqual({ projectId: "p1", number: 3 });
+    const { where, data } = prisma.issue.update.mock.calls[0][0];
+    expect(where).toEqual({ id: "i1" });
     expect(data).toMatchObject({ status: "CERRADO", closeReason: "DUPLICADO", closedById: "yo" });
     expect(data.closedAt).toBeInstanceOf(Date);
     expect(data.lastActivityAt).toBe(data.closedAt);
+    expectOwnActivity(data, "i1");
   });
 
-  it("reabrir limpia el cierre", async () => {
-    prisma.issue.updateMany.mockResolvedValue({ count: 1 });
-
+  it("reabrir limpia el cierre y deja revisado a quien reabre", async () => {
     await setIssueStatus("p1", 3, { status: "ABIERTO" });
 
-    expect(prisma.issue.updateMany.mock.calls[0][0].data).toMatchObject({
-      status: "ABIERTO",
-      closeReason: null,
-      closedAt: null,
-      closedById: null,
-    });
+    const { data } = prisma.issue.update.mock.calls[0][0];
+    expect(data).toMatchObject({ status: "ABIERTO", closeReason: null, closedAt: null, closedById: null });
+    expectOwnActivity(data, "i1");
   });
 
   it("devuelve null si el issue no existe", async () => {
-    prisma.issue.updateMany.mockResolvedValue({ count: 0 });
+    mockIssue(null);
 
     expect(await setIssueStatus("p1", 99, { status: "ABIERTO" })).toBeNull();
+    expect(prisma.issue.update).not.toHaveBeenCalled();
   });
 });
 
@@ -324,6 +351,7 @@ describe("createIssueComment", () => {
     expect(created).toMatchObject({ issueId: "i1", authorId: "yo", body: "hola" });
     expect(updated).toMatchObject({ where: { id: "i1" } });
     expect(updated.data.lastActivityAt).toBe(created.createdAt);
+    expectOwnActivity(updated.data, "i1");
   });
 
   it("devuelve null si el issue no existe", async () => {
@@ -356,6 +384,15 @@ describe("updateIssueComment", () => {
     expect(where).toEqual({ id: "c1" });
     expect(data.body).toBe("y");
     expect(data.editedAt).toBeInstanceOf(Date);
+  });
+
+  it("editar un comentario no es actividad: no toca el issue ni las revisiones", async () => {
+    prisma.issueComment.findFirst.mockResolvedValue({ authorId: "yo", body: "x" });
+
+    await updateIssueComment("p1", 3, "c1", "y");
+
+    expect(prisma.issue.update).not.toHaveBeenCalled();
+    expect(prisma.issueReview.upsert).not.toHaveBeenCalled();
   });
 
   it("guardar el mismo texto no lo marca como editado", async () => {
@@ -392,5 +429,101 @@ describe("deleteIssue", () => {
     expect(await deleteIssue("p1", 3)).toBe(true);
     expect(await deleteIssue("p1", 3)).toBe(false);
     expect(prisma.issue.deleteMany).toHaveBeenCalledWith({ where: { projectId: "p1", number: 3 } });
+  });
+});
+
+describe("ownActivity", () => {
+  it("mueve la actividad y deja la revisión de quien la hace en el mismo instante", () => {
+    const at = new Date("2026-10-29T12:00:00Z");
+    expect(ownActivity("i1", "yo", at)).toEqual({
+      lastActivityAt: at,
+      reviews: {
+        upsert: {
+          where: { issueId_memberId: { issueId: "i1", memberId: "yo" } },
+          create: { memberId: "yo", reviewedAt: at },
+          update: { reviewedAt: at },
+        },
+      },
+    });
+  });
+});
+
+describe("reviewedByMe", () => {
+  const activity = new Date("2026-10-20T12:00:00Z");
+
+  it("lee solo mi revisión y la compara con la última actividad", async () => {
+    prisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    prisma.issue.findMany.mockResolvedValue([
+      detailRow({ number: 1, lastActivityAt: activity, reviews: [{ reviewedAt: activity }] }),
+      detailRow({ number: 2, lastActivityAt: activity, reviews: [{ reviewedAt: new Date("2026-10-19T12:00:00Z") }] }),
+      detailRow({ number: 3, lastActivityAt: activity, reviews: [] }),
+    ]);
+
+    const issues = await getProjectIssues("p1");
+
+    expect(issues?.map((i) => [i.number, i.reviewedByMe])).toEqual([
+      [1, true],
+      [2, false],
+      [3, false],
+    ]);
+    expect(prisma.issue.findMany.mock.calls[0][0].include.reviews).toEqual({
+      where: { memberId: "yo" },
+      select: { reviewedAt: true },
+    });
+  });
+});
+
+describe("setIssueReviewed", () => {
+  /** findUnique con select (validar) devuelve `row`; con include (detalle), detailRow(detail). */
+  function mockReviewTarget(row: { id: string; lastActivityAt: Date } | null, detail: Record<string, unknown> = {}) {
+    prisma.issue.findUnique.mockImplementation(async (args: { include?: unknown }) =>
+      args.include ? detailRow(detail) : row,
+    );
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("marcar crea o renueva mi revisión con la hora actual", async () => {
+    const now = new Date("2026-10-29T12:00:00Z");
+    vi.useFakeTimers({ now });
+    mockReviewTarget({ id: "i1", lastActivityAt: new Date("2026-10-01T12:00:00Z") }, { reviews: [{ reviewedAt: now }] });
+
+    const issue = await setIssueReviewed("p1", 3, true);
+
+    expect(prisma.issueReview.upsert).toHaveBeenCalledWith({
+      where: { issueId_memberId: { issueId: "i1", memberId: "yo" } },
+      create: { issueId: "i1", memberId: "yo", reviewedAt: now },
+      update: { reviewedAt: now },
+    });
+    expect(issue?.reviewedByMe).toBe(true);
+  });
+
+  it("si la actividad quedó adelante del reloj, marca con la actividad", async () => {
+    const future = new Date(Date.now() + 60_000);
+    mockReviewTarget({ id: "i1", lastActivityAt: future });
+
+    await setIssueReviewed("p1", 3, true);
+
+    expect(prisma.issueReview.upsert.mock.calls[0][0].update.reviewedAt).toEqual(future);
+  });
+
+  it("desmarcar borra solo mi revisión", async () => {
+    mockReviewTarget({ id: "i1", lastActivityAt: new Date() });
+
+    const issue = await setIssueReviewed("p1", 3, false);
+
+    expect(prisma.issueReview.deleteMany).toHaveBeenCalledWith({ where: { issueId: "i1", memberId: "yo" } });
+    expect(prisma.issueReview.upsert).not.toHaveBeenCalled();
+    expect(issue?.reviewedByMe).toBe(false);
+  });
+
+  it("devuelve null si el issue no existe, sin tocar revisiones", async () => {
+    mockReviewTarget(null);
+
+    expect(await setIssueReviewed("p1", 99, true)).toBeNull();
+    expect(prisma.issueReview.upsert).not.toHaveBeenCalled();
+    expect(prisma.issueReview.deleteMany).not.toHaveBeenCalled();
   });
 });

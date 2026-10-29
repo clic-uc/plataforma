@@ -14,7 +14,7 @@ export default async function PendientePage() {
           <div className="logo-wordmark">
             C<em>L</em>IC
           </div>
-          <div className="logo-tagline">PLATAFORMA INTERNA</div>
+          <div className="logo-tagline">Plataforma interna</div>
         </div>
 
         <h1 className="auth-title">Tu cuenta está pendiente</h1>

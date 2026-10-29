@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Barlow, Barlow_Condensed, Space_Mono } from "next/font/google";
+import { Barlow, Barlow_Condensed, IBM_Plex_Mono } from "next/font/google";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import "./globals.css";
 
@@ -15,10 +15,11 @@ const barlowCondensed = Barlow_Condensed({
   weight: ["600", "700"],
 });
 
-const spaceMono = Space_Mono({
-  variable: "--font-space-mono",
+// Solo para identificadores (T-03, #12), código y diffs: las etiquetas van en Barlow.
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
   subsets: ["latin"],
-  weight: ["400", "700"],
+  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
@@ -35,7 +36,7 @@ export default function RootLayout({
     <html
       lang="es"
       data-theme="light"
-      className={`${barlow.variable} ${barlowCondensed.variable} ${spaceMono.variable} h-full antialiased`}
+      className={`${barlow.variable} ${barlowCondensed.variable} ${plexMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <QueryProvider>{children}</QueryProvider>

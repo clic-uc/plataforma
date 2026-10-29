@@ -1,14 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
+import type { FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskDifficulty, TaskType } from "@/generated/prisma/enums";
 import { kanbanColumnLabel, type BadgeColor } from "@/lib/api/status";
-import { ApiRequestError, assertOk, LABELS_TOKEN_HEADER } from "@/lib/api/http";
+import { ApiRequestError, assertOk, errorMessage, LABELS_TOKEN_HEADER } from "@/lib/api/http";
 import { membersKeys } from "@/lib/api/members";
+import { timeEntriesKeys } from "@/lib/api/tiempo";
+import { dashboardKeys } from "@/lib/api/dashboard";
 
 export interface ProjectTeamMember {
   id: string;
   name: string;
   initials: string;
-  role: string;
 }
 
 export interface ProjectListItem {
@@ -70,7 +71,34 @@ export interface ProjectTask {
   description: string | null;
   /** Números de los issues vinculados (#12), de menor a mayor. */
   issues: number[];
+  /** null = sin estimar. */
+  difficulty: TaskDifficulty | null;
+  /** Resumen de TaskTransition (src/lib/task-history.ts). Duraciones de calendario, no esfuerzo. */
+  history: ProjectTaskHistory;
 }
+
+export interface ProjectTaskHistory {
+  createdAt: string;
+  /** Asignados mientras estuvo En progreso / En revisión, en orden de aparición. */
+  workedBy: { id: string; name: string }[];
+  reviewedBy: { id: string; name: string }[];
+  /** Milisegundos acumulados por columna; la columna actual cuenta hasta el momento de la lectura. */
+  columnMs: Partial<Record<KanbanColumn, number>>;
+  /** Última llegada a Listo, si sigue ahí. */
+  completedAt: string | null;
+  /** Primera entrada a En progreso → llegada a Listo (summarizeTaskHistory), si terminó. */
+  cycleMs: number | null;
+  /** Horas dedicadas registradas desde esta tarea (TimeEntry.taskId), de todas las personas. */
+  minutesWorked: number;
+  minutesReviewed: number;
+}
+
+/**
+ * Columnas en las que una tarea tiene que tener asignado: entrar a ellas sin asignado
+ * responde 422 ASSIGNEE_REQUIRED. Quien la tiene asignada al salir de una de ellas puede
+ * registrar las horas que le dedicó (UpdateTaskInput.timeSpent).
+ */
+export const WORK_COLUMNS: readonly KanbanColumn[] = ["PROGRESO", "REVISION"];
 
 /** Tarea asignada al miembro actual, con el proyecto al que pertenece. */
 export interface AssignedTask {
@@ -82,6 +110,8 @@ export interface AssignedTask {
   columnValue: KanbanColumn;
   active: boolean;
   description: string | null;
+  /** null = sin estimar. */
+  difficulty: TaskDifficulty | null;
 }
 
 export interface ProjectDetail extends ProjectListItem {
@@ -171,6 +201,8 @@ interface TaskFields {
   type: TaskType;
   column: KanbanColumn;
   description: string | null;
+  /** Obligatorio aunque sea null, como assigneeId. */
+  difficulty: TaskDifficulty | null;
 }
 
 export interface CreateTaskInput extends TaskFields {
@@ -180,6 +212,14 @@ export interface CreateTaskInput extends TaskFields {
 
 export interface UpdateTaskInput extends TaskFields {
   active: boolean;
+  /**
+   * Horas dedicadas por quien hace el cambio, al sacar la tarea de En progreso (TRABAJO) o
+   * En revisión (REVISION). Solo se aceptan si la columna cambia desde una de esas dos y quien
+   * envía es el asignado en ese momento (si no, 422 TIME_NOT_ALLOWED). Crea un TimeEntry suyo
+   * con fecha de hoy (Chile), vinculado a la tarea, en la misma transacción. Minutos en pasos
+   * de 15, entre 15 y 24 h, como cualquier TimeEntry.
+   */
+  timeSpent?: { minutes: number } | null;
 }
 
 export interface CreateActaInput {
@@ -189,7 +229,6 @@ export interface CreateActaInput {
 
 export interface AddProjectMemberInput {
   memberId: string;
-  role: string;
 }
 
 /** Input completo de PATCH para una tarea, partiendo de su estado actual. */
@@ -202,6 +241,7 @@ export function taskToUpdateInput(task: ProjectTask): UpdateTaskInput {
     column: task.columnValue,
     active: task.active,
     description: task.description,
+    difficulty: task.difficulty,
   };
 }
 
@@ -398,16 +438,6 @@ async function addProjectMemberRequest(id: string, input: AddProjectMemberInput)
   return res.json();
 }
 
-async function updateProjectMemberRequest(id: string, memberId: string, role: string): Promise<ProjectDetail> {
-  const res = await fetch(`/api/projects/${id}/members/${memberId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role }),
-  });
-  await assertOk(res, "No se pudo guardar el rol");
-  return res.json();
-}
-
 async function removeProjectMemberRequest(id: string, memberId: string): Promise<ProjectDetail> {
   const res = await fetch(`/api/projects/${id}/members/${memberId}`, { method: "DELETE" });
   await assertOk(res, "No se pudo quitar al miembro");
@@ -588,31 +618,79 @@ export function useCreateTask(id: string) {
 
 export function useUpdateTask(id: string) {
   const { queryClient, key, onLabelsError } = useLabelledMutationSupport(id);
+  const invalidateAfterChange = useInvalidateAfterTaskChange();
   return useMutation({
     mutationFn: ({ taskId, input, labelsToken }: { taskId: string; input: UpdateTaskInput; labelsToken: string }) =>
       updateTaskRequest(id, taskId, input, labelsToken),
     onError: onLabelsError,
-    onSuccess: (updated) => {
+    onSuccess: (updated, { input }) => {
       queryClient.setQueryData(key, updated);
+      invalidateAfterChange(input.timeSpent);
     },
   });
 }
 
-/** Moves a task between kanban columns, reflecting the change immediately and rolling back on failure. */
+export interface MoveTaskVariables {
+  task: ProjectTask;
+  column: KanbanColumn;
+  /** Fijado al empezar la interacción (al iniciar el arrastre o abrir el modal), no al enviar. */
+  labelsToken: string;
+  /** Nuevo asignado (Member.id, del equipo) o null para dejarla sin asignar; sin el campo no cambia. */
+  assigneeId?: string | null;
+  /** Horas de quien la tenía asignada al sacarla de En progreso o En revisión; ver UpdateTaskInput. */
+  timeSpent?: { minutes: number } | null;
+}
+
+/**
+ * Lo que cambia fuera del proyecto al mover o editar una tarea: el Dashboard (mis tareas, "X
+ * completó T-03") y, si se registraron horas, /tiempo, porque son un TimeEntry más.
+ */
+function useInvalidateAfterTaskChange() {
+  const queryClient = useQueryClient();
+  return (timeSpent: UpdateTaskInput["timeSpent"]) => {
+    queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
+    if (timeSpent) queryClient.invalidateQueries({ queryKey: timeEntriesKeys.all });
+  };
+}
+
+/**
+ * Mueve una tarea de columna (y, si viene, cambia el asignado) reflejando el cambio al tiro
+ * y deshaciéndolo si el servidor lo rechaza.
+ */
 export function useMoveTask(id: string) {
   const { queryClient, key, onLabelsError } = useLabelledMutationSupport(id);
+  const invalidateAfterChange = useInvalidateAfterTaskChange();
   return useMutation({
-    mutationFn: ({ task, column, labelsToken }: { task: ProjectTask; column: KanbanColumn; labelsToken: string }) =>
-      updateTaskRequest(id, task.id, { ...taskToUpdateInput(task), column }, labelsToken),
-    onMutate: async ({ task, column }) => {
+    mutationFn: ({ task, column, labelsToken, assigneeId, timeSpent }: MoveTaskVariables) =>
+      updateTaskRequest(
+        id,
+        task.id,
+        {
+          ...taskToUpdateInput(task),
+          column,
+          ...(assigneeId !== undefined ? { assigneeId } : {}),
+          ...(timeSpent ? { timeSpent } : {}),
+        },
+        labelsToken,
+      ),
+    onMutate: async ({ task, column, assigneeId }) => {
       await queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient.getQueryData<ProjectDetail | null>(key);
       if (previous) {
+        const member = assigneeId ? previous.team.find((m) => m.id === assigneeId) : undefined;
+        const assignee =
+          assigneeId === undefined ? undefined : member ? { id: member.id, name: member.name, initials: member.initials } : null;
         queryClient.setQueryData<ProjectDetail>(key, {
           ...previous,
           tasks: previous.tasks.map((t) =>
             t.id === task.id
-              ? { ...t, columnValue: column, column: kanbanColumnLabel[column], done: column === "LISTO" }
+              ? {
+                  ...t,
+                  columnValue: column,
+                  column: kanbanColumnLabel[column],
+                  done: column === "LISTO",
+                  ...(assignee !== undefined ? { assignee } : {}),
+                }
               : t,
           ),
         });
@@ -623,10 +701,28 @@ export function useMoveTask(id: string) {
       if (context?.previous) queryClient.setQueryData(key, context.previous);
       onLabelsError(error);
     },
-    onSuccess: (updated) => {
+    onSuccess: (updated, { timeSpent }) => {
       queryClient.setQueryData(key, updated);
+      invalidateAfterChange(timeSpent);
     },
   });
+}
+
+/**
+ * Mensaje para un cambio de columna o de asignado rechazado. Las reglas del flujo las anticipa
+ * el diálogo de movimiento; si igual llegan (otra persona cambió la tarea entre medio), se
+ * explica qué hacer en vez del texto genérico.
+ */
+export function taskMoveErrorMessage(error: Error | null, fallback: string): string {
+  if (error instanceof ApiRequestError) {
+    if (error.code === "ASSIGNEE_REQUIRED") {
+      return "En progreso y En revisión necesitan a alguien asignado. Asígnala a una persona del equipo y vuelve a moverla.";
+    }
+    if (error.code === "TIME_NOT_ALLOWED") {
+      return "Solo quien tenía la tarea asignada puede registrar horas al sacarla de En progreso o En revisión. Muévela sin registrar horas o regístralas en Tiempo.";
+    }
+  }
+  return errorMessage(error, fallback);
 }
 
 export function useDeleteTask(id: string) {
@@ -656,10 +752,13 @@ export function useIssueLink(id: string) {
   return useMutation({
     mutationFn: (variables: IssueLinkVariables) => issueLinkRequest(id, variables),
     onError: onLabelsError,
-    onSuccess: (updated) => {
+    onSuccess: (updated, { issueNumber }) => {
       queryClient.setQueryData(key, updated);
-      // Vincular cuenta como actividad del issue: cambia el orden de la lista.
+      // Vincular cuenta como actividad del issue: cambia el orden de la lista, el detalle del
+      // issue y lo que queda sin revisar en el Dashboard.
       queryClient.invalidateQueries({ queryKey: projectsKeys.issues(id), exact: true });
+      queryClient.invalidateQueries({ queryKey: projectsKeys.issue(id, issueNumber) });
+      queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
     },
   });
 }
@@ -678,15 +777,6 @@ export function useAddProjectMember(id: string) {
   const onSuccess = useTeamMutationSuccess(id);
   return useMutation({
     mutationFn: (input: AddProjectMemberInput) => addProjectMemberRequest(id, input),
-    onSuccess,
-  });
-}
-
-export function useUpdateProjectMember(id: string) {
-  const onSuccess = useTeamMutationSuccess(id);
-  return useMutation({
-    mutationFn: ({ memberId, role }: { memberId: string; role: string }) =>
-      updateProjectMemberRequest(id, memberId, role),
     onSuccess,
   });
 }

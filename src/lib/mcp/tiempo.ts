@@ -7,14 +7,16 @@ import {
   deleteTimeEntry,
   getStandup,
   getTimeEntries,
+  getTimeEntryLink,
   parseSaveStandupInput,
   parseTimeEntryFilter,
   parseTimeEntryInput,
   parseWeekParam,
+  resolveTaskLabel,
   saveStandup,
   updateTimeEntry,
 } from "@/lib/api/tiempo.server";
-import type { TimeEntryView } from "@/lib/api/tiempo";
+import type { TimeEntryInput, TimeEntryView } from "@/lib/api/tiempo";
 import {
   MAX_DESCRIPTION_LENGTH,
   MAX_ENTRY_MINUTES,
@@ -34,10 +36,50 @@ const entryFields = {
   description: z.string().describe(`Qué se hizo, máx. ${MAX_DESCRIPTION_LENGTH} caracteres`),
 };
 
+const workKind = z
+  .enum(["TRABAJO", "REVISION"])
+  .optional()
+  .describe("Con taskLabel: TRABAJO (por defecto) si es trabajo en la tarea, REVISION si es revisarla");
+
+const taskLink = {
+  taskLabel: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Label de una tarea del mismo proyecto (T-01) para vincular las horas; exige labelsToken"),
+  labelsToken: z.string().optional().describe("labelsToken que devolvió get_project; obligatorio con taskLabel"),
+  kind: workKind,
+};
+
+type Link = Pick<TimeEntryInput, "taskId" | "kind">;
+type LinkArgs = { projectId: string; taskLabel?: string | null; labelsToken?: string; kind?: "TRABAJO" | "REVISION" };
+
+const MANUAL: Link = { taskId: null, kind: "MANUAL" };
+
+/**
+ * Vínculo pedido con taskLabel, o un mensaje de error. La tarea va por label, así que
+ * se resuelve con el labelsToken (los labels se renumeran), como en update_task.
+ */
+async function linkFromLabel(args: LinkArgs & { taskLabel: string }): Promise<Link | string> {
+  if (!args.labelsToken) return "Para vincular una tarea envía también el labelsToken de get_project.";
+  const taskId = await resolveTaskLabel(args.projectId, args.taskLabel, args.labelsToken);
+  return { taskId, kind: args.kind ?? "TRABAJO" };
+}
+
 const INVALID_ENTRY = `Datos inválidos: los minutos van de ${MINUTES_STEP} en ${MINUTES_STEP} (de ${MINUTES_STEP} a ${MAX_ENTRY_MINUTES}), la fecha no puede ser futura y la descripción es obligatoria (máx. ${MAX_DESCRIPTION_LENGTH} caracteres).`;
 
 function entryView(entry: TimeEntryView) {
-  return { id: entry.id, date: entry.date, minutes: entry.minutes, description: entry.description, project: entry.project };
+  return {
+    id: entry.id,
+    date: entry.date,
+    minutes: entry.minutes,
+    description: entry.description,
+    project: entry.project,
+    // TRABAJO/REVISION: horas vinculadas a una tarea (al moverla o a mano); task es la tarea
+    // con su label vigente, o null si es MANUAL o la tarea se borró.
+    kind: entry.kind,
+    task: entry.task,
+  };
 }
 
 export function registerTiempoTools(server: McpServer): void {
@@ -113,15 +155,25 @@ export function registerTiempoTools(server: McpServer): void {
     "log_time",
     {
       title: "Registrar horas",
-      description: "Registra horas propias en un proyecto. No se pueden registrar días futuros (según la fecha de Chile).",
+      description:
+        "Registra horas propias en un proyecto. No se pueden registrar días futuros (según la fecha de Chile). Opcionalmente se vinculan a una tarea del proyecto (taskLabel + labelsToken de get_project) como trabajo o revisión; así suman en las horas dedicadas de la tarea.",
       inputSchema: z.object({
         ...entryFields,
         date: dayKey.optional().describe('"YYYY-MM-DD"; por defecto, hoy en Chile'),
+        ...taskLink,
       }),
     },
-    (args) =>
+    ({ taskLabel, labelsToken, kind, ...args }) =>
       run(async () => {
-        const input = parseTimeEntryInput({ ...args, date: args.date ?? todayKey() });
+        let link = MANUAL;
+        if (taskLabel) {
+          const linked = await linkFromLabel({ projectId: args.projectId, taskLabel, labelsToken, kind });
+          if (typeof linked === "string") return fail(linked);
+          link = linked;
+        } else if (kind) {
+          return fail("kind solo se usa al vincular una tarea con taskLabel.");
+        }
+        const input = parseTimeEntryInput({ ...args, ...link, date: args.date ?? todayKey() });
         if (!input) return fail(INVALID_ENTRY);
         return json(entryView(await createTimeEntry(input)));
       }),
@@ -131,12 +183,35 @@ export function registerTiempoTools(server: McpServer): void {
     "update_time_entry",
     {
       title: "Editar registro de horas",
-      description: "Reemplaza un registro de horas propio. Hay que enviar todos los campos.",
-      inputSchema: z.object({ id: z.string().describe("id del registro (de list_time_entries)"), date: dayKey, ...entryFields }),
+      description:
+        "Reemplaza un registro de horas propio. Hay que enviar fecha, proyecto, minutos y descripción. La tarea vinculada se conserva si se omite taskLabel y el proyecto no cambia (cambiar de proyecto la quita); taskLabel con un label la cambia y null la quita.",
+      inputSchema: z.object({
+        id: z.string().describe("id del registro (de list_time_entries)"),
+        date: dayKey,
+        ...entryFields,
+        ...taskLink,
+      }),
     },
-    ({ id, ...fields }) =>
+    ({ id, taskLabel, labelsToken, kind, ...fields }) =>
       run(async () => {
-        const input = parseTimeEntryInput(fields);
+        let link = MANUAL;
+        if (taskLabel) {
+          const linked = await linkFromLabel({ projectId: fields.projectId, taskLabel, labelsToken, kind });
+          if (typeof linked === "string") return fail(linked);
+          link = linked;
+        } else if (taskLabel === undefined) {
+          // Se conserva el vínculo actual, que puede venir de mover la tarea en el kanban.
+          const current = await getTimeEntryLink(id);
+          if (!current) return fail("No existe el registro");
+          if (current.taskId && current.projectId === fields.projectId) {
+            link = { taskId: current.taskId, kind: kind ?? current.kind };
+          } else if (kind) {
+            return fail("El registro no tiene una tarea vinculada en ese proyecto: envía taskLabel para vincularla.");
+          }
+        } else if (kind) {
+          return fail("kind solo se usa al vincular una tarea con taskLabel.");
+        }
+        const input = parseTimeEntryInput({ ...fields, ...link });
         if (!input) return fail(INVALID_ENTRY);
         const entry = await updateTimeEntry(id, input);
         if (!entry) return fail("No existe el registro");

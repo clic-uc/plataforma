@@ -31,8 +31,10 @@ export function ProyectosView() {
   const emptyText = query
     ? `Ningún proyecto ${tab === "activos" ? "activo" : "archivado"} coincide con «${search.trim()}».`
     : tab === "activos"
-      ? "No hay proyectos activos."
-      : "No hay proyectos archivados aún.";
+      ? isCoordinacion
+        ? "No hay proyectos activos. Crea uno con «Nuevo proyecto»."
+        : "No hay proyectos activos todavía."
+      : "No hay proyectos archivados.";
 
   return (
     <section>
@@ -47,13 +49,13 @@ export function ProyectosView() {
             aria-label="Buscar proyecto"
           />
         </label>
-        <div className="tabs" style={{ margin: 0 }}>
-          <div className={`tab-item${tab === "activos" ? " active" : ""}`} onClick={() => setTab("activos")}>
+        <div className="tabs" style={{ margin: 0 }} role="tablist">
+          <button type="button" role="tab" aria-selected={tab === "activos"} className={`tab-item${tab === "activos" ? " active" : ""}`} onClick={() => setTab("activos")}>
             Activos <span>{activos.length}</span>
-          </div>
-          <div className={`tab-item${tab === "archivados" ? " active" : ""}`} onClick={() => setTab("archivados")}>
+          </button>
+          <button type="button" role="tab" aria-selected={tab === "archivados"} className={`tab-item${tab === "archivados" ? " active" : ""}`} onClick={() => setTab("archivados")}>
             Archivados <span>{archivados.length}</span>
-          </div>
+          </button>
         </div>
         {isCoordinacion && (
           <div style={{ marginLeft: "auto" }}>
@@ -65,7 +67,7 @@ export function ProyectosView() {
       {creating && <CreateProjectModal onClose={() => setCreating(false)} />}
 
       {shown.length === 0 ? (
-        <div className="ph" style={{ minHeight: 160 }}>
+        <div className="ph">
           <div className="ph-text">{emptyText}</div>
         </div>
       ) : (
@@ -76,16 +78,16 @@ export function ProyectosView() {
                 <div className="pcard-name">{p.name}</div>
                 <Badge color={p.statusColor}>{p.status}</Badge>
               </div>
+              {p.client && <div className="pcard-client">{p.client}</div>}
               <div className="pcard-desc">{p.description}</div>
               <ProgressBar progress={p.progress} />
-              <div className="pcard-foot">
-                <div className="pcard-pct">{p.progress}% completado</div>
-              </div>
               <div className="pcard-meta">
-                <AvatarStack members={p.team} accentFirst />
-                <div className="pcard-labels">
-                  <span className="pcard-label">{p.client}</span>
-                </div>
+                <div className="pcard-pct" style={{ marginTop: 0 }}>{p.progress}% completado</div>
+                {p.team.length > 0 ? (
+                  <AvatarStack members={p.team} accentFirst />
+                ) : (
+                  <span className="pcard-pct" style={{ marginTop: 0 }}>Sin equipo</span>
+                )}
               </div>
             </Link>
           ))}

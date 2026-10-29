@@ -40,10 +40,10 @@ function Composer({
       />
       {error && <div className="modal-error">No se pudo agregar el comentario.</div>}
       <div className="doc-c-actions">
-        <button type="button" className="btn-ghost" style={{ fontSize: 12 }} disabled={pending} onClick={onCancel}>
+        <button type="button" className="btn-ghost btn-sm" disabled={pending} onClick={onCancel}>
           Cancelar
         </button>
-        <button type="submit" className="btn-primary" style={{ fontSize: 12 }} disabled={pending || !body.trim()}>
+        <button type="submit" className="btn-primary btn-sm" disabled={pending || !body.trim()}>
           {pending ? "Guardando…" : "Comentar"}
         </button>
       </div>
@@ -75,8 +75,10 @@ export function DocCommentsPanel({
   onShow: (comment: ProjectDocComment) => void;
 }) {
   return (
-    <div className="doc-sc">
-      <div className="ds-lbl">Comentarios{comments.length > 0 && ` (${comments.length})`}</div>
+    <div className="side-sec">
+      <div className="ds-lbl">
+        Comentarios{comments.length > 0 && <span className="label-count">{comments.length}</span>}
+      </div>
 
       {composing && (
         // Con otro fragmento seleccionado el formulario arranca de cero.
@@ -91,7 +93,7 @@ export function DocCommentsPanel({
       )}
 
       {comments.length === 0 && !composing ? (
-        <div className="doc-v-empty">Selecciona texto en la Vista previa para comentarlo.</div>
+        <div className="doc-v-empty">Selecciona un fragmento en la vista previa para comentarlo.</div>
       ) : (
         <div className="doc-c-list">
           {comments.map((comment) => (

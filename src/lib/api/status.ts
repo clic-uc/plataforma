@@ -10,6 +10,7 @@ import {
   MemberStatus,
   Priority,
   ProjectStatus,
+  TaskDifficulty,
   TaskType,
 } from "@/generated/prisma/enums";
 export type BadgeColor = "green" | "amber" | "gray" | "blue";
@@ -90,10 +91,11 @@ export const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
   { value: "BAJA", label: "Baja" },
 ];
 
+// Tokens de globals.css (--prio-*), con su variante para modo oscuro.
 export const priorityColor: Record<"alta" | "media" | "baja", string> = {
-  alta: "#dc4e2a",
-  media: "#d4a853",
-  baja: "#a09080",
+  alta: "var(--prio-alta)",
+  media: "var(--prio-media)",
+  baja: "var(--prio-baja)",
 };
 
 export const taskTypeLabel: Record<TaskType, "feature" | "spike" | "fix" | "refactor" | "chore" | "docs"> = {
@@ -112,6 +114,19 @@ export const TASK_TYPE_OPTIONS: { value: TaskType; label: string }[] = [
   { value: "REFACTOR", label: "Refactor" },
   { value: "CHORE", label: "Chore" },
   { value: "DOCS", label: "Docs" },
+];
+
+/** Dificultad estimada de una tarea; null es "Sin estimar". */
+export const taskDifficultyLabel: Record<TaskDifficulty, string> = {
+  BAJA: "Baja",
+  MEDIA: "Media",
+  ALTA: "Alta",
+};
+
+export const TASK_DIFFICULTY_OPTIONS: { value: TaskDifficulty; label: string }[] = [
+  { value: "BAJA", label: "Baja" },
+  { value: "MEDIA", label: "Media" },
+  { value: "ALTA", label: "Alta" },
 ];
 
 export const kanbanColumnLabel: Record<KanbanColumn, "pendiente" | "progreso" | "revisar" | "revision" | "listo"> = {
