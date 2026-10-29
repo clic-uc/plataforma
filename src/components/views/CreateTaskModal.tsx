@@ -13,21 +13,27 @@ export function CreateTaskModal({
   features,
   team,
   labelsToken: openedLabelsToken,
+  initial,
+  issueNumber,
   onClose,
 }: {
   projectId: string;
   features: ProjectFeature[];
   team: ProjectTeamMember[];
   labelsToken: string;
+  /** Valores con que abre el formulario, p. ej. al crear la tarea desde un issue. */
+  initial?: { name: string; description: string };
+  /** Issue del que sale la tarea; queda vinculada a él. */
+  issueNumber?: number;
   onClose: () => void;
 }) {
   // Se fija al abrir el modal: los labels que se editan acá salen de ese snapshot.
   const [labelsToken] = useState(openedLabelsToken);
   const [featureId, setFeatureId] = useState(features[0]?.id ?? "");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initial?.name ?? "");
   const [type, setType] = useState<TaskType>("FEATURE");
   const [assigneeId, setAssigneeId] = useState("");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(initial?.description ?? "");
   const { textareaRef, format, onKeyDown } = useMarkdownEditor(description, setDescription);
 
   const mutation = useCreateTask(projectId);
@@ -43,6 +49,7 @@ export function CreateTaskModal({
           type,
           column: "PENDIENTE",
           description: description.trim() || null,
+          issueNumber: issueNumber ?? null,
         },
         labelsToken,
       },

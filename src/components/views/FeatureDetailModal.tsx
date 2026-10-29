@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { TaskTypeTag } from "@/components/ui/TaskTypeTag";
 import { AssigneeAvatar } from "@/components/ui/Avatar";
 import { DescriptionEditor } from "@/components/views/DescriptionEditor";
+import { LinkedIssuesField } from "@/components/views/LinkedIssuesField";
 import { useUpdateFeature, type ProjectFeature, type ProjectTask } from "@/lib/api/projects";
 
 export function FeatureDetailModal({
@@ -63,6 +64,8 @@ export function FeatureDetailModal({
           </div>
         )}
       </div>
+
+      <LinkedIssuesField projectId={projectId} issues={feature.issues} />
 
       <DescriptionEditor
         description={feature.description}

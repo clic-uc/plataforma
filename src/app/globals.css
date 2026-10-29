@@ -1670,3 +1670,57 @@ button.avail-cell:hover { border-color: var(--accent); }
   border-radius: 50%;
   object-fit: cover;
 }
+
+/* ─── Issues: detalle ─── */
+.issue-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.issue-title {
+  font-family: var(--font-barlow-condensed), sans-serif; font-size: 22px; font-weight: 700; line-height: 1.25;
+  color: var(--text-1); overflow-wrap: anywhere;
+}
+.issue-number { color: var(--text-3); font-weight: 600; }
+.issue-sub { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin-bottom: 16px; }
+.issue-type { font-family: var(--font-space-mono), monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); }
+.issue-body { padding-top: 14px; border-top: 1px solid var(--border); }
+.issue-body-input { min-height: 200px; }
+.issue-thread { margin-top: 14px; padding: 18px 24px; }
+.issue-c-item { padding: 12px 0; border-top: 1px solid var(--border); }
+.issue-thread > .ds-lbl + .issue-c-item { border-top: none; padding-top: 0; }
+.issue-c-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.issue-c-author { font-size: 12.5px; font-weight: 600; color: var(--text-1); }
+.issue-c-date { font-family: var(--font-space-mono), monospace; font-size: 9.5px; color: var(--text-3); }
+.issue-c-body .md { font-size: 13px; }
+.issue-composer { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; margin-top: 4px; border-top: 1px solid var(--border); }
+.issue-composer-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.issue-close-row { display: flex; flex-direction: column; gap: 6px; }
+.issue-side-btn { width: 100%; font-size: 12px; }
+.issue-side-btn + .issue-side-btn { margin-top: 6px; }
+.issue-side-sep { height: 1px; background: var(--border); margin: 12px 0; }
+
+/* ─── Issues: lista ─── */
+.issue-row { display: flex; align-items: center; gap: 9px; padding: 9px 0; border-bottom: 1px solid var(--border); color: inherit; text-decoration: none; }
+.issue-row:last-child { border-bottom: none; }
+.issue-row:hover .issue-row-title { color: var(--accent); }
+.issue-row.closed .issue-row-title { color: var(--text-3); }
+.issue-num { font-family: var(--font-space-mono), monospace; font-size: 9.5px; color: var(--text-3); min-width: 28px; }
+.issue-main { flex: 1; min-width: 0; }
+.issue-row-title { font-size: 13px; font-weight: 500; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue-row-sub { font-family: var(--font-space-mono), monospace; font-size: 9px; color: var(--text-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue-comments { font-family: var(--font-space-mono), monospace; font-size: 9px; color: var(--text-3); white-space: nowrap; min-width: 74px; text-align: right; }
+
+/* ─── Issues: vínculos ─── */
+.issue-links { display: flex; flex-direction: column; }
+.issue-link-row { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.issue-link-row:last-child { border-bottom: none; }
+.issue-link-label { font-family: var(--font-space-mono), monospace; font-size: 9.5px; color: var(--text-3); flex: none; }
+.issue-link-name { font-size: 11.5px; color: var(--text-1); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue-link-name.done { color: var(--text-3); text-decoration: line-through; }
+.issue-link-col { font-family: var(--font-space-mono), monospace; font-size: 8.5px; color: var(--text-3); text-transform: uppercase; flex: none; }
+.issue-link-x { border: none; background: none; padding: 0 2px; font-size: 14px; line-height: 1; color: var(--text-3); cursor: pointer; flex: none; }
+.issue-link-x:hover { color: #c0392b; }
+.issue-link-x:disabled { opacity: 0.4; cursor: default; }
+.issue-link-select { margin-top: 10px; font-size: 12px; }
+.linked-issues { display: flex; flex-direction: column; gap: 4px; }
+.linked-issue { display: flex; align-items: baseline; gap: 6px; font-size: 12.5px; color: var(--text-1); text-decoration: none; }
+.linked-issue:hover .linked-issue-title { color: var(--accent); }
+.linked-issue-num { font-family: var(--font-space-mono), monospace; font-size: 10px; color: var(--accent); flex: none; }
+.linked-issue-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

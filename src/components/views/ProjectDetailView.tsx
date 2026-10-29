@@ -16,6 +16,7 @@ import {
   BacklogIcon,
   TasksTabIcon,
   KanbanTabIcon,
+  IssuesTabIcon,
 } from "@/components/icons";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { KanbanColumn } from "@/generated/prisma/enums";
@@ -42,6 +43,9 @@ import { EditTaskModal } from "@/components/views/EditTaskModal";
 import { TaskDetailModal } from "@/components/views/TaskDetailModal";
 import { CreateActaModal } from "@/components/views/CreateActaModal";
 import { ProjectTeamModal } from "@/components/views/ProjectTeamModal";
+import { CreateIssueModal } from "@/components/views/CreateIssueModal";
+import { ProjectIssuesList } from "@/components/views/ProjectIssuesList";
+import { useProjectIssues, type IssueFilter } from "@/lib/api/issues";
 import { useIsCoordinacion } from "@/components/providers/CurrentMemberProvider";
 
 const docIcon = {
@@ -63,7 +67,7 @@ const NO_FEATURE = "__none";
 
 export function ProjectDetailView({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"backlog" | "tareas" | "kanban">("backlog");
+  const [tab, setTab] = useState<"backlog" | "tareas" | "kanban" | "issues">("backlog");
   const [editing, setEditing] = useState(false);
   const [creatingFeature, setCreatingFeature] = useState(false);
   const [editingFeature, setEditingFeature] = useState<ProjectFeature | null>(null);
@@ -84,11 +88,14 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: ProjectTask; labelsToken: string } | null>(null);
   const [creatingActa, setCreatingActa] = useState(false);
   const [managingTeam, setManagingTeam] = useState(false);
+  const [creatingIssue, setCreatingIssue] = useState(false);
+  const [issueFilter, setIssueFilter] = useState<IssueFilter>("ABIERTO");
   const isCoordinacion = useIsCoordinacion();
   const [featureFilter, setFeatureFilter] = useState("");
   const [columnFilter, setColumnFilter] = useState<KanbanColumn | "">("");
   const [onlyActive, setOnlyActive] = useState(false);
   const { data: project } = useProject(projectId);
+  const { data: issues = [] } = useProjectIssues(projectId);
   const createDoc = useCreateProjectDoc(projectId);
   const deleteFeature = useDeleteFeature(projectId);
   const deleteTask = useDeleteTask(projectId);
@@ -100,6 +107,8 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   // Acciones sin modal propio: su error se muestra en un aviso sobre las pestañas.
   const inlineMutations = [deleteProject, deleteFeature, deleteTask, moveTask, updateTask];
   const inlineError = inlineMutations.find((m) => m.isError)?.error ?? null;
+
+  const openIssues = issues.filter((issue) => issue.status === "ABIERTO").length;
 
   const teamSize = project.team.length;
   const teamLabel =
@@ -280,6 +289,10 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             <KanbanTabIcon />
             Kanban
           </button>
+          <button className={`proj-tab${tab === "issues" ? " active" : ""}`} onClick={() => setTab("issues")}>
+            <IssuesTabIcon />
+            Issues <span className="proj-tab-count" title="Abiertos">{openIssues}</span>
+          </button>
           {tab === "backlog" && (
             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
               <button className="btn-xs btn-xs-g" onClick={() => setCreatingFeature(true)}>+ Feature</button>
@@ -320,6 +333,21 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                 Solo activas
               </label>
               <button className="btn-xs btn-xs-g" onClick={() => setCreatingTask(true)}>+ Tarea</button>
+            </div>
+          )}
+          {tab === "issues" && (
+            <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+              <select
+                className="filter-select"
+                value={issueFilter}
+                onChange={(e) => setIssueFilter(e.target.value as IssueFilter)}
+                aria-label="Filtrar por estado"
+              >
+                <option value="ABIERTO">Abiertos</option>
+                <option value="CERRADO">Cerrados</option>
+                <option value="TODOS">Todos</option>
+              </select>
+              <button className="btn-xs btn-xs-g" onClick={() => setCreatingIssue(true)}>+ Issue</button>
             </div>
           )}
         </div>
@@ -443,6 +471,8 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             })}
           </div>
         )}
+
+        {tab === "issues" && <ProjectIssuesList projectId={project.id} issues={issues} filter={issueFilter} />}
       </div>
 
       {editing && <EditProjectModal project={project} onClose={() => setEditing(false)} />}
@@ -493,6 +523,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
       )}
       {creatingActa && <CreateActaModal projectId={project.id} onClose={() => setCreatingActa(false)} />}
       {managingTeam && <ProjectTeamModal project={project} onClose={() => setManagingTeam(false)} />}
+      {creatingIssue && <CreateIssueModal projectId={project.id} onClose={() => setCreatingIssue(false)} />}
       {featureMenu && (
         <ContextMenu
           x={featureMenu.x}

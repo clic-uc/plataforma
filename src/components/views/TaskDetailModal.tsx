@@ -5,6 +5,7 @@ import { Modal } from "@/components/ui/Modal";
 import { TaskTypeTag } from "@/components/ui/TaskTypeTag";
 import { AssigneeAvatar } from "@/components/ui/Avatar";
 import { DescriptionEditor } from "@/components/views/DescriptionEditor";
+import { LinkedIssuesField } from "@/components/views/LinkedIssuesField";
 import { taskToUpdateInput, useUpdateTask, type ProjectTask } from "@/lib/api/projects";
 
 export function TaskDetailModal({
@@ -37,6 +38,8 @@ export function TaskDetailModal({
         <AssigneeAvatar assignee={task.assignee} />
         <span style={{ fontSize: 11, color: "var(--text-3)" }}>{task.assignee?.name ?? "Sin asignar"}</span>
       </div>
+
+      <LinkedIssuesField projectId={projectId} issues={task.issues} />
 
       <DescriptionEditor
         description={task.description}

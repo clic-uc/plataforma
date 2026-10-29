@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname, useParams } from "next/navigation";
+import { useIssue } from "@/lib/api/issues";
 import { useMember } from "@/lib/api/members";
 import { useProject, useProjectDoc } from "@/lib/api/projects";
 
@@ -17,15 +18,18 @@ export interface Breadcrumb {
 
 export function useBreadcrumb(): Breadcrumb {
   const pathname = usePathname();
-  const params = useParams<{ projectId?: string; docId?: string; memberId?: string }>();
+  const params = useParams<{ projectId?: string; docId?: string; issueNumber?: string; memberId?: string }>();
 
   // The pages prefetch these same query keys, so the names are already in the cache on arrival.
   // The hooks run unconditionally and are gated with `enabled` instead.
   const projectId = params.projectId ?? "";
   const docId = params.docId ?? "";
   const memberId = params.memberId ?? "";
+  const issueNumber = Number(params.issueNumber ?? "");
+  const hasIssue = !!projectId && Number.isInteger(issueNumber) && issueNumber > 0;
   const { data: project } = useProject(projectId, { enabled: !!projectId });
   const { data: doc } = useProjectDoc(projectId, docId, { enabled: !!projectId && !!docId });
+  const { data: issue } = useIssue(projectId, issueNumber, { enabled: hasIssue });
   const { data: member } = useMember(memberId, { enabled: !!memberId });
 
   if (pathname === "/dashboard") return { title: "Dashboard" };
@@ -37,6 +41,14 @@ export function useBreadcrumb(): Breadcrumb {
   if (params.docId && params.projectId) {
     return {
       title: doc?.title ?? "Documento",
+      parent: { title: project?.name ?? "Proyecto", href: `/proyectos/${params.projectId}` },
+      grandparent: { title: "Proyectos", href: "/proyectos" },
+    };
+  }
+
+  if (params.issueNumber && params.projectId) {
+    return {
+      title: issue ? `#${issue.number} ${issue.title}` : "Issue",
       parent: { title: project?.name ?? "Proyecto", href: `/proyectos/${params.projectId}` },
       grandparent: { title: "Proyectos", href: "/proyectos" },
     };

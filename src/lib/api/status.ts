@@ -2,6 +2,9 @@ import {
   DocSlotType,
   EventKind,
   FeatureStatus,
+  IssueCloseReason,
+  IssueStatus,
+  IssueType,
   KanbanColumn,
   MemberRole,
   MemberStatus,
@@ -182,4 +185,38 @@ export const EVENT_KIND_OPTIONS: { value: EventKind; label: string }[] = [
   { value: "ENTREGA", label: "Entrega" },
   { value: "HITO", label: "Hito" },
   { value: "OTRO", label: "Otro" },
+];
+
+export const issueStatusLabel: Record<IssueStatus, string> = {
+  ABIERTO: "Abierto",
+  CERRADO: "Cerrado",
+};
+
+export const issueStatusColor: Record<IssueStatus, BadgeColor> = {
+  ABIERTO: "green",
+  CERRADO: "gray",
+};
+
+export const issueTypeLabel: Record<IssueType, string> = {
+  BUG: "Bug",
+  IDEA: "Idea",
+  PREGUNTA: "Pregunta",
+};
+
+export const ISSUE_TYPE_OPTIONS: { value: IssueType; label: string }[] = [
+  { value: "BUG", label: "Bug" },
+  { value: "IDEA", label: "Idea" },
+  { value: "PREGUNTA", label: "Pregunta" },
+];
+
+export const issueCloseReasonLabel: Record<IssueCloseReason, string> = {
+  RESUELTO: "Resuelto",
+  DESCARTADO: "Descartado",
+  DUPLICADO: "Duplicado",
+};
+
+export const ISSUE_CLOSE_REASON_OPTIONS: { value: IssueCloseReason; label: string }[] = [
+  { value: "RESUELTO", label: "Resuelto" },
+  { value: "DESCARTADO", label: "Descartado" },
+  { value: "DUPLICADO", label: "Duplicado" },
 ];
