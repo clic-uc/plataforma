@@ -1,17 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CallToolResult, McpServer } from "@modelcontextprotocol/server";
 import { ApiError } from "@/lib/api/errors";
-import type { ProjectDetail, ProjectTask } from "@/lib/api/projects";
+import type { ProjectDetail, ProjectFeature, ProjectTask } from "@/lib/api/projects";
 import { registerTools } from "@/lib/mcp/server";
 
-const { projects, events, tiempo } = vi.hoisted(() => ({
+const { projects, issues, events, tiempo } = vi.hoisted(() => ({
   projects: {
     getProject: vi.fn(),
     getProjectDoc: vi.fn(),
     updateProjectDoc: vi.fn(),
     updateTask: vi.fn(),
     createTask: vi.fn(),
+    setIssueLink: vi.fn(),
   },
+  issues: { getIssue: vi.fn(), createIssue: vi.fn(), setIssueStatus: vi.fn() },
   events: { createEvent: vi.fn() },
   tiempo: { createTimeEntry: vi.fn() },
 }));
@@ -21,6 +23,10 @@ const { projects, events, tiempo } = vi.hoisted(() => ({
 vi.mock("@/lib/api/projects.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api/projects.server")>()),
   ...projects,
+}));
+vi.mock("@/lib/api/issues.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api/issues.server")>()),
+  ...issues,
 }));
 vi.mock("@/lib/api/events.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api/events.server")>()),
@@ -63,12 +69,13 @@ function task(overrides: Partial<ProjectTask> = {}): ProjectTask {
     columnValue: "PENDIENTE",
     active: true,
     description: "Con GitHub",
+    issues: [],
     ...overrides,
   };
 }
 
-function project(tasks: ProjectTask[]): ProjectDetail {
-  return { id: "p1", tasks } as ProjectDetail;
+function project(tasks: ProjectTask[], features: ProjectFeature[] = []): ProjectDetail {
+  return { id: "p1", labelsToken: "tok", tasks, features } as ProjectDetail;
 }
 
 beforeEach(() => {
@@ -138,6 +145,13 @@ describe("create_task", () => {
     const result = await call("create_task", { projectId: "p1", name: "Nueva", type: "FIX", column: "PENDIENTE" });
     expect(JSON.parse(text(result))).toMatchObject({ id: "T-10", name: "Nueva" });
   });
+
+  it("pasa el issue de origen para que la tarea quede vinculada", async () => {
+    projects.createTask.mockResolvedValue(project([task({ id: "T-01", issues: [4] })]));
+    const result = await call("create_task", { projectId: "p1", name: "X", type: "FIX", column: "PENDIENTE", issueNumber: 4 });
+    expect(projects.createTask.mock.calls[0][1]).toMatchObject({ issueNumber: 4 });
+    expect(JSON.parse(text(result))).toMatchObject({ issues: [4] });
+  });
 });
 
 describe("update_document", () => {
@@ -163,6 +177,81 @@ describe("update_document", () => {
 
     expect(result.isError).toBe(true);
     expect(projects.updateProjectDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe("issues", () => {
+  const issue = {
+    number: 3,
+    title: "Login falla",
+    type: "BUG",
+    status: "CERRADO",
+    closeReason: "RESUELTO",
+    author: "Ana",
+    createdAt: "",
+    lastActivityAt: "",
+    commentCount: 0,
+    body: "",
+    closedBy: "Ana",
+    closedAt: "",
+    canEdit: true,
+    canDelete: false,
+    comments: [],
+  };
+
+  it("close_issue cierra con el motivo", async () => {
+    issues.setIssueStatus.mockResolvedValue(issue);
+    const result = await call("close_issue", { projectId: "p1", number: 3, closeReason: "RESUELTO" });
+    expect(result.isError).toBeUndefined();
+    expect(issues.setIssueStatus).toHaveBeenCalledWith("p1", 3, { status: "CERRADO", closeReason: "RESUELTO" });
+    expect(JSON.parse(text(result))).not.toHaveProperty("canEdit");
+  });
+
+  it("create_issue rechaza un título vacío sin llegar a la base", async () => {
+    const result = await call("create_issue", { projectId: "p1", title: "   ", body: "", type: "IDEA" });
+    expect(result.isError).toBe(true);
+    expect(issues.createIssue).not.toHaveBeenCalled();
+  });
+
+  it("get_issue incluye las features y tareas vinculadas con el labelsToken", async () => {
+    issues.getIssue.mockResolvedValue(issue);
+    projects.getProject.mockResolvedValue(
+      project([task({ id: "T-01", issues: [3] }), task({ id: "T-02", issues: [5] })], [
+        { id: "F-01", name: "Auth", statusValue: "PENDIENTE", issues: [3] } as ProjectFeature,
+      ]),
+    );
+    const result = JSON.parse(text(await call("get_issue", { projectId: "p1", number: 3 })));
+    expect(result.labelsToken).toBe("tok");
+    expect(result.tasks.map((t: { id: string }) => t.id)).toEqual(["T-01"]);
+    expect(result.features).toEqual([{ id: "F-01", name: "Auth", status: "PENDIENTE" }]);
+  });
+
+  it("link_issue vincula una tarea por label con el labelsToken", async () => {
+    projects.setIssueLink.mockResolvedValue(project([task({ issues: [3] })]));
+    const result = await call("link_issue", { projectId: "p1", number: 3, taskId: "T-01", labelsToken: "tok" });
+    expect(result.isError).toBeUndefined();
+    expect(projects.setIssueLink).toHaveBeenCalledWith("p1", "task", "T-01", 3, true, "tok");
+  });
+
+  it("unlink_issue desvincula una feature", async () => {
+    projects.setIssueLink.mockResolvedValue(project([]));
+    await call("unlink_issue", { projectId: "p1", number: 3, featureId: "F-02", labelsToken: "tok" });
+    expect(projects.setIssueLink).toHaveBeenCalledWith("p1", "feature", "F-02", 3, false, "tok");
+  });
+
+  it("link_issue rechaza featureId y taskId a la vez, o ninguno", async () => {
+    const both = await call("link_issue", { projectId: "p1", number: 3, featureId: "F-01", taskId: "T-01", labelsToken: "tok" });
+    const neither = await call("link_issue", { projectId: "p1", number: 3, labelsToken: "tok" });
+    expect(both.isError).toBe(true);
+    expect(neither.isError).toBe(true);
+    expect(projects.setIssueLink).not.toHaveBeenCalled();
+  });
+
+  it("get_issue responde error si el issue no existe", async () => {
+    issues.getIssue.mockResolvedValue(null);
+    const result = await call("get_issue", { projectId: "p1", number: 99 });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain("#99");
   });
 });
 

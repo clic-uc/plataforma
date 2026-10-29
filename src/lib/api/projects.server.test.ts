@@ -7,12 +7,15 @@ import {
   deleteTask,
   parseAddProjectMemberInput,
   createProjectDocComment,
+  createTask,
   parseCreateDocCommentInput,
+  parseCreateFeatureInput,
   parseCreateTaskInput,
   parseUpdateProjectMemberInput,
   parseUpdateTaskInput,
   removeProjectMember,
   resolveProjectDocComment,
+  setIssueLink,
   updateProjectMemberRole,
   updateTask,
 } from "@/lib/api/projects.server";
@@ -24,8 +27,16 @@ const { prisma } = vi.hoisted(() => ({
     acta: { findFirst: vi.fn() },
     docComment: { create: vi.fn(), deleteMany: vi.fn() },
     member: { findUnique: vi.fn() },
-    feature: { findMany: vi.fn() },
-    task: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
+    feature: { findMany: vi.fn(), update: vi.fn() },
+    task: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      deleteMany: vi.fn(),
+    },
+    issue: { findUnique: vi.fn(), update: vi.fn() },
     projectMember: { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
     $transaction: vi.fn(),
   },
@@ -76,6 +87,8 @@ describe("parseCreateTaskInput / parseUpdateTaskInput", () => {
       name: "Login",
       type: "FEATURE",
       column: "PENDIENTE",
+      description: null,
+      issueNumber: null,
     });
   });
 
@@ -95,6 +108,108 @@ describe("parseCreateTaskInput / parseUpdateTaskInput", () => {
 
   it("completa active y description en el PATCH", () => {
     expect(parseUpdateTaskInput(validTask)).toMatchObject({ active: true, description: null });
+  });
+
+  it("acepta un issueNumber entero positivo y rechaza el body entero si es inválido", () => {
+    expect(parseCreateTaskInput({ ...validTask, issueNumber: 3 })).toMatchObject({ issueNumber: 3 });
+    expect(parseCreateTaskInput({ ...validTask, issueNumber: null })).toMatchObject({ issueNumber: null });
+    for (const issueNumber of [0, -1, 1.5, "3"]) {
+      expect(parseCreateTaskInput({ ...validTask, issueNumber })).toBeNull();
+    }
+  });
+
+  it("el PATCH no lleva issueNumber: el vínculo tiene su propia ruta", () => {
+    expect(parseUpdateTaskInput({ ...validTask, issueNumber: 3 })).not.toHaveProperty("issueNumber");
+  });
+});
+
+describe("parseCreateFeatureInput", () => {
+  const validFeature = { name: "Auth", priority: "ALTA" };
+
+  it("issueNumber es opcional: null si no viene", () => {
+    expect(parseCreateFeatureInput(validFeature)).toEqual({
+      name: "Auth",
+      priority: "ALTA",
+      description: null,
+      issueNumber: null,
+    });
+    expect(parseCreateFeatureInput({ ...validFeature, issueNumber: 7 })).toMatchObject({ issueNumber: 7 });
+  });
+
+  it("rechaza el body entero si issueNumber es inválido", () => {
+    for (const issueNumber of [0, 1.5, "3"]) {
+      expect(parseCreateFeatureInput({ ...validFeature, issueNumber })).toBeNull();
+    }
+  });
+});
+
+describe("vínculos con issues", () => {
+  const features = rows("F", ["fa"]);
+  const tasks = rows("T", ["ta", "tb"]);
+  const token = `"${labelsToken(features, tasks)}"`;
+
+  beforeEach(() => {
+    resetPrisma();
+    prisma.project.findUnique.mockResolvedValue(projectRow);
+    prisma.feature.findMany.mockResolvedValue(features);
+    prisma.task.findMany.mockResolvedValue(tasks);
+    prisma.issue.findUnique.mockResolvedValue({ id: "i3" });
+    prisma.$transaction.mockResolvedValue([]);
+  });
+
+  it("crear una tarea desde un issue la vincula", async () => {
+    await createTask("p1", { ...parseCreateTaskInput(validTask)!, issueNumber: 3 }, null);
+    expect(prisma.issue.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { projectId_number: { projectId: "p1", number: 3 } } }),
+    );
+    expect(prisma.task.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ issues: { connect: { id: "i3" } } }),
+    });
+  });
+
+  it("crear una tarea desde un issue que no existe responde 422 sin crearla", async () => {
+    prisma.issue.findUnique.mockResolvedValue(null);
+    await expect(
+      createTask("p1", { ...parseCreateTaskInput(validTask)!, issueNumber: 9 }, null),
+    ).rejects.toMatchObject({ status: 422, code: "INVALID_ISSUE" });
+    expect(prisma.task.create).not.toHaveBeenCalled();
+  });
+
+  it("sin issueNumber la tarea se crea sin vínculo", async () => {
+    await createTask("p1", parseCreateTaskInput(validTask)!, null);
+    expect(prisma.issue.findUnique).not.toHaveBeenCalled();
+    expect(prisma.task.create.mock.calls[0][0].data).not.toHaveProperty("issues");
+  });
+
+  it("vincular exige el labelsToken", async () => {
+    await expect(setIssueLink("p1", "task", "T-02", 3, true, null)).rejects.toMatchObject({ status: 428 });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("vincula por id y marca actividad en el issue", async () => {
+    await expect(setIssueLink("p1", "task", "T-02", 3, true, token)).resolves.not.toBeNull();
+    expect(prisma.task.update).toHaveBeenCalledWith({ where: { id: "tb" }, data: { issues: { connect: { id: "i3" } } } });
+    expect(prisma.issue.update).toHaveBeenCalledWith({
+      where: { id: "i3" },
+      data: { lastActivityAt: expect.any(Date) },
+    });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("desvincular una feature usa disconnect", async () => {
+    await setIssueLink("p1", "feature", "F-01", 3, false, token);
+    expect(prisma.feature.update).toHaveBeenCalledWith({
+      where: { id: "fa" },
+      data: { issues: { disconnect: { id: "i3" } } },
+    });
+    expect(prisma.task.update).not.toHaveBeenCalled();
+  });
+
+  it("null si no existe el label o el issue", async () => {
+    await expect(setIssueLink("p1", "task", "T-09", 3, true, token)).resolves.toBeNull();
+    prisma.issue.findUnique.mockResolvedValue(null);
+    await expect(setIssueLink("p1", "task", "T-01", 99, true, token)).resolves.toBeNull();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
 

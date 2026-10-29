@@ -35,6 +35,7 @@ function taskView(task: ProjectTask) {
     active: task.active,
     description: task.description,
     assignee: task.assignee ? { id: task.assignee.id, name: task.assignee.name } : null,
+    issues: task.issues,
   };
 }
 
@@ -57,6 +58,7 @@ function projectView(project: ProjectDetail) {
       status: f.statusValue,
       description: f.description,
       taskCount: f.taskCount,
+      issues: f.issues,
     })),
     tasks: project.tasks.map(taskView),
     documents: project.docs.map((d) => ({ docId: d.key, name: d.name, filled: d.filled, author: d.author, date: d.date })),
@@ -162,6 +164,13 @@ export function registerProjectTools(server: McpServer): void {
         column: z.enum(KanbanColumn).default(KanbanColumn.PENDIENTE),
         featureId: z.string().optional().describe("Label de la feature (F-01). Requiere labelsToken."),
         assigneeId: z.string().optional().describe("id del miembro asignado"),
+        description: z.string().optional(),
+        issueNumber: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Número del issue del que sale la tarea (el 12 de #12); queda vinculada a él"),
         labelsToken: labelsToken.optional(),
       }),
     },
@@ -176,6 +185,8 @@ export function registerProjectTools(server: McpServer): void {
           column: args.column,
           featureId: args.featureId ?? null,
           assigneeId: args.assigneeId ?? null,
+          description: args.description ?? null,
+          issueNumber: args.issueNumber ?? null,
         });
         if (!input) return fail("Datos inválidos");
 

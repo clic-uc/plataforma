@@ -317,6 +317,14 @@ export function KanbanTabIcon({ size = 11, className }: IconProps) {
   );
 }
 
+export function IssuesTabIcon({ size = 11, className }: IconProps) {
+  return (
+    <svg width={size} height={size} fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" className={className}>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
 // Marca registrada de GitHub: path relleno, a diferencia de los iconos de línea
 // del resto del archivo. No adaptar al estilo propio.
 export function GithubIcon({ size = 15, className }: IconProps) {

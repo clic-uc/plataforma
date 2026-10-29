@@ -52,6 +52,8 @@ export interface ProjectFeature {
   statusValue: FeatureStatus;
   description: string | null;
   taskCount: number;
+  /** Números de los issues vinculados (#12), de menor a mayor. */
+  issues: number[];
 }
 
 export interface ProjectTask {
@@ -66,6 +68,8 @@ export interface ProjectTask {
   columnValue: KanbanColumn;
   active: boolean;
   description: string | null;
+  /** Números de los issues vinculados (#12), de menor a mayor. */
+  issues: number[];
 }
 
 /** Tarea asignada al miembro actual, con el proyecto al que pertenece. */
@@ -147,6 +151,9 @@ export interface CreateProjectInput {
 export interface CreateFeatureInput {
   name: string;
   priority: Priority;
+  description: string | null;
+  /** Issue del que sale; queda vinculado. */
+  issueNumber: number | null;
 }
 
 export interface UpdateFeatureInput {
@@ -156,18 +163,23 @@ export interface UpdateFeatureInput {
   description: string | null;
 }
 
-export interface CreateTaskInput {
+interface TaskFields {
   featureId: string | null;
   /** Member.id; tiene que ser parte del equipo del proyecto. */
   assigneeId: string | null;
   name: string;
   type: TaskType;
   column: KanbanColumn;
+  description: string | null;
 }
 
-export interface UpdateTaskInput extends CreateTaskInput {
+export interface CreateTaskInput extends TaskFields {
+  /** Issue del que sale; queda vinculado. */
+  issueNumber: number | null;
+}
+
+export interface UpdateTaskInput extends TaskFields {
   active: boolean;
-  description: string | null;
 }
 
 export interface CreateActaInput {
@@ -200,6 +212,8 @@ export const projectsKeys = {
   doc: (id: string, docId: string) => [...projectsKeys.all, "detail", id, "doc", docId] as const,
   docVersions: (id: string, docId: string) => [...projectsKeys.doc(id, docId), "versions"] as const,
   docComments: (id: string, docId: string) => [...projectsKeys.doc(id, docId), "comments"] as const,
+  issues: (id: string) => [...projectsKeys.detail(id), "issues"] as const,
+  issue: (id: string, number: number) => [...projectsKeys.issues(id), number] as const,
 };
 
 async function fetchProjects(): Promise<ProjectListItem[]> {
@@ -360,6 +374,17 @@ async function deleteTaskRequest(id: string, taskId: string, labelsToken: string
     headers: labelsHeaders(labelsToken),
   });
   await assertOk(res, "No se pudo eliminar la tarea");
+  return res.json();
+}
+
+/** Vincula (PUT) o desvincula (DELETE) una feature o tarea con un issue del proyecto. */
+async function issueLinkRequest(id: string, variables: IssueLinkVariables): Promise<ProjectDetail> {
+  const { kind, label, issueNumber, linked, labelsToken } = variables;
+  const res = await fetch(`/api/projects/${id}/${kind}/${label}/issues/${issueNumber}`, {
+    method: linked ? "PUT" : "DELETE",
+    headers: labelsHeaders(labelsToken),
+  });
+  await assertOk(res, linked ? "No se pudo vincular el issue" : "No se pudo desvincular el issue");
   return res.json();
 }
 
@@ -612,6 +637,29 @@ export function useDeleteTask(id: string) {
     onError: onLabelsError,
     onSuccess: (updated) => {
       queryClient.setQueryData(key, updated);
+    },
+  });
+}
+
+export interface IssueLinkVariables {
+  kind: "features" | "tasks";
+  /** Label de la feature o tarea (F-01, T-01). */
+  label: string;
+  issueNumber: number;
+  /** true vincula, false desvincula. */
+  linked: boolean;
+  labelsToken: string;
+}
+
+export function useIssueLink(id: string) {
+  const { queryClient, key, onLabelsError } = useLabelledMutationSupport(id);
+  return useMutation({
+    mutationFn: (variables: IssueLinkVariables) => issueLinkRequest(id, variables),
+    onError: onLabelsError,
+    onSuccess: (updated) => {
+      queryClient.setQueryData(key, updated);
+      // Vincular cuenta como actividad del issue: cambia el orden de la lista.
+      queryClient.invalidateQueries({ queryKey: projectsKeys.issues(id), exact: true });
     },
   });
 }

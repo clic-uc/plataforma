@@ -80,6 +80,30 @@ function toTeam(members: Prisma.ProjectMemberGetPayload<{ include: typeof teamIn
   }));
 }
 
+const issueNumbersArgs = {
+  select: { number: true },
+  orderBy: { number: "asc" },
+} satisfies Prisma.Feature$issuesArgs;
+
+/**
+ * Campo opcional issueNumber de los body de creación: null si no viene, undefined si
+ * es inválido (y con él todo el body).
+ */
+function parseOptionalIssueNumber(value: unknown): number | null | undefined {
+  if (value === undefined || value === null) return null;
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+/** id del issue #number del proyecto, para vincularlo al crear. 422 si no existe. */
+async function requireIssueId(projectId: string, number: number): Promise<string> {
+  const issue = await prisma.issue.findUnique({
+    where: { projectId_number: { projectId, number } },
+    select: { id: true },
+  });
+  if (!issue) throw new ApiError(422, "INVALID_ISSUE", `El issue #${number} no existe en este proyecto`);
+  return issue.id;
+}
+
 // ─── Labels ───
 //
 // El porqué del labelsToken está en lib/api/labels.ts.
@@ -169,8 +193,11 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
     where: { id },
     include: {
       members: teamInclude,
-      features: { orderBy: { label: "asc" } },
-      tasks: { orderBy: { label: "asc" }, include: { assignee: { select: { id: true, name: true } } } },
+      features: { orderBy: { label: "asc" }, include: { issues: issueNumbersArgs } },
+      tasks: {
+        orderBy: { label: "asc" },
+        include: { assignee: { select: { id: true, name: true } }, issues: issueNumbersArgs },
+      },
       documents: { include: { author: true } },
       actas: { orderBy: { date: "asc" } },
     },
@@ -224,6 +251,7 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
       statusValue: feature.status,
       description: feature.description,
       taskCount: taskCountByFeatureId.get(feature.id) ?? 0,
+      issues: feature.issues.map((issue) => issue.number),
     })),
     tasks: project.tasks.map((task) => ({
       id: task.label,
@@ -239,6 +267,7 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
       columnValue: task.column,
       active: task.active,
       description: task.description,
+      issues: task.issues.map((issue) => issue.number),
     })),
   };
 }
@@ -314,6 +343,8 @@ export async function deleteProject(id: string): Promise<boolean> {
 
   await prisma.$transaction([
     prisma.timeEntry.deleteMany({ where: { projectId: id } }),
+    // Sus comentarios caen en cascada.
+    prisma.issue.deleteMany({ where: { projectId: id } }),
     prisma.task.deleteMany({ where: { projectId: id } }),
     prisma.feature.deleteMany({ where: { projectId: id } }),
     prisma.document.deleteMany({ where: { projectId: id } }),
@@ -611,7 +642,12 @@ export function parseCreateFeatureInput(body: unknown): CreateFeatureInput | nul
   const priority = typeof b.priority === "string" ? b.priority : "";
   if (!(Object.values(Priority) as string[]).includes(priority)) return null;
 
-  return { name, priority: priority as Priority };
+  const description = typeof b.description === "string" ? b.description.trim() || null : null;
+
+  const issueNumber = parseOptionalIssueNumber(b.issueNumber);
+  if (issueNumber === undefined) return null;
+
+  return { name, priority: priority as Priority, description, issueNumber };
 }
 
 async function renumberFeatureLabels(tx: Prisma.TransactionClient, projectId: string): Promise<void> {
@@ -632,11 +668,21 @@ export async function createFeature(projectId: string, input: CreateFeatureInput
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
   if (!project) return null;
 
+  const issueId = input.issueNumber ? await requireIssueId(projectId, input.issueNumber) : null;
+
   const existing = await prisma.feature.findMany({ where: { projectId }, select: { label: true } });
   const label = nextLabel("F", existing.map((f) => f.label));
 
   await prisma.feature.create({
-    data: { projectId, label, name: input.name, priority: input.priority, status: "PENDIENTE" },
+    data: {
+      projectId,
+      label,
+      name: input.name,
+      priority: input.priority,
+      status: "PENDIENTE",
+      description: input.description,
+      ...(issueId && { issues: { connect: { id: issueId } } }),
+    },
   });
 
   return getProject(projectId);
@@ -720,7 +766,12 @@ export function parseCreateTaskInput(body: unknown): CreateTaskInput | null {
   const column = typeof b.column === "string" ? b.column : "";
   if (!(Object.values(KanbanColumn) as string[]).includes(column)) return null;
 
-  return { featureId, assigneeId, name, type: type as TaskType, column: column as KanbanColumn };
+  const description = typeof b.description === "string" ? b.description.trim() || null : null;
+
+  const issueNumber = parseOptionalIssueNumber(b.issueNumber);
+  if (issueNumber === undefined) return null;
+
+  return { featureId, assigneeId, name, type: type as TaskType, column: column as KanbanColumn, description, issueNumber };
 }
 
 async function renumberTaskLabels(tx: Prisma.TransactionClient, projectId: string): Promise<void> {
@@ -753,6 +804,7 @@ export async function createTask(
     featureId = resolved;
   }
   await assertAssignable(projectId, input.assigneeId);
+  const issueId = input.issueNumber ? await requireIssueId(projectId, input.issueNumber) : null;
 
   const existing = await prisma.task.findMany({
     where: { projectId },
@@ -770,6 +822,8 @@ export async function createTask(
       type: input.type,
       active: true,
       column: input.column,
+      description: input.description,
+      ...(issueId && { issues: { connect: { id: issueId } } }),
     },
   });
 
@@ -780,11 +834,13 @@ export function parseUpdateTaskInput(body: unknown): UpdateTaskInput | null {
   const base = parseCreateTaskInput(body);
   if (!base) return null;
 
+  // El vínculo con issues no se edita por PATCH: tiene su propia ruta (setIssueLink).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { issueNumber, ...fields } = base;
   const b = body as Record<string, unknown>;
   const active = typeof b.active === "boolean" ? b.active : true;
-  const description = typeof b.description === "string" ? b.description.trim() || null : null;
 
-  return { ...base, active, description };
+  return { ...fields, active };
 }
 
 export async function updateTask(
@@ -840,6 +896,49 @@ export async function deleteTask(projectId: string, label: string, token: string
     return true;
   });
   if (!deleted) return null;
+
+  return getProject(projectId);
+}
+
+// ─── Vínculos con issues ───
+//
+// Muchos a muchos: una feature o tarea puede responder a varios issues y un issue
+// originar varias. La feature o tarea se direcciona por label, así que exige el
+// labelsToken como el resto; el issue va por número, que no se renumera.
+
+/**
+ * Vincula (linked = true) o desvincula una feature o tarea con el issue #issueNumber
+ * del mismo proyecto. Vincular algo ya vinculado, o desvincular algo que no lo está,
+ * no cambia nada. null si no existe la feature/tarea o el issue.
+ */
+export async function setIssueLink(
+  projectId: string,
+  kind: "feature" | "task",
+  label: string,
+  issueNumber: number,
+  linked: boolean,
+  token: string | null,
+): Promise<ProjectDetail | null> {
+  await requireMember();
+
+  const labels = await resolveLabels(projectId, token);
+  const id = kind === "feature" ? labels.featureId(label) : labels.taskId(label);
+  if (!id) return null;
+
+  const issue = await prisma.issue.findUnique({
+    where: { projectId_number: { projectId, number: issueNumber } },
+    select: { id: true },
+  });
+  if (!issue) return null;
+
+  const issues = linked ? { connect: { id: issue.id } } : { disconnect: { id: issue.id } };
+  await prisma.$transaction([
+    kind === "feature"
+      ? prisma.feature.update({ where: { id }, data: { issues } })
+      : prisma.task.update({ where: { id }, data: { issues } }),
+    // Vincular o desvincular cuenta como actividad del issue.
+    prisma.issue.update({ where: { id: issue.id }, data: { lastActivityAt: new Date() } }),
+  ]);
 
   return getProject(projectId);
 }

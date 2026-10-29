@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { TaskType } from "@/generated/prisma/enums";
 import { Modal } from "@/components/ui/Modal";
+import { MarkdownToolbar, useMarkdownEditor } from "@/components/ui/MarkdownToolbar";
 import { TASK_TYPE_OPTIONS } from "@/lib/api/status";
 import { errorMessage } from "@/lib/api/http";
 import { useCreateTask, type ProjectFeature, type ProjectTeamMember } from "@/lib/api/projects";
@@ -12,20 +13,28 @@ export function CreateTaskModal({
   features,
   team,
   labelsToken: openedLabelsToken,
+  initial,
+  issueNumber,
   onClose,
 }: {
   projectId: string;
   features: ProjectFeature[];
   team: ProjectTeamMember[];
   labelsToken: string;
+  /** Valores con que abre el formulario, p. ej. al crear la tarea desde un issue. */
+  initial?: { name: string; description: string };
+  /** Issue del que sale la tarea; queda vinculada a él. */
+  issueNumber?: number;
   onClose: () => void;
 }) {
   // Se fija al abrir el modal: los labels que se editan acá salen de ese snapshot.
   const [labelsToken] = useState(openedLabelsToken);
   const [featureId, setFeatureId] = useState(features[0]?.id ?? "");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initial?.name ?? "");
   const [type, setType] = useState<TaskType>("FEATURE");
   const [assigneeId, setAssigneeId] = useState("");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const { textareaRef, format, onKeyDown } = useMarkdownEditor(description, setDescription);
 
   const mutation = useCreateTask(projectId);
 
@@ -33,7 +42,15 @@ export function CreateTaskModal({
     e.preventDefault();
     mutation.mutate(
       {
-        input: { featureId: featureId || null, assigneeId: assigneeId || null, name, type, column: "PENDIENTE" },
+        input: {
+          featureId: featureId || null,
+          assigneeId: assigneeId || null,
+          name,
+          type,
+          column: "PENDIENTE",
+          description: description.trim() || null,
+          issueNumber: issueNumber ?? null,
+        },
         labelsToken,
       },
       { onSuccess: onClose },
@@ -84,6 +101,21 @@ export function CreateTaskModal({
           {team.length === 0 && (
             <div className="field-hint">Agrega personas al equipo del proyecto para poder asignar tareas.</div>
           )}
+        </div>
+
+        <div className="form-field">
+          <div className="f-label">Descripción</div>
+          <div className="md-toolbar-row">
+            <MarkdownToolbar onFormat={format} />
+          </div>
+          <textarea
+            ref={textareaRef}
+            className="field-textarea"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Opcional"
+          />
         </div>
 
         {mutation.isError && (

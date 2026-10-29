@@ -66,9 +66,9 @@ one `useState` per field. Follow those conventions rather than introducing depen
 
 Each domain has two files in `src/lib/api/`:
 
-- `projects.ts`, `members.ts`, `events.ts`, `tiempo.ts` — client-safe. Types, `fetch()` wrappers,
+- `projects.ts`, `members.ts`, `events.ts`, `tiempo.ts`, `issues.ts` — client-safe. Types, `fetch()` wrappers,
   TanStack Query hooks and query-key factories.
-- `projects.server.ts`, `members.server.ts`, `events.server.ts`, `tiempo.server.ts` — the **only**
+- `projects.server.ts`, `members.server.ts`, `events.server.ts`, `tiempo.server.ts`, `issues.server.ts` — the **only**
   files in `src/lib/api` that import `@/lib/prisma` (besides `src/lib/auth*`). Prisma queries plus
   mapping to view models. All carry `import "server-only"`.
 
@@ -229,7 +229,9 @@ Weekly StandUp, this week's hours chart and the hours history.
   already existed is valid Markdown. The editor (`DocEditorView`) is a `textarea` with "Escribir /
   Vista previa" tabs, and opens on the preview unless the document is empty. The toolbar
   (B/I/H1/H2/list/table/code, Ctrl+B, Ctrl+I) inserts the syntax, and Enter inside a list opens the
-  next item; that logic is pure and lives in `src/lib/markdown.ts`. The preview uses `react-markdown` +
+  next item; that logic is pure and lives in `src/lib/markdown.ts`. The toolbar and its keyboard
+  handling are `MarkdownToolbar` / `useMarkdownEditor` (`src/components/ui/MarkdownToolbar.tsx`), shared
+  with issues, their comments and the descriptions of features and tasks. The preview uses `react-markdown` +
   `remark-gfm` (`src/components/ui/Markdown.tsx`), which does not render raw HTML.
   - A WYSIWYG editor (Tiptap/ProseMirror) was ruled out: it forced `content` into JSON, migrating what
     exists and adding a heavy dependency; with plain text the version diff is trivial.
@@ -275,14 +277,18 @@ Weekly StandUp, this week's hours chart and the hours history.
   - Comments are not versioned: a comment tied to text that only exists in an unsaved change stays
     there if it is not saved.
   - Comments are made only from the preview: text cannot be highlighted in the `textarea`.
-- **The metadata (type, author, date) is read-only on purpose**: the type is the project's slot, and
-  author/date describe the creation. Who edited and when is in the history.
+- **The editor shows no metadata card** (type, project, author, creation date): it was visually
+  redundant with the title and breadcrumb. The API still returns those fields (`get_document` uses
+  them). Who edited and when is in the version history.
+- **Creating an acta opens it** in the editor right away.
 
 ### Features and tasks
 
 - **`Task.done` was removed from the schema** (migration `20260730130000_task_done_from_column`): a
   task counts as done when `column === LISTO`, not through a manual toggle — the checkbox was removed
   from the Tareas tab on purpose, so a task is only finished after living the whole kanban cycle.
+- **Descriptions of features and tasks are Markdown**: the detail modals show them rendered and
+  "Editar" opens the toolbar (`DescriptionEditor`); creation modals have the toolbar too.
 - Kanban drag & drop uses native HTML5 DnD, with optimistic updates and rollback (`useMoveTask`).
   `EditTaskModal` still lets you change the column by hand.
 - **Task assignment**: any member can assign, but only people on the project's team
@@ -303,6 +309,43 @@ Weekly StandUp, this week's hours chart and the hours history.
   creation modal allows "Sin feature", and `createTask` / `getProject` no longer depend on the feature
   to know which project a task belongs to. The label unique went from `[featureId, label]` to
   `[projectId, label]`.
+
+### Issues
+
+Tickets of a project with a conversation thread, to discuss something before turning it into
+features or tasks. `Issue` + `IssueComment` (migration `20261028130000_issues`). Listed in the
+"Issues" tab of the project (the counter shows the open ones); each issue has its own page at
+`/proyectos/[projectId]/issues/[issueNumber]`.
+
+- **Numbered `#1, #2…` per project, never renumbered** (`@@unique([projectId, number])`), unlike
+  task and feature labels: issues are closed rather than deleted and get quoted in conversations, so
+  the number must be stable. That is why there is no `X-Labels-Token` here. The next number is
+  max + 1; if two are created at once the unique rejects the second and `createIssue` rereads and
+  retries.
+- **Linked to features and tasks, many to many** (implicit tables `_IssueFeatures` / `_IssueTasks`,
+  migration `20261028140000_issue_links`): a task can answer several issues and an issue can give rise
+  to several tasks. Both sides must be in the same project (checked in code). "Crear tarea" / "Crear
+  feature" on the issue page create it already linked (`issueNumber` in the create body); the
+  "Vinculadas" panel links and unlinks existing ones (`PUT`/`DELETE
+  /api/projects/[id]/{features|tasks}/[label]/issues/[number]`, `setIssueLink`). Those address the
+  feature or task by label, so they require `X-Labels-Token` like every label mutation; the issue
+  goes by number. `ProjectTask.issues` / `ProjectFeature.issues` carry the linked numbers, and the
+  task/feature detail modals link back to them. Deleting either side removes the link. Linking or
+  unlinking counts as issue activity.
+- **Status**: `ABIERTO` / `CERRADO`. Closing requires a reason (`RESUELTO`, `DESCARTADO`,
+  `DUPLICADO`); reopening clears it. A CHECK in the migration keeps `closeReason`/`closedAt` set if
+  and only if it is closed. Type is `BUG` / `IDEA` / `PREGUNTA` (an enum, not free labels).
+- **Permissions**: any approved member opens, comments, closes and reopens issues on any project.
+  Title, body and type are edited by the author or `COORDINACION`. Each comment is edited only by its
+  author (`editedAt` shows "editado"), not even by coordination. Deleting an issue is coordination
+  only and takes its thread; comments cannot be deleted. Closing is the normal way out.
+- **Thread is append-only**, so there are no concurrency tokens: the issue body is last-write-wins
+  like events, and comments never overwrite each other.
+- Body and comments are Markdown, rendered with the same `Markdown` component as documents.
+- The list is ordered by `lastActivityAt` (creation, edit, comment, close or reopen).
+- `Issue.authorId`, `closedById` and `IssueComment.authorId` are `ON DELETE SET NULL`: deleting a
+  member keeps what they wrote. Deleting a project deletes its issues.
+- No assignee, mentions, reactions or notifications yet; an issue belongs to exactly one project.
 
 ### MCP (`/api/mcp`)
 
@@ -329,7 +372,8 @@ Claude Code) or any MCP client. Streamable HTTP, stateless.
   Names are English `snake_case`, descriptions Spanish.
 - **Scope**: read projects, my tasks, calendar, members, my hours and StandUp; submit the StandUp;
   log, edit and delete own hours; create and edit tasks; create events; read and edit documents and
-  actas. Coordination actions (projects, teams, approvals, roles) and every other delete are left out
+  actas; list, read, open, comment, close and reopen issues (by number, no token); link and unlink them to
+  features and tasks (labelsToken), and create a task already linked (`issueNumber`). Coordination actions (projects, teams, approvals, roles) and every other delete are left out
   on purpose: rare, and some cannot be undone.
 - **Tasks go by label with `labelsToken`**, like the UI: `get_project` returns it and `update_task` /
   `create_task` (with a feature) require it. `update_task` takes partial fields and fills the rest
@@ -355,7 +399,7 @@ Claude Code) or any MCP client. Streamable HTTP, stateless.
 ### Authorization scope
 
 - **Only projects are told apart.** Only `COORDINACION` can create, edit or delete projects and
-  compose their team. Everything else — tasks, features, actas, documents, comments — can be done by
+  compose their team. Everything else — tasks, features, actas, documents, comments, issues — can be done by
   any approved member on **any** project, whether or not they are on it. `ProjectMember` only restricts
   who a task can be assigned to.
 - **The UI hides coordination actions** (new/edit/delete project, managing the team) through

@@ -71,3 +71,7 @@ en `CLAUDE.md` (sección "Domain behaviour").
   recupera.
 - **Auditoría de acciones.** `requireMember()` devuelve el `Member` que actúa, pero eso no se registra
   en ninguna parte salvo `Document.authorId`, `DocVersion.authorId` y `DocComment.authorId`.
+
+## Tailwind
+
+- Migrar el CSS de `globals.css` a Tailwind de forma gradual: ver [docs/tailwind-migration.md](tailwind-migration.md).
