@@ -76,6 +76,7 @@ describe("parseCreateTaskInput / parseUpdateTaskInput", () => {
       name: "Login",
       type: "FEATURE",
       column: "PENDIENTE",
+      description: null,
     });
   });
 

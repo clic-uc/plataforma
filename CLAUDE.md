@@ -230,8 +230,8 @@ Weekly StandUp, this week's hours chart and the hours history.
   Vista previa" tabs, and opens on the preview unless the document is empty. The toolbar
   (B/I/H1/H2/list/table/code, Ctrl+B, Ctrl+I) inserts the syntax, and Enter inside a list opens the
   next item; that logic is pure and lives in `src/lib/markdown.ts`. The toolbar and its keyboard
-  handling are `MarkdownToolbar` / `useMarkdownEditor` (`src/components/ui/MarkdownToolbar.tsx`), so
-  other Markdown fields can reuse them. The preview uses `react-markdown` +
+  handling are `MarkdownToolbar` / `useMarkdownEditor` (`src/components/ui/MarkdownToolbar.tsx`), shared
+  with the descriptions of features and tasks. The preview uses `react-markdown` +
   `remark-gfm` (`src/components/ui/Markdown.tsx`), which does not render raw HTML.
   - A WYSIWYG editor (Tiptap/ProseMirror) was ruled out: it forced `content` into JSON, migrating what
     exists and adding a heavy dependency; with plain text the version diff is trivial.
@@ -287,6 +287,8 @@ Weekly StandUp, this week's hours chart and the hours history.
 - **`Task.done` was removed from the schema** (migration `20260730130000_task_done_from_column`): a
   task counts as done when `column === LISTO`, not through a manual toggle — the checkbox was removed
   from the Tareas tab on purpose, so a task is only finished after living the whole kanban cycle.
+- **Descriptions of features and tasks are Markdown**: the detail modals show them rendered and
+  "Editar" opens the toolbar (`DescriptionEditor`); creation modals have the toolbar too.
 - Kanban drag & drop uses native HTML5 DnD, with optimistic updates and rollback (`useMoveTask`).
   `EditTaskModal` still lets you change the column by hand.
 - **Task assignment**: any member can assign, but only people on the project's team

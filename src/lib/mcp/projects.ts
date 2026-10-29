@@ -162,6 +162,7 @@ export function registerProjectTools(server: McpServer): void {
         column: z.enum(KanbanColumn).default(KanbanColumn.PENDIENTE),
         featureId: z.string().optional().describe("Label de la feature (F-01). Requiere labelsToken."),
         assigneeId: z.string().optional().describe("id del miembro asignado"),
+        description: z.string().optional(),
         labelsToken: labelsToken.optional(),
       }),
     },
@@ -176,6 +177,7 @@ export function registerProjectTools(server: McpServer): void {
           column: args.column,
           featureId: args.featureId ?? null,
           assigneeId: args.assigneeId ?? null,
+          description: args.description ?? null,
         });
         if (!input) return fail("Datos inválidos");
 
