@@ -10,14 +10,20 @@ import { useCreateFeature } from "@/lib/api/projects";
 
 export function CreateFeatureModal({
   projectId,
+  initial,
+  issueNumber,
   onClose,
 }: {
   projectId: string;
+  /** Valores con que abre el formulario, p. ej. al crear la feature desde un issue. */
+  initial?: { name: string; description: string };
+  /** Issue del que sale la feature; queda vinculada a él. */
+  issueNumber?: number;
   onClose: () => void;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initial?.name ?? "");
   const [priority, setPriority] = useState<Priority>("MEDIA");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(initial?.description ?? "");
   const { textareaRef, format, onKeyDown } = useMarkdownEditor(description, setDescription);
 
   const mutation = useCreateFeature(projectId);
@@ -25,7 +31,7 @@ export function CreateFeatureModal({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     mutation.mutate(
-      { name, priority, description: description.trim() || null },
+      { name, priority, description: description.trim() || null, issueNumber: issueNumber ?? null },
       { onSuccess: onClose },
     );
   }
