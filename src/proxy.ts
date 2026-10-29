@@ -30,6 +30,7 @@ export function proxy(request: NextRequest) {
 export const config = {
   // /api excluido: esas rutas resuelven su propia auth y responden 401/403 JSON.
   // Un 307 desde aquí sería seguido por fetch(), que recibiría el HTML de /login
-  // con status 200 y assertOk() nunca vería el error.
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  // con status 200 y assertOk() nunca vería el error. /.well-known es la metadata
+  // OAuth del MCP, que los clientes leen sin sesión.
+  matcher: ["/((?!api|\\.well-known|_next/static|_next/image|favicon.ico).*)"],
 };

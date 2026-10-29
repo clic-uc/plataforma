@@ -68,6 +68,18 @@ export interface ProjectTask {
   description: string | null;
 }
 
+/** Tarea asignada al miembro actual, con el proyecto al que pertenece. */
+export interface AssignedTask {
+  project: { id: string; name: string };
+  id: string;
+  featureId: string | null;
+  name: string;
+  typeValue: TaskType;
+  columnValue: KanbanColumn;
+  active: boolean;
+  description: string | null;
+}
+
 export interface ProjectDetail extends ProjectListItem {
   /**
    * Huella de qué entidad hay detrás de cada label (F-01, T-01) en este snapshot.

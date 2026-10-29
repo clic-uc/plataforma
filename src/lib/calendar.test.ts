@@ -6,6 +6,7 @@ import {
   eventDaySpan,
   eventsByDay,
   formatEventWhen,
+  instantToZonedTime,
   isAllDayRow,
   isDayKey,
   isoToAllDay,
@@ -22,6 +23,7 @@ import {
   weekRange,
   weekTitle,
   weeklyOccurrences,
+  zonedTimeToInstant,
 } from "@/lib/calendar";
 
 // Todo en la zona de Chile: UTC−3 en verano y UTC−4 en invierno. Es donde un
@@ -131,6 +133,18 @@ describe("zona horaria", () => {
     expect(addDaysInZone(new Date("2026-09-01T22:00:00Z"), 14, "America/Santiago").toISOString()).toBe(
       "2026-09-15T21:00:00.000Z",
     );
+  });
+
+  it("zonedTimeToInstant aplica el offset de Chile vigente ese día", () => {
+    expect(zonedTimeToInstant("2026-01-15", "10:00").toISOString()).toBe("2026-01-15T13:00:00.000Z");
+    expect(zonedTimeToInstant("2026-07-15", "10:00").toISOString()).toBe("2026-07-15T14:00:00.000Z");
+    // El día del cambio de abril, después del cambio.
+    expect(zonedTimeToInstant("2026-04-05", "18:00").toISOString()).toBe("2026-04-05T22:00:00.000Z");
+  });
+
+  it("instantToZonedTime es el inverso", () => {
+    expect(instantToZonedTime(new Date("2026-07-15T14:00:00Z"))).toEqual({ date: "2026-07-15", time: "10:00" });
+    expect(instantToZonedTime(new Date("2026-10-14T01:30:00Z"))).toEqual({ date: "2026-10-13", time: "22:30" });
   });
 });
 

@@ -41,6 +41,18 @@ en `CLAUDE.md` (sección "Domain behaviour").
 
 - "Compartir enlace" en el editor no hace nada.
 
+## MCP
+
+- **"Apps conectadas" en el perfil**: ver y revocar los clientes MCP autorizados. Hoy se revoca
+  borrando las filas de `OauthAccessToken` (o esperando que venza el refresh token, 7 días).
+- **Limpieza de clientes registrados.** El registro dinámico es anónimo, así que cada cliente que se
+  registra deja una fila en `OauthApplication` aunque nunca llegue a autorizarse.
+- **CIMD** (Client ID Metadata Documents): la spec de MCP 2026-07-28 lo prefiere al registro
+  dinámico. El plugin de Better Auth solo hace registro dinámico; los clientes actuales lo siguen
+  aceptando.
+- Tools que quedaron fuera de la primera versión: acciones de coordinación, borrar tareas o features,
+  editar o borrar eventos, crear actas, comentarios de documentos.
+
 ## Autenticación y permisos
 
 - **Acotar la autorización por proyecto.** Hoy solo se distinguen los proyectos (únicamente

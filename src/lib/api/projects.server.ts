@@ -30,6 +30,7 @@ import {
 } from "@/lib/api/status";
 import type {
   AddProjectMemberInput,
+  AssignedTask,
   CreateActaInput,
   CreateDocCommentInput,
   CreateFeatureInput,
@@ -240,6 +241,28 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
       description: task.description,
     })),
   };
+}
+
+/** Tareas asignadas al miembro actual en todos los proyectos. Sin includeDone, omite las de LISTO. */
+export async function getAssignedTasks(includeDone: boolean): Promise<AssignedTask[]> {
+  const member = await requireMember();
+
+  const tasks = await prisma.task.findMany({
+    where: { assigneeId: member.id, ...(includeDone ? {} : { column: { not: KanbanColumn.LISTO } }) },
+    orderBy: [{ project: { name: "asc" } }, { label: "asc" }],
+    include: { project: { select: { id: true, name: true } }, feature: { select: { label: true } } },
+  });
+
+  return tasks.map((task) => ({
+    project: task.project,
+    id: task.label,
+    featureId: task.feature?.label ?? null,
+    name: task.name,
+    typeValue: task.type,
+    columnValue: task.column,
+    active: task.active,
+    description: task.description,
+  }));
 }
 
 export function parseCreateProjectInput(body: unknown): CreateProjectInput | null {

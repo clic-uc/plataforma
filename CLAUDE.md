@@ -49,9 +49,11 @@ it sets are placeholders.
 - **Better Auth** with GitHub OAuth
 - **Tailwind CSS v4**, but the UI is overwhelmingly hand-written CSS in `src/app/globals.css`
 - **Barlow / Barlow Condensed / Space Mono** fonts, loaded via `next/font/google`
+- **`mcp-handler` 2** + **`@modelcontextprotocol/server` 2** for the MCP server (`/api/mcp`)
 
-There is no component library (no shadcn/ui, no Radix) and no form library (no react-hook-form, no
-zod). Primitives are hand-written in `src/components/ui/`; forms are native `<form onSubmit>` with
+There is no component library (no shadcn/ui, no Radix) and no form library (no react-hook-form).
+`zod` is a dependency only because the MCP SDK takes tool input schemas in it: use it in
+`src/lib/mcp/`, not for forms or API validation, which stay with the hand-written `parse*Input`. Primitives are hand-written in `src/components/ui/`; forms are native `<form onSubmit>` with
 one `useState` per field. Follow those conventions rather than introducing dependencies.
 
 ## Path alias
@@ -91,6 +93,9 @@ Domain behaviour › Members).
   fields Better Auth does not carry in the session — and so a role change takes effect without
   signing in again.
 - `requireMember()` / `requireCoordinacion()` — throw `AuthError`.
+- `runAsMember(id, fn)` — makes `getCurrentMember()` return that member instead of reading the
+  session cookie, for the duration of `fn` (an `AsyncLocalStorage`). Only the MCP route uses it, so an
+  OAuth token is accepted at `/api/mcp` and nowhere else in `/api`.
 
 Two rules worth knowing before changing anything here:
 
@@ -298,6 +303,54 @@ Weekly StandUp, this week's hours chart and the hours history.
   creation modal allows "Sin feature", and `createTask` / `getProject` no longer depend on the feature
   to know which project a task belongs to. The label unique went from `[featureId, label]` to
   `[projectId, label]`.
+
+### MCP (`/api/mcp`)
+
+An MCP server in the same deploy, so members can use the platform from Claude (claude.ai, Desktop,
+Claude Code) or any MCP client. Streamable HTTP, stateless.
+
+- **Auth is OAuth, served by Better Auth's `mcp` plugin** (`src/lib/auth.ts`). Clients register
+  themselves (dynamic client registration, endpoints under `/api/auth/mcp/*`), the person signs in
+  with GitHub at `/login` as usual, and approves the connection at `/autorizar`. Tokens live in
+  `OauthAccessToken` (migration `20261028120000_mcp_oauth`); deleting a member deletes them.
+  - **Consent is forced**: the plugin only asks when the client sends `prompt=consent`, and MCP
+    clients do not, so a `hooks.before` in `src/lib/auth.ts` adds it. Without it anyone could register
+    a client and connect an account through a link. The consent page shows the client's redirect
+    hosts, since its name is self-declared.
+  - The discovery metadata lives at `/.well-known/oauth-authorization-server` and
+    `/.well-known/oauth-protected-resource[/api/mcp]`, excluded from `src/proxy.ts`. The issuer is
+    `BETTER_AUTH_URL`, which must be the public URL of the deploy (also set as `baseURL` explicitly:
+    the plugin reads it from the options, not the env).
+- **Who**: approved members who are not `ROOKIE` (`requireMcpAccess()`, checked once per request in
+  the route). A pending or Rookie account can get a token by signing in but gets 403 using it.
+- **Tools call the same `.server.ts` functions as the API** inside `runAsMember`, so permissions and
+  domain rules are identical; tool inputs go through the same `parse*Input` functions. Tools live in
+  `src/lib/mcp/` by domain; `run()` turns `AuthError`/`ApiError` into error results the model reads.
+  Names are English `snake_case`, descriptions Spanish.
+- **Scope**: read projects, my tasks, calendar, members, my hours and StandUp; submit the StandUp;
+  log, edit and delete own hours; create and edit tasks; create events; read and edit documents and
+  actas. Coordination actions (projects, teams, approvals, roles) and every other delete are left out
+  on purpose: rare, and some cannot be undone.
+- **Tasks go by label with `labelsToken`**, like the UI: `get_project` returns it and `update_task` /
+  `create_task` (with a feature) require it. `update_task` takes partial fields and fills the rest
+  from the current task; that read cannot mix two tasks because `updateTask` rejects a stale token
+  first.
+- **Documents**: `update_document` replaces the whole content and requires the `version` (a hash of
+  the content) that `get_document` returned, so an edit does not silently overwrite someone else's
+  save made while the model was writing. Not atomic; the version history covers the rest.
+- **Dates and times are Chile's**: `create_event` takes wall-clock times in `America/Santiago` and
+  `list_events` returns them that way (`zonedTimeToInstant` / `instantToZonedTime` in
+  `src/lib/calendar.ts`), so the model never computes the DST offset.
+- **Connecting**: the production server (`clic`, `https://clicuc.vercel.app/api/mcp`) is registered in
+  `.mcp.json`, so Claude Code offers it to anyone who opens the repo; approve it and run `/mcp` to sign
+  in with GitHub. The local server is not in `.mcp.json` (it only answers while `pnpm dev` runs); add
+  it per person, with user scope so it shows up both in the terminal and in the VS Code extension
+  (local scope is keyed by the project path, and Windows spells the drive `C:` in one and `c:` in the
+  other):
+
+  ```bash
+  claude mcp add --scope user --transport http clic-local http://localhost:3000/api/mcp
+  ```
 
 ### Authorization scope
 
