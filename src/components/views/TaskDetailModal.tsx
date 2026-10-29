@@ -4,19 +4,27 @@ import { useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { TaskTypeTag } from "@/components/ui/TaskTypeTag";
 import { AssigneeAvatar } from "@/components/ui/Avatar";
+import { DifficultyMeter } from "@/components/ui/DifficultyMeter";
 import { DescriptionEditor } from "@/components/views/DescriptionEditor";
 import { LinkedIssuesField } from "@/components/views/LinkedIssuesField";
+import { TaskHistory } from "@/components/views/TaskHistory";
 import { taskToUpdateInput, useUpdateTask, type ProjectTask } from "@/lib/api/projects";
+import { KANBAN_COLUMN_OPTIONS } from "@/lib/api/status";
+
+const columnLabel = Object.fromEntries(KANBAN_COLUMN_OPTIONS.map((opt) => [opt.value, opt.label]));
 
 export function TaskDetailModal({
   projectId,
   task,
   labelsToken: openedLabelsToken,
+  onEdit,
   onClose,
 }: {
   projectId: string;
   task: ProjectTask;
   labelsToken: string;
+  /** Cierra el detalle y abre la edición (campos, columna, eliminar). */
+  onEdit: () => void;
   onClose: () => void;
 }) {
   // Se fija al abrir el modal: los labels que se editan acá salen de ese snapshot.
@@ -33,10 +41,17 @@ export function TaskDetailModal({
 
   return (
     <Modal title={`${task.id} — ${task.name}`} onClose={onClose}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+      <div className="modal-meta">
         <TaskTypeTag type={task.type} />
-        <AssigneeAvatar assignee={task.assignee} />
-        <span style={{ fontSize: 11, color: "var(--text-3)" }}>{task.assignee?.name ?? "Sin asignar"}</span>
+        <span>{columnLabel[task.columnValue]}</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <AssigneeAvatar assignee={task.assignee} />
+          {task.assignee?.name ?? "Sin asignar"}
+        </span>
+        <DifficultyMeter difficulty={task.difficulty} withLabel />
+        <button type="button" className="btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={onEdit}>
+          Editar
+        </button>
       </div>
 
       <LinkedIssuesField projectId={projectId} issues={task.issues} />
@@ -47,6 +62,8 @@ export function TaskDetailModal({
         error={mutation.error}
         onSave={saveDescription}
       />
+
+      <TaskHistory task={task} />
     </Modal>
   );
 }

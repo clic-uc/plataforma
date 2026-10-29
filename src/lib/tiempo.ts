@@ -1,3 +1,4 @@
+import type { TimeEntryKind } from "@/generated/prisma/enums";
 import {
   CALENDAR_TIME_ZONE,
   WEEKDAY_SHORT,
@@ -117,6 +118,16 @@ export function minutesToHoursInput(minutes: number): string {
   return String(Number((minutes / 60).toFixed(2)));
 }
 
+/**
+ * Marcador del historial para las horas que salen de mover una tarea ("T-03 · trabajo");
+ * un registro manual no lleva.
+ */
+export const timeEntryKindLabel: Record<TimeEntryKind, string | null> = {
+  MANUAL: null,
+  TRABAJO: "trabajo",
+  REVISION: "revisión",
+};
+
 // ─── Gráfico semanal ───
 
 export interface ChartEntry {
@@ -164,18 +175,24 @@ function axisFor(maxMinutes: number): { axisMaxHours: number; ticks: number[] } 
   return { axisMaxHours, ticks };
 }
 
-/**
- * Horas por día y proyecto de la semana que empieza en `weekStart`. Los colores
- * se asignan por nombre de proyecto, no por cuántas horas tiene, para que
- * registrar horas no repinte los demás. Si hay más de MAX_CHART_SERIES
- * proyectos, los de menos horas se juntan en "Otros".
- */
-export function buildWeekChart(entries: ChartEntry[], weekStart: string): WeekChart {
-  const days = weekDays(weekStart);
-  const inWeek = entries.filter((e) => days.includes(e.date));
+/** Color CSS de una serie: `--series-N`, o gris para "Otros". */
+export function seriesColor(series: Pick<ChartSeries, "slot">): string {
+  return series.slot === null ? "var(--series-other)" : `var(--series-${series.slot})`;
+}
 
+/**
+ * Suma los minutos por proyecto y les asigna color. Los colores se asignan por
+ * nombre de proyecto (orden alfabético), no por cuántas horas tiene, para que
+ * registrar horas no repinte los demás. Si hay más de MAX_CHART_SERIES
+ * proyectos, los de menos horas se juntan en "Otros". `seriesKey` dice en qué
+ * serie cae cada proyecto. La usan el gráfico de /tiempo y las analíticas.
+ */
+export function assignProjectSeries(entries: Pick<ChartEntry, "minutes" | "project">[]): {
+  series: ChartSeries[];
+  seriesKey: (projectId: string) => string;
+} {
   const totals = new Map<string, { name: string; minutes: number }>();
-  for (const e of inWeek) {
+  for (const e of entries) {
     const current = totals.get(e.project.id) ?? { name: e.project.name, minutes: 0 };
     current.minutes += e.minutes;
     totals.set(e.project.id, current);
@@ -194,7 +211,20 @@ export function buildWeekChart(entries: ChartEntry[], weekStart: string): WeekCh
     series.push({ key: OTHER_SERIES_KEY, name: "Otros", slot: null, minutes });
   }
 
-  const seriesKey = (projectId: string) => (folded.has(projectId) ? OTHER_SERIES_KEY : projectId);
+  return { series, seriesKey: (projectId) => (folded.has(projectId) ? OTHER_SERIES_KEY : projectId) };
+}
+
+/**
+ * Horas por día y proyecto de la semana que empieza en `weekStart`. Los colores
+ * se asignan por nombre de proyecto, no por cuántas horas tiene, para que
+ * registrar horas no repinte los demás. Si hay más de MAX_CHART_SERIES
+ * proyectos, los de menos horas se juntan en "Otros".
+ */
+export function buildWeekChart(entries: ChartEntry[], weekStart: string): WeekChart {
+  const days = weekDays(weekStart);
+  const inWeek = entries.filter((e) => days.includes(e.date));
+
+  const { series, seriesKey } = assignProjectSeries(inWeek);
 
   const chartDays: ChartDay[] = days.map((dayKey, i) => {
     const perSeries = new Map<string, number>();

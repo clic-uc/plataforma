@@ -13,9 +13,9 @@ const { projects, issues, events, tiempo } = vi.hoisted(() => ({
     createTask: vi.fn(),
     setIssueLink: vi.fn(),
   },
-  issues: { getIssue: vi.fn(), createIssue: vi.fn(), setIssueStatus: vi.fn() },
+  issues: { getIssue: vi.fn(), createIssue: vi.fn(), setIssueStatus: vi.fn(), setIssueReviewed: vi.fn() },
   events: { createEvent: vi.fn() },
-  tiempo: { createTimeEntry: vi.fn() },
+  tiempo: { createTimeEntry: vi.fn(), updateTimeEntry: vi.fn(), getTimeEntryLink: vi.fn(), resolveTaskLabel: vi.fn() },
 }));
 
 // Las funciones .server.ts se mockean; los parse* son los reales, para que las
@@ -70,6 +70,17 @@ function task(overrides: Partial<ProjectTask> = {}): ProjectTask {
     active: true,
     description: "Con GitHub",
     issues: [],
+    difficulty: null,
+    history: {
+      createdAt: "2026-10-01T12:00:00.000Z",
+      workedBy: [],
+      reviewedBy: [],
+      columnMs: {},
+      completedAt: null,
+      cycleMs: null,
+      minutesWorked: 0,
+      minutesReviewed: 0,
+    },
     ...overrides,
   };
 }
@@ -101,9 +112,75 @@ describe("update_task", () => {
         column: "PROGRESO",
         active: true,
         description: "Con GitHub",
+        difficulty: null,
+        timeSpent: null,
       },
       "tok",
     );
+  });
+
+  it("minutesSpent llega como timeSpent y la dificultad se puede cambiar o quitar", async () => {
+    projects.getProject.mockResolvedValue(project([task({ difficulty: "ALTA" })]));
+    projects.updateTask.mockResolvedValue(project([task()]));
+
+    await call("update_task", { projectId: "p1", taskId: "T-01", labelsToken: "tok", column: "REVISAR", minutesSpent: 90 });
+    expect(projects.updateTask.mock.calls[0][2]).toMatchObject({ difficulty: "ALTA", timeSpent: { minutes: 90 } });
+
+    await call("update_task", { projectId: "p1", taskId: "T-01", labelsToken: "tok", difficulty: null });
+    expect(projects.updateTask.mock.calls[1][2]).toMatchObject({ difficulty: null, timeSpent: null });
+  });
+
+  it("rechaza minutesSpent fuera de tramos de 15 sin llegar a la base", async () => {
+    projects.getProject.mockResolvedValue(project([task()]));
+    const result = await call("update_task", { projectId: "p1", taskId: "T-01", labelsToken: "tok", minutesSpent: 20 });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain("minutesSpent");
+    expect(projects.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("ASSIGNEE_REQUIRED y TIME_NOT_ALLOWED le dicen al modelo qué corregir", async () => {
+    projects.getProject.mockResolvedValue(project([task()]));
+
+    projects.updateTask.mockRejectedValueOnce(new ApiError(422, "ASSIGNEE_REQUIRED", "Tiene que tener asignado"));
+    const assignee = await call("update_task", { projectId: "p1", taskId: "T-01", labelsToken: "tok", column: "PROGRESO" });
+    expect(assignee.isError).toBe(true);
+    expect(text(assignee)).toContain("assigneeId");
+
+    projects.updateTask.mockRejectedValueOnce(new ApiError(422, "TIME_NOT_ALLOWED", "No corresponde"));
+    const time = await call("update_task", { projectId: "p1", taskId: "T-01", labelsToken: "tok", minutesSpent: 60 });
+    expect(time.isError).toBe(true);
+    expect(text(time)).toContain("log_time");
+  });
+
+  it("get_project incluye dificultad, quién trabajó y revisó y las horas dedicadas", async () => {
+    projects.getProject.mockResolvedValue({
+      ...project([
+        task({
+          difficulty: "MEDIA",
+          history: {
+            createdAt: "",
+            workedBy: [{ id: "m1", name: "Ana" }],
+            reviewedBy: [{ id: "m2", name: "Beto" }],
+            columnMs: {},
+            completedAt: null,
+            cycleMs: null,
+            minutesWorked: 120,
+            minutesReviewed: 30,
+          },
+        }),
+      ]),
+      team: [],
+      docs: [],
+      actas: [],
+    });
+    const result = JSON.parse(text(await call("get_project", { projectId: "p1" })));
+    expect(result.tasks[0]).toMatchObject({
+      difficulty: "MEDIA",
+      workedBy: ["Ana"],
+      reviewedBy: ["Beto"],
+      minutesWorked: 120,
+      minutesReviewed: 30,
+    });
   });
 
   it("null desasigna y quita la feature, a diferencia de omitir el campo", async () => {
@@ -144,6 +221,16 @@ describe("create_task", () => {
     projects.createTask.mockResolvedValue(project([task({ id: "T-09" }), task({ id: "T-10", name: "Nueva" })]));
     const result = await call("create_task", { projectId: "p1", name: "Nueva", type: "FIX", column: "PENDIENTE" });
     expect(JSON.parse(text(result))).toMatchObject({ id: "T-10", name: "Nueva" });
+  });
+
+  it("pasa la dificultad, o null si se omite", async () => {
+    projects.createTask.mockResolvedValue(project([task({ difficulty: "BAJA" })]));
+    const result = await call("create_task", { projectId: "p1", name: "X", type: "FIX", column: "PENDIENTE", difficulty: "BAJA" });
+    expect(projects.createTask.mock.calls[0][1]).toMatchObject({ difficulty: "BAJA" });
+    expect(JSON.parse(text(result))).toMatchObject({ difficulty: "BAJA" });
+
+    await call("create_task", { projectId: "p1", name: "X", type: "FIX", column: "PENDIENTE" });
+    expect(projects.createTask.mock.calls[1][1]).toMatchObject({ difficulty: null });
   });
 
   it("pasa el issue de origen para que la tarea quede vinculada", async () => {
@@ -191,6 +278,7 @@ describe("issues", () => {
     createdAt: "",
     lastActivityAt: "",
     commentCount: 0,
+    reviewedByMe: true,
     body: "",
     closedBy: "Ana",
     closedAt: "",
@@ -205,6 +293,26 @@ describe("issues", () => {
     expect(result.isError).toBeUndefined();
     expect(issues.setIssueStatus).toHaveBeenCalledWith("p1", 3, { status: "CERRADO", closeReason: "RESUELTO" });
     expect(JSON.parse(text(result))).not.toHaveProperty("canEdit");
+  });
+
+  it("mark_issue_reviewed marca por defecto y devuelve reviewed", async () => {
+    issues.setIssueReviewed.mockResolvedValue(issue);
+    const result = await call("mark_issue_reviewed", { projectId: "p1", number: 3 });
+    expect(issues.setIssueReviewed).toHaveBeenCalledWith("p1", 3, true);
+    expect(JSON.parse(text(result))).toMatchObject({ number: 3, reviewed: true });
+  });
+
+  it("mark_issue_reviewed con reviewed: false desmarca", async () => {
+    issues.setIssueReviewed.mockResolvedValue({ ...issue, reviewedByMe: false });
+    const result = await call("mark_issue_reviewed", { projectId: "p1", number: 3, reviewed: false });
+    expect(issues.setIssueReviewed).toHaveBeenCalledWith("p1", 3, false);
+    expect(JSON.parse(text(result)).reviewed).toBe(false);
+  });
+
+  it("mark_issue_reviewed responde error si el issue no existe", async () => {
+    issues.setIssueReviewed.mockResolvedValue(null);
+    const result = await call("mark_issue_reviewed", { projectId: "p1", number: 99 });
+    expect(result.isError).toBe(true);
   });
 
   it("create_issue rechaza un título vacío sin llegar a la base", async () => {
@@ -222,6 +330,7 @@ describe("issues", () => {
     );
     const result = JSON.parse(text(await call("get_issue", { projectId: "p1", number: 3 })));
     expect(result.labelsToken).toBe("tok");
+    expect(result.reviewed).toBe(true);
     expect(result.tasks.map((t: { id: string }) => t.id)).toEqual(["T-01"]);
     expect(result.features).toEqual([{ id: "F-01", name: "Auth", status: "PENDIENTE" }]);
   });
@@ -287,11 +396,91 @@ describe("create_event", () => {
   });
 });
 
+const entryArgs = { projectId: "p1", minutes: 60, description: "Algo", date: "2026-01-05" };
+const entryResult = {
+  id: "h1",
+  date: "2026-01-05",
+  minutes: 60,
+  description: "Algo",
+  project: { id: "p1", name: "San Miguel" },
+  kind: "TRABAJO",
+  task: { label: "T-03", name: "Login" },
+};
+
 describe("log_time", () => {
   it("rechaza minutos que no son múltiplo de 15 sin llegar a la base", async () => {
-    const result = await call("log_time", { projectId: "p1", minutes: 20, description: "Algo", date: "2026-01-05" });
+    const result = await call("log_time", { ...entryArgs, minutes: 20 });
     expect(result.isError).toBe(true);
     expect(tiempo.createTimeEntry).not.toHaveBeenCalled();
+  });
+
+  it("sin tarea registra horas manuales", async () => {
+    tiempo.createTimeEntry.mockResolvedValue({ ...entryResult, kind: "MANUAL", task: null });
+    await call("log_time", entryArgs);
+    expect(tiempo.createTimeEntry).toHaveBeenCalledWith(expect.objectContaining({ taskId: null, kind: "MANUAL" }));
+    expect(tiempo.resolveTaskLabel).not.toHaveBeenCalled();
+  });
+
+  it("vincula la tarea por label con el labelsToken, como trabajo por defecto", async () => {
+    tiempo.resolveTaskLabel.mockResolvedValue("task-id");
+    tiempo.createTimeEntry.mockResolvedValue(entryResult);
+
+    const result = await call("log_time", { ...entryArgs, taskLabel: "T-03", labelsToken: "tok" });
+
+    expect(tiempo.resolveTaskLabel).toHaveBeenCalledWith("p1", "T-03", "tok");
+    expect(tiempo.createTimeEntry).toHaveBeenCalledWith(expect.objectContaining({ taskId: "task-id", kind: "TRABAJO" }));
+    expect(JSON.parse(text(result))).toMatchObject({ kind: "TRABAJO", task: { label: "T-03", name: "Login" } });
+
+    await call("log_time", { ...entryArgs, taskLabel: "T-03", labelsToken: "tok", kind: "REVISION" });
+    expect(tiempo.createTimeEntry).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "REVISION" }));
+  });
+
+  it("exige el labelsToken con taskLabel, y kind solo con taskLabel", async () => {
+    expect((await call("log_time", { ...entryArgs, taskLabel: "T-03" })).isError).toBe(true);
+    expect((await call("log_time", { ...entryArgs, kind: "REVISION" })).isError).toBe(true);
+    expect(tiempo.createTimeEntry).not.toHaveBeenCalled();
+  });
+
+  it("si los labels cambiaron pide releer el proyecto", async () => {
+    tiempo.resolveTaskLabel.mockRejectedValue(new ApiError(412, "LABELS_CHANGED", "UI"));
+    const result = await call("log_time", { ...entryArgs, taskLabel: "T-03", labelsToken: "viejo" });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain("get_project");
+  });
+});
+
+describe("update_time_entry", () => {
+  beforeEach(() => {
+    tiempo.updateTimeEntry.mockResolvedValue(entryResult);
+  });
+
+  it("sin taskLabel conserva la tarea vinculada si el proyecto no cambia", async () => {
+    tiempo.getTimeEntryLink.mockResolvedValue({ projectId: "p1", taskId: "task-id", kind: "REVISION" });
+    await call("update_time_entry", { id: "h1", ...entryArgs });
+    expect(tiempo.updateTimeEntry).toHaveBeenCalledWith("h1", expect.objectContaining({ taskId: "task-id", kind: "REVISION" }));
+  });
+
+  it("sin taskLabel y con otro proyecto la deja manual", async () => {
+    tiempo.getTimeEntryLink.mockResolvedValue({ projectId: "p2", taskId: "task-id", kind: "TRABAJO" });
+    await call("update_time_entry", { id: "h1", ...entryArgs });
+    expect(tiempo.updateTimeEntry).toHaveBeenCalledWith("h1", expect.objectContaining({ taskId: null, kind: "MANUAL" }));
+  });
+
+  it("taskLabel null quita la tarea y un label la cambia", async () => {
+    await call("update_time_entry", { id: "h1", ...entryArgs, taskLabel: null });
+    expect(tiempo.updateTimeEntry).toHaveBeenLastCalledWith("h1", expect.objectContaining({ taskId: null, kind: "MANUAL" }));
+    expect(tiempo.getTimeEntryLink).not.toHaveBeenCalled();
+
+    tiempo.resolveTaskLabel.mockResolvedValue("otra");
+    await call("update_time_entry", { id: "h1", ...entryArgs, taskLabel: "T-05", labelsToken: "tok" });
+    expect(tiempo.updateTimeEntry).toHaveBeenLastCalledWith("h1", expect.objectContaining({ taskId: "otra", kind: "TRABAJO" }));
+  });
+
+  it("un registro ajeno o inexistente responde que no existe", async () => {
+    tiempo.getTimeEntryLink.mockResolvedValue(null);
+    const result = await call("update_time_entry", { id: "h9", ...entryArgs });
+    expect(result.isError).toBe(true);
+    expect(tiempo.updateTimeEntry).not.toHaveBeenCalled();
   });
 });
 

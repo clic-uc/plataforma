@@ -1,12 +1,24 @@
 import "server-only";
 
-import { DocSlotType, FeatureStatus, KanbanColumn, Priority, ProjectStatus, TaskType } from "@/generated/prisma/enums";
+import {
+  DocSlotType,
+  FeatureStatus,
+  KanbanColumn,
+  Priority,
+  ProjectStatus,
+  TaskDifficulty,
+  TaskType,
+  TimeEntryKind,
+} from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireMember, requireCoordinacion } from "@/lib/auth/guards";
 import { ApiError } from "@/lib/api/errors";
+import { ownActivity } from "@/lib/api/issues.server";
 import { MAX_COMMENT_LENGTH, MAX_QUOTE_LENGTH } from "@/lib/comments";
 import { formatLabel, labelNumber, labelsToken, matchesLabelsToken, nextLabel } from "@/lib/api/labels";
+import { summarizeTaskHistory, type TaskTransitionRow } from "@/lib/task-history";
+import { MAX_DESCRIPTION_LENGTH, dayKeyToDate, isValidEntryMinutes, todayKey } from "@/lib/tiempo";
 import {
   formatDateTime,
   formatDayMonth,
@@ -41,11 +53,13 @@ import type {
   ProjectDocDetail,
   ProjectDocVersion,
   ProjectListItem,
+  ProjectTaskHistory,
   ProjectTeamMember,
   UpdateFeatureInput,
   UpdateProjectInput,
   UpdateTaskInput,
 } from "@/lib/api/projects";
+import { WORK_COLUMNS } from "@/lib/api/projects";
 
 const SLOT_ORDER: DocSlotType[] = [
   DocSlotType.KICKOFF,
@@ -76,7 +90,6 @@ function toTeam(members: Prisma.ProjectMemberGetPayload<{ include: typeof teamIn
     id: pm.member.id,
     name: pm.member.name,
     initials: getInitials(pm.member.name),
-    role: pm.role,
   }));
 }
 
@@ -95,6 +108,11 @@ function parseOptionalIssueNumber(value: unknown): number | null | undefined {
 }
 
 /** id del issue #number del proyecto, para vincularlo al crear. 422 si no existe. */
+/** Vincular algo a un issue es actividad del issue (mueve lastActivityAt y renueva mi revisión). */
+function linkedIssueActivity(issueId: string, memberId: string) {
+  return prisma.issue.update({ where: { id: issueId }, data: ownActivity(issueId, memberId, new Date()) });
+}
+
 async function requireIssueId(projectId: string, number: number): Promise<string> {
   const issue = await prisma.issue.findUnique({
     where: { projectId_number: { projectId, number } },
@@ -119,7 +137,7 @@ interface ResolvedLabels {
  * entre esta lectura y la escritura, la escritura sigue cayendo en la entidad
  * que el cliente vio.
  */
-async function resolveLabels(projectId: string, token: string | null): Promise<ResolvedLabels> {
+export async function resolveLabels(projectId: string, token: string | null): Promise<ResolvedLabels> {
   if (!token) {
     throw new ApiError(428, "PRECONDITION_REQUIRED", "Falta el encabezado X-Labels-Token con el labelsToken del proyecto");
   }
@@ -186,22 +204,103 @@ export async function getProjects(): Promise<ProjectListItem[]> {
   }));
 }
 
-export async function getProject(id: string): Promise<ProjectDetail | null> {
+interface TaskHistoryData {
+  transitions: Map<string, TaskTransitionRow[]>;
+  memberNames: Map<string, string>;
+  minutes: Map<string, { worked: number; reviewed: number }>;
+}
+
+/**
+ * Historial (TaskTransition) y horas dedicadas (TimeEntry.taskId) de todas las tareas de un
+ * proyecto, en dos queries en vez de una por tarea. Las horas se suman de todas las personas:
+ * en la tarea se muestran totales, el detalle personal sigue siendo solo de cada uno.
+ */
+async function loadTaskHistoryData(projectId: string): Promise<TaskHistoryData> {
+  const [transitions, minutes] = await Promise.all([
+    prisma.taskTransition.findMany({
+      where: { task: { projectId } },
+      orderBy: { at: "asc" },
+      select: {
+        taskId: true,
+        fromColumn: true,
+        toColumn: true,
+        assigneeId: true,
+        at: true,
+        assignee: { select: { id: true, name: true } },
+      },
+    }),
+    prisma.timeEntry.groupBy({
+      by: ["taskId", "kind"],
+      where: { projectId, taskId: { not: null } },
+      _sum: { minutes: true },
+    }),
+  ]);
+
+  const data: TaskHistoryData = { transitions: new Map(), memberNames: new Map(), minutes: new Map() };
+  for (const { taskId, assignee, ...row } of transitions) {
+    const list = data.transitions.get(taskId) ?? [];
+    list.push(row);
+    data.transitions.set(taskId, list);
+    if (assignee) data.memberNames.set(assignee.id, assignee.name);
+  }
+  for (const group of minutes) {
+    if (!group.taskId) continue;
+    const total = data.minutes.get(group.taskId) ?? { worked: 0, reviewed: 0 };
+    const sum = group._sum.minutes ?? 0;
+    if (group.kind === TimeEntryKind.TRABAJO) total.worked += sum;
+    if (group.kind === TimeEntryKind.REVISION) total.reviewed += sum;
+    data.minutes.set(group.taskId, total);
+  }
+  return data;
+}
+
+function toTaskHistory(
+  task: { id: string; column: KanbanColumn; assigneeId: string | null; createdAt: Date },
+  data: TaskHistoryData,
+  now: Date,
+): ProjectTaskHistory {
+  // Toda tarea tiene al menos su fila de creación (la migración la agregó a las existentes);
+  // si faltara, se asume que está donde está desde que se creó.
+  const rows = data.transitions.get(task.id) ?? [
+    { fromColumn: null, toColumn: task.column, assigneeId: task.assigneeId, at: task.createdAt },
+  ];
+  const summary = summarizeTaskHistory(rows, task.createdAt, now);
+  // Quien ya no es miembro (SetNull) no aparece en los ids; un id sin nombre no debería ocurrir.
+  const named = (ids: string[]) => ids.map((id) => ({ id, name: data.memberNames.get(id) ?? "" }));
+  const minutes = data.minutes.get(task.id);
+
+  return {
+    createdAt: task.createdAt.toISOString(),
+    workedBy: named(summary.workerIds),
+    reviewedBy: named(summary.reviewerIds),
+    columnMs: summary.columnMs,
+    completedAt: summary.completedAt?.toISOString() ?? null,
+    cycleMs: summary.cycleMs,
+    minutesWorked: minutes?.worked ?? 0,
+    minutesReviewed: minutes?.reviewed ?? 0,
+  };
+}
+
+/** `now` es el "ahora" del servidor con que se cuenta el tiempo en la columna actual. */
+export async function getProject(id: string, now: Date = new Date()): Promise<ProjectDetail | null> {
   await requireMember();
 
-  const project = await prisma.project.findUnique({
-    where: { id },
-    include: {
-      members: teamInclude,
-      features: { orderBy: { label: "asc" }, include: { issues: issueNumbersArgs } },
-      tasks: {
-        orderBy: { label: "asc" },
-        include: { assignee: { select: { id: true, name: true } }, issues: issueNumbersArgs },
+  const [project, historyData] = await Promise.all([
+    prisma.project.findUnique({
+      where: { id },
+      include: {
+        members: teamInclude,
+        features: { orderBy: { label: "asc" }, include: { issues: issueNumbersArgs } },
+        tasks: {
+          orderBy: { label: "asc" },
+          include: { assignee: { select: { id: true, name: true } }, issues: issueNumbersArgs },
+        },
+        documents: { include: { author: true } },
+        actas: { orderBy: { date: "asc" } },
       },
-      documents: { include: { author: true } },
-      actas: { orderBy: { date: "asc" } },
-    },
-  });
+    }),
+    loadTaskHistoryData(id),
+  ]);
   if (!project) return null;
 
   const featureLabelById = new Map(project.features.map((f) => [f.id, f.label]));
@@ -268,6 +367,8 @@ export async function getProject(id: string): Promise<ProjectDetail | null> {
       active: task.active,
       description: task.description,
       issues: task.issues.map((issue) => issue.number),
+      difficulty: task.difficulty,
+      history: toTaskHistory(task, historyData, now),
     })),
   };
 }
@@ -291,6 +392,7 @@ export async function getAssignedTasks(includeDone: boolean): Promise<AssignedTa
     columnValue: task.column,
     active: task.active,
     description: task.description,
+    difficulty: task.difficulty,
   }));
 }
 
@@ -663,7 +765,7 @@ async function renumberFeatureLabels(tx: Prisma.TransactionClient, projectId: st
 }
 
 export async function createFeature(projectId: string, input: CreateFeatureInput): Promise<ProjectDetail | null> {
-  await requireMember();
+  const member = await requireMember();
 
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
   if (!project) return null;
@@ -673,7 +775,7 @@ export async function createFeature(projectId: string, input: CreateFeatureInput
   const existing = await prisma.feature.findMany({ where: { projectId }, select: { label: true } });
   const label = nextLabel("F", existing.map((f) => f.label));
 
-  await prisma.feature.create({
+  const create = prisma.feature.create({
     data: {
       projectId,
       label,
@@ -684,6 +786,9 @@ export async function createFeature(projectId: string, input: CreateFeatureInput
       ...(issueId && { issues: { connect: { id: issueId } } }),
     },
   });
+  // Crear ya vinculado a un issue es vincular: cuenta como actividad del issue.
+  if (issueId) await prisma.$transaction([create, linkedIssueActivity(issueId, member.id)]);
+  else await create;
 
   return getProject(projectId);
 }
@@ -768,10 +873,24 @@ export function parseCreateTaskInput(body: unknown): CreateTaskInput | null {
 
   const description = typeof b.description === "string" ? b.description.trim() || null : null;
 
+  // Obligatoria aunque sea null (sin estimar), por lo mismo que assigneeId: un cliente que
+  // no conoce el campo borraría la estimación al editar.
+  const difficulty = b.difficulty;
+  if (difficulty !== null && !(Object.values(TaskDifficulty) as unknown[]).includes(difficulty)) return null;
+
   const issueNumber = parseOptionalIssueNumber(b.issueNumber);
   if (issueNumber === undefined) return null;
 
-  return { featureId, assigneeId, name, type: type as TaskType, column: column as KanbanColumn, description, issueNumber };
+  return {
+    featureId,
+    assigneeId,
+    name,
+    type: type as TaskType,
+    column: column as KanbanColumn,
+    description,
+    difficulty: difficulty as TaskDifficulty | null,
+    issueNumber,
+  };
 }
 
 async function renumberTaskLabels(tx: Prisma.TransactionClient, projectId: string): Promise<void> {
@@ -786,15 +905,33 @@ async function renumberTaskLabels(tx: Prisma.TransactionClient, projectId: strin
   }
 }
 
+// ─── Flujo de tareas ───
+//
+// En progreso y En revisión (WORK_COLUMNS) son las columnas en que alguien trabaja la tarea:
+// para entrar a ellas tiene que tener asignado. Cada creación, cambio de columna o cambio de
+// asignado queda en TaskTransition (src/lib/task-history.ts saca de ahí quién la trabajó y
+// quién la revisó), y al sacarla de una de esas columnas quien la tenía puede registrar las
+// horas que le dedicó.
+
+function isWorkColumn(column: KanbanColumn): boolean {
+  return WORK_COLUMNS.includes(column);
+}
+
+const ASSIGNEE_REQUIRED_MESSAGE = "Una tarea En progreso o En revisión tiene que tener a alguien asignado";
+
 export async function createTask(
   projectId: string,
   input: CreateTaskInput,
   token: string | null,
 ): Promise<ProjectDetail | null> {
-  await requireMember();
+  const member = await requireMember();
 
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
   if (!project) return null;
+
+  if (isWorkColumn(input.column) && !input.assigneeId) {
+    throw new ApiError(422, "ASSIGNEE_REQUIRED", ASSIGNEE_REQUIRED_MESSAGE);
+  }
 
   // Solo una tarea con feature referencia un label; sin feature no hay nada que validar.
   let featureId: string | null = null;
@@ -812,7 +949,9 @@ export async function createTask(
   });
   const label = nextLabel("T", existing.map((t) => t.label));
 
-  await prisma.task.create({
+  // La fila inicial del historial va como escritura anidada: Prisma la hace en la misma
+  // transacción que la tarea.
+  const create = prisma.task.create({
     data: {
       label,
       projectId,
@@ -823,9 +962,15 @@ export async function createTask(
       active: true,
       column: input.column,
       description: input.description,
+      difficulty: input.difficulty,
+      transitions: {
+        create: { fromColumn: null, toColumn: input.column, assigneeId: input.assigneeId, byId: member.id },
+      },
       ...(issueId && { issues: { connect: { id: issueId } } }),
     },
   });
+  if (issueId) await prisma.$transaction([create, linkedIssueActivity(issueId, member.id)]);
+  else await create;
 
   return getProject(projectId);
 }
@@ -840,7 +985,49 @@ export function parseUpdateTaskInput(body: unknown): UpdateTaskInput | null {
   const b = body as Record<string, unknown>;
   const active = typeof b.active === "boolean" ? b.active : true;
 
-  return { ...fields, active };
+  // Opcional. Si viene, con la misma validación que cualquier registro de horas.
+  let timeSpent: UpdateTaskInput["timeSpent"] = null;
+  if (b.timeSpent !== undefined && b.timeSpent !== null) {
+    if (typeof b.timeSpent !== "object") return null;
+    const minutes = (b.timeSpent as Record<string, unknown>).minutes;
+    if (!isValidEntryMinutes(minutes)) return null;
+    timeSpent = { minutes };
+  }
+
+  return { ...fields, active, timeSpent };
+}
+
+/**
+ * Reglas del flujo para un cambio de `current` a `input` hecho por `memberId`. El asignado
+ * que cuenta para las horas es el de antes del cambio: quien la tenía es quien la trabajó,
+ * aunque al moverla se la pase a otra persona o la deje sin asignar.
+ */
+function assertTaskFlow(
+  current: { column: KanbanColumn; assigneeId: string | null },
+  input: UpdateTaskInput,
+  memberId: string,
+): void {
+  const columnChanged = input.column !== current.column;
+  const assigneeChanged = input.assigneeId !== current.assigneeId;
+
+  // Una tarea antigua que ya estaba en una columna de trabajo sin asignado no se rechaza
+  // mientras no cambie de columna ni de asignado.
+  if ((columnChanged || assigneeChanged) && isWorkColumn(input.column) && !input.assigneeId) {
+    throw new ApiError(422, "ASSIGNEE_REQUIRED", ASSIGNEE_REQUIRED_MESSAGE);
+  }
+
+  if (input.timeSpent) {
+    if (!columnChanged || !isWorkColumn(current.column)) {
+      throw new ApiError(
+        422,
+        "TIME_NOT_ALLOWED",
+        "Las horas dedicadas se registran al sacar la tarea de En progreso o En revisión",
+      );
+    }
+    if (current.assigneeId !== memberId) {
+      throw new ApiError(422, "TIME_NOT_ALLOWED", "Solo quien tenía asignada la tarea puede registrar sus horas al moverla");
+    }
+  }
 }
 
 export async function updateTask(
@@ -848,8 +1035,9 @@ export async function updateTask(
   label: string,
   input: UpdateTaskInput,
   token: string | null,
+  now: Date = new Date(),
 ): Promise<ProjectDetail | null> {
-  await requireMember();
+  const member = await requireMember();
 
   const labels = await resolveLabels(projectId, token);
   const id = labels.taskId(label);
@@ -862,25 +1050,65 @@ export async function updateTask(
     featureId = resolved;
   }
 
-  const current = await prisma.task.findUnique({ where: { id }, select: { assigneeId: true } });
-  if (!current) return null;
-  if (input.assigneeId !== current.assigneeId) await assertAssignable(projectId, input.assigneeId);
+  // La columna y el asignado actuales deciden el historial y las horas: se leen y se
+  // escriben en la misma transacción que el cambio.
+  const updated = await prisma.$transaction(async (tx) => {
+    const current = await tx.task.findUnique({ where: { id }, select: { column: true, assigneeId: true } });
+    if (!current) return false;
 
-  const { count } = await prisma.task.updateMany({
-    where: { id },
-    data: {
-      featureId,
-      assigneeId: input.assigneeId,
-      name: input.name,
-      type: input.type,
-      column: input.column,
-      active: input.active,
-      description: input.description,
-    },
+    assertTaskFlow(current, input, member.id);
+    const columnChanged = input.column !== current.column;
+    const assigneeChanged = input.assigneeId !== current.assigneeId;
+    if (assigneeChanged) await assertAssignable(projectId, input.assigneeId);
+
+    await tx.task.update({
+      where: { id },
+      data: {
+        featureId,
+        assigneeId: input.assigneeId,
+        name: input.name,
+        type: input.type,
+        column: input.column,
+        active: input.active,
+        description: input.description,
+        difficulty: input.difficulty,
+      },
+    });
+
+    if (columnChanged || assigneeChanged) {
+      // Un cambio solo de asignado queda con fromColumn === toColumn.
+      await tx.taskTransition.create({
+        data: {
+          taskId: id,
+          fromColumn: current.column,
+          toColumn: input.column,
+          assigneeId: input.assigneeId,
+          byId: member.id,
+          at: now,
+        },
+      });
+    }
+
+    if (input.timeSpent) {
+      await tx.timeEntry.create({
+        data: {
+          memberId: member.id,
+          projectId,
+          taskId: id,
+          kind: current.column === KanbanColumn.PROGRESO ? TimeEntryKind.TRABAJO : TimeEntryKind.REVISION,
+          date: dayKeyToDate(todayKey(now)),
+          minutes: input.timeSpent.minutes,
+          // El label de la descripción es el de este momento; /tiempo muestra el vigente (taskId).
+          description: `${label} · ${input.name}`.slice(0, MAX_DESCRIPTION_LENGTH),
+        },
+      });
+    }
+
+    return true;
   });
-  if (count === 0) return null;
+  if (!updated) return null;
 
-  return getProject(projectId);
+  return getProject(projectId, now);
 }
 
 export async function deleteTask(projectId: string, label: string, token: string | null): Promise<ProjectDetail | null> {
@@ -919,7 +1147,7 @@ export async function setIssueLink(
   linked: boolean,
   token: string | null,
 ): Promise<ProjectDetail | null> {
-  await requireMember();
+  const member = await requireMember();
 
   const labels = await resolveLabels(projectId, token);
   const id = kind === "feature" ? labels.featureId(label) : labels.taskId(label);
@@ -936,8 +1164,8 @@ export async function setIssueLink(
     kind === "feature"
       ? prisma.feature.update({ where: { id }, data: { issues } })
       : prisma.task.update({ where: { id }, data: { issues } }),
-    // Vincular o desvincular cuenta como actividad del issue.
-    prisma.issue.update({ where: { id: issue.id }, data: { lastActivityAt: new Date() } }),
+    // Vincular o desvincular cuenta como actividad del issue (y lo deja revisado por quien lo hace).
+    prisma.issue.update({ where: { id: issue.id }, data: ownActivity(issue.id, member.id, new Date()) }),
   ]);
 
   return getProject(projectId);
@@ -949,28 +1177,12 @@ export async function setIssueLink(
 // coordinación. La asignación de tareas, en cambio, la puede hacer cualquier
 // miembro, pero restringida a quienes están en el equipo (assertAssignable).
 
-const MAX_ROLE_LENGTH = 60;
-
-function parseRole(value: unknown): string | null {
-  const role = typeof value === "string" ? value.trim() : "";
-  return role && role.length <= MAX_ROLE_LENGTH ? role : null;
-}
-
 export function parseAddProjectMemberInput(body: unknown): AddProjectMemberInput | null {
   if (typeof body !== "object" || body === null) return null;
   const b = body as Record<string, unknown>;
 
   const memberId = typeof b.memberId === "string" ? b.memberId.trim() : "";
-  const role = parseRole(b.role);
-  if (!memberId || !role) return null;
-
-  return { memberId, role };
-}
-
-export function parseUpdateProjectMemberInput(body: unknown): { role: string } | null {
-  if (typeof body !== "object" || body === null) return null;
-  const role = parseRole((body as Record<string, unknown>).role);
-  return role ? { role } : null;
+  return memberId ? { memberId } : null;
 }
 
 export async function addProjectMember(projectId: string, input: AddProjectMemberInput): Promise<ProjectDetail | null> {
@@ -993,20 +1205,7 @@ export async function addProjectMember(projectId: string, input: AddProjectMembe
   });
   if (existing) throw new ApiError(409, "ALREADY_PROJECT_MEMBER", "Esa persona ya es parte del equipo");
 
-  await prisma.projectMember.create({ data: { projectId, memberId: input.memberId, role: input.role } });
-
-  return getProject(projectId);
-}
-
-export async function updateProjectMemberRole(
-  projectId: string,
-  memberId: string,
-  role: string,
-): Promise<ProjectDetail | null> {
-  await requireCoordinacion();
-
-  const { count } = await prisma.projectMember.updateMany({ where: { projectId, memberId }, data: { role } });
-  if (count === 0) return null;
+  await prisma.projectMember.create({ data: { projectId, memberId: input.memberId } });
 
   return getProject(projectId);
 }

@@ -11,7 +11,10 @@ export type ApiErrorCode =
   | "NOT_PENDING"
   | "CANNOT_REMOVE_SELF"
   | "WEEK_CLOSED"
-  | "INVALID_ISSUE";
+  | "INVALID_ISSUE"
+  | "ASSIGNEE_REQUIRED"
+  | "TIME_NOT_ALLOWED"
+  | "INVALID_TASK";
 
 /**
  * Rechazo de dominio que la capa .server.ts no puede expresar devolviendo null
