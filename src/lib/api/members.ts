@@ -25,7 +25,6 @@ export interface MemberListItem {
 export interface MemberProjectDetail {
   id: string;
   name: string;
-  role: string;
   status: string;
   statusColor: BadgeColor;
 }
