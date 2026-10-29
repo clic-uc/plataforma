@@ -9,6 +9,7 @@ import { MarkdownToolbar, useMarkdownEditor } from "@/components/ui/MarkdownTool
 import { CreateTaskModal } from "@/components/views/CreateTaskModal";
 import { CreateFeatureModal } from "@/components/views/CreateFeatureModal";
 import { IssueLinksPanel } from "@/components/views/IssueLinksPanel";
+import { IssueTypeTag } from "@/components/views/ProjectIssuesList";
 import { errorMessage } from "@/lib/api/http";
 import { useProject } from "@/lib/api/projects";
 import {
@@ -18,6 +19,7 @@ import {
   useCreateIssueComment,
   useDeleteIssue,
   useIssue,
+  useSetIssueReviewed,
   useSetIssueStatus,
   useUpdateIssue,
   useUpdateIssueComment,
@@ -29,7 +31,6 @@ import {
   issueCloseReasonLabel,
   issueStatusColor,
   issueStatusLabel,
-  issueTypeLabel,
 } from "@/lib/api/status";
 
 /** Ctrl+Enter (o Cmd+Enter) envía el formulario del textarea. */
@@ -80,30 +81,86 @@ function CommentItem({
         </div>
       ) : (
         <form className="doc-c-composer" onSubmit={handleSubmit}>
-          <MarkdownToolbar onFormat={format} />
-          <textarea
-            ref={textareaRef}
-            autoFocus
-            className="doc-c-input"
-            value={draft}
-            maxLength={MAX_ISSUE_COMMENT_LENGTH}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setDraft(null);
-              submitOnCtrlEnter(e);
-              onKeyDown(e);
-            }}
-          />
+          <div className="md-frame">
+            <MarkdownToolbar onFormat={format} />
+            <textarea
+              ref={textareaRef}
+              autoFocus
+              className="doc-c-input"
+              value={draft}
+              maxLength={MAX_ISSUE_COMMENT_LENGTH}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setDraft(null);
+                submitOnCtrlEnter(e);
+                onKeyDown(e);
+              }}
+            />
+          </div>
           {saveError && <div className="modal-error">{errorMessage(saveError, "No se pudo guardar el comentario.")}</div>}
           <div className="doc-c-actions">
-            <button type="button" className="btn-ghost" style={{ fontSize: 12 }} disabled={saving} onClick={() => setDraft(null)}>
+            <button type="button" className="btn-ghost btn-sm" disabled={saving} onClick={() => setDraft(null)}>
               Cancelar
             </button>
-            <button type="submit" className="btn-primary" style={{ fontSize: 12 }} disabled={saving || !draft.trim()}>
+            <button type="submit" className="btn-primary btn-sm" disabled={saving || !draft.trim()}>
               {saving ? "Guardando…" : "Guardar"}
             </button>
           </div>
         </form>
+      )}
+    </div>
+  );
+}
+
+function CheckIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden>
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+/**
+ * Revisado por quien mira. Es personal: lo nuevo de otra persona lo desmarca solo, y lo
+ * propio (comentar, editar, cerrar…) lo deja marcado.
+ */
+function ReviewToggle({ projectId, number, reviewed }: { projectId: string; number: number; reviewed: boolean }) {
+  const setReviewed = useSetIssueReviewed(projectId, number);
+  const pending = setReviewed.isPending;
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {reviewed ? (
+        <div className="flex h-7 items-center gap-2.5">
+          <span className="inline-flex items-center gap-1 text-sm font-semibold text-ok">
+            <CheckIcon />
+            Revisado
+          </span>
+          <button
+            type="button"
+            className="cursor-pointer text-sm text-text-3 transition-colors duration-100 hover:text-accent disabled:cursor-default disabled:opacity-60"
+            disabled={pending}
+            onClick={() => setReviewed.mutate(false)}
+          >
+            {pending ? "Desmarcando…" : "Desmarcar"}
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="btn-ghost btn-sm"
+          disabled={pending}
+          onClick={() => setReviewed.mutate(true)}
+          title="Lo nuevo de otra persona lo vuelve a dejar sin revisar"
+        >
+          <CheckIcon size={13} />
+          {pending ? "Marcando…" : "Marcar como revisado"}
+        </button>
+      )}
+      {setReviewed.isError && (
+        <span className="text-xs text-danger" role="alert">
+          {errorMessage(setReviewed.error, "No se pudo guardar. Intenta de nuevo.")}
+        </span>
       )}
     </div>
   );
@@ -176,7 +233,7 @@ export function IssueView({ projectId, number }: { projectId: string; number: nu
   return (
     <section className="doc-ew">
       <div>
-        <div className="card" style={{ padding: "22px 24px" }}>
+        <div className="card issue-main-card">
           {editing ? (
             <form onSubmit={handleSaveIssue}>
               <div className="form-field">
@@ -200,29 +257,29 @@ export function IssueView({ projectId, number }: { projectId: string; number: nu
               </div>
               <div className="form-field">
                 <div className="f-label">Descripción</div>
-                <div className="md-toolbar-row">
+                <div className="md-frame">
                   <MarkdownToolbar onFormat={format} />
+                  <textarea
+                    ref={textareaRef}
+                    className="field-textarea issue-body-input"
+                    value={body}
+                    maxLength={MAX_ISSUE_BODY_LENGTH}
+                    onChange={(e) => setBody(e.target.value)}
+                    onKeyDown={(e) => {
+                      submitOnCtrlEnter(e);
+                      onKeyDown(e);
+                    }}
+                  />
                 </div>
-                <textarea
-                  ref={textareaRef}
-                  className="field-textarea issue-body-input"
-                  value={body}
-                  maxLength={MAX_ISSUE_BODY_LENGTH}
-                  onChange={(e) => setBody(e.target.value)}
-                  onKeyDown={(e) => {
-                    submitOnCtrlEnter(e);
-                    onKeyDown(e);
-                  }}
-                />
               </div>
               {updateIssue.isError && (
                 <div className="modal-error">{errorMessage(updateIssue.error, "No se pudo guardar el issue. Intenta de nuevo.")}</div>
               )}
               <div className="doc-c-actions">
-                <button type="button" className="btn-ghost" style={{ fontSize: 12 }} disabled={updateIssue.isPending} onClick={() => setEditing(false)}>
+                <button type="button" className="btn-ghost btn-sm" disabled={updateIssue.isPending} onClick={() => setEditing(false)}>
                   Cancelar
                 </button>
-                <button type="submit" className="btn-primary" style={{ fontSize: 12 }} disabled={updateIssue.isPending}>
+                <button type="submit" className="btn-primary btn-sm" disabled={updateIssue.isPending}>
                   {updateIssue.isPending ? "Guardando…" : "Guardar"}
                 </button>
               </div>
@@ -233,11 +290,14 @@ export function IssueView({ projectId, number }: { projectId: string; number: nu
                 <div className="issue-title">
                   <span className="issue-number">#{issue.number}</span> {issue.title}
                 </div>
-                {issue.canEdit && (
-                  <button type="button" className="btn-ghost btn-sm" onClick={startEditing}>
-                    Editar
-                  </button>
-                )}
+                <div className="flex shrink-0 items-start gap-2">
+                  <ReviewToggle projectId={projectId} number={number} reviewed={issue.reviewedByMe} />
+                  {issue.canEdit && (
+                    <button type="button" className="btn-ghost btn-sm" onClick={startEditing}>
+                      Editar
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="issue-sub">
                 <Badge color={issueStatusColor[issue.status]}>
@@ -245,7 +305,7 @@ export function IssueView({ projectId, number }: { projectId: string; number: nu
                     ? `${issueStatusLabel[issue.status]} · ${issueCloseReasonLabel[issue.closeReason]}`
                     : issueStatusLabel[issue.status]}
                 </Badge>
-                <span className="issue-type">{issueTypeLabel[issue.type]}</span>
+                <IssueTypeTag type={issue.type} />
                 <span>
                   Abierto por {issue.author || "Ex miembro"} · {issue.createdAt}
                 </span>
@@ -264,10 +324,10 @@ export function IssueView({ projectId, number }: { projectId: string; number: nu
 
         <div className="card issue-thread">
           <div className="ds-lbl">
-            Conversación{issue.comments.length > 0 && ` (${issue.comments.length})`}
+            Conversación{issue.comments.length > 0 && <span className="label-count">{issue.comments.length}</span>}
           </div>
           {issue.comments.length === 0 ? (
-            <div className="doc-v-empty">Todavía no hay comentarios.</div>
+            <div className="doc-v-empty">Todavía no hay comentarios. Escribe el primero abajo.</div>
           ) : (
             issue.comments.map((comment) => (
               <CommentItem
@@ -281,25 +341,27 @@ export function IssueView({ projectId, number }: { projectId: string; number: nu
           )}
 
           <form className="issue-composer" onSubmit={handleComment}>
-            <MarkdownToolbar onFormat={formatComment} />
-            <textarea
-              ref={commentRef}
-              className="doc-c-input"
-              value={newComment}
-              maxLength={MAX_ISSUE_COMMENT_LENGTH}
-              placeholder="Escribe un comentario…"
-              onChange={(e) => setNewComment(e.target.value)}
-              onKeyDown={(e) => {
-                submitOnCtrlEnter(e);
-                onCommentKeyDown(e);
-              }}
-            />
+            <div className="md-frame">
+              <MarkdownToolbar onFormat={formatComment} />
+              <textarea
+                ref={commentRef}
+                className="doc-c-input"
+                value={newComment}
+                maxLength={MAX_ISSUE_COMMENT_LENGTH}
+                placeholder="Escribe un comentario…"
+                onChange={(e) => setNewComment(e.target.value)}
+                onKeyDown={(e) => {
+                  submitOnCtrlEnter(e);
+                  onCommentKeyDown(e);
+                }}
+              />
+            </div>
             {createComment.isError && (
               <div className="modal-error">{errorMessage(createComment.error, "No se pudo agregar el comentario.")}</div>
             )}
             <div className="issue-composer-foot">
               <span className="field-hint" style={{ marginTop: 0 }}>Ctrl+Enter para enviar</span>
-              <button type="submit" className="btn-primary" style={{ fontSize: 12 }} disabled={createComment.isPending || !newComment.trim()}>
+              <button type="submit" className="btn-primary btn-sm" disabled={createComment.isPending || !newComment.trim()}>
                 {createComment.isPending ? "Enviando…" : "Comentar"}
               </button>
             </div>
@@ -307,9 +369,9 @@ export function IssueView({ projectId, number }: { projectId: string; number: nu
         </div>
       </div>
 
-      <div>
-        <div className="doc-sc">
-          <div className="ds-lbl">Acciones</div>
+      <aside className="side-panel">
+        <div className="side-sec">
+          <div className="ds-lbl">Estado</div>
           {closed ? (
             <button
               type="button"
@@ -341,33 +403,35 @@ export function IssueView({ projectId, number }: { projectId: string; number: nu
               </button>
             </div>
           )}
+        </div>
 
-          <div className="issue-side-sep" />
+        <div className="side-sec">
+          <div className="ds-lbl">Llevar a trabajo</div>
           <button type="button" className="btn-ghost issue-side-btn" onClick={() => setCreatingTask(true)}>
-            + Crear tarea
+            Crear tarea
           </button>
           <button type="button" className="btn-ghost issue-side-btn" onClick={() => setCreatingFeature(true)}>
-            + Crear feature
+            Crear feature
           </button>
-
-          {issue.canDelete && (
-            <>
-              <div className="issue-side-sep" />
-              <button type="button" className="btn-danger issue-side-btn" disabled={deleteIssue.isPending} onClick={handleDelete}>
-                {deleteIssue.isPending ? "Eliminando…" : "Eliminar issue"}
-              </button>
-            </>
-          )}
-
-          {sideError && (
-            <div className="modal-error" style={{ marginTop: 10, marginBottom: 0 }}>
-              {errorMessage(sideError, "No se pudo completar la acción. Intenta de nuevo.")}
-            </div>
-          )}
         </div>
 
         <IssueLinksPanel project={project} number={number} />
-      </div>
+
+        {(issue.canDelete || sideError) && (
+          <div className="side-sec">
+            {sideError && (
+              <div className="modal-error" style={{ marginBottom: issue.canDelete ? 10 : 0 }}>
+                {errorMessage(sideError, "No se pudo completar la acción. Intenta de nuevo.")}
+              </div>
+            )}
+            {issue.canDelete && (
+              <button type="button" className="btn-text-danger" disabled={deleteIssue.isPending} onClick={handleDelete}>
+                {deleteIssue.isPending ? "Eliminando…" : "Eliminar issue"}
+              </button>
+            )}
+          </div>
+        )}
+      </aside>
 
       {creatingTask && (
         <CreateTaskModal

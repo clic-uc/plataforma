@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { IssueCloseReason, IssueStatus, IssueType } from "@/generated/prisma/enums";
 import { assertOk } from "@/lib/api/http";
+import { dashboardKeys } from "@/lib/api/dashboard";
 import { projectsKeys } from "@/lib/api/projects";
 
 export const MAX_ISSUE_TITLE_LENGTH = 200;
@@ -20,6 +21,20 @@ export interface IssueListItem {
   createdAt: string;
   lastActivityAt: string;
   commentCount: number;
+  /**
+   * Si quien mira lo revisó después de su última actividad. Lo nuevo de cualquiera lo
+   * desmarca; lo propio no (ver isIssueReviewed).
+   */
+  reviewedByMe: boolean;
+}
+
+/**
+ * Revisado por una persona: su marca es de la última actividad del issue o posterior.
+ * Comentar, editar, cerrar, reabrir o vincular mueve lastActivityAt, así que lo
+ * desmarca para todos; quien lo hace actualiza su propia marca en la misma escritura.
+ */
+export function isIssueReviewed(reviewedAt: Date | null | undefined, lastActivityAt: Date): boolean {
+  return reviewedAt != null && reviewedAt.getTime() >= lastActivityAt.getTime();
 }
 
 export interface IssueComment {
@@ -101,6 +116,12 @@ async function setIssueStatusRequest(projectId: string, number: number, input: I
   return res.json();
 }
 
+async function setIssueReviewedRequest(projectId: string, number: number, reviewed: boolean): Promise<IssueDetail> {
+  const res = await fetch(`/api/projects/${projectId}/issues/${number}/review`, { method: reviewed ? "PUT" : "DELETE" });
+  await assertOk(res, reviewed ? "No se pudo marcar como revisado" : "No se pudo desmarcar");
+  return res.json();
+}
+
 async function deleteIssueRequest(projectId: string, number: number): Promise<void> {
   const res = await fetch(`/api/projects/${projectId}/issues/${number}`, { method: "DELETE" });
   await assertOk(res, "No se pudo eliminar el issue");
@@ -143,12 +164,16 @@ export function useIssue(projectId: string, number: number, options?: { enabled?
   });
 }
 
-/** Toda mutación de un issue devuelve su detalle actualizado; la lista se refresca por su orden y contadores. */
+/**
+ * Toda mutación de un issue devuelve su detalle actualizado; la lista se refresca por su
+ * orden y contadores, y el Dashboard por los issues sin revisar.
+ */
 function useIssueMutationSuccess(projectId: string) {
   const queryClient = useQueryClient();
   return (updated: IssueDetail) => {
     queryClient.setQueryData(projectsKeys.issue(projectId, updated.number), updated);
     queryClient.invalidateQueries({ queryKey: projectsKeys.issues(projectId), exact: true });
+    queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
   };
 }
 
@@ -176,6 +201,15 @@ export function useSetIssueStatus(projectId: string, number: number) {
   });
 }
 
+/** Marcar (true) o desmarcar (false) el issue como revisado por quien mira. */
+export function useSetIssueReviewed(projectId: string, number: number) {
+  const onSuccess = useIssueMutationSuccess(projectId);
+  return useMutation({
+    mutationFn: (reviewed: boolean) => setIssueReviewedRequest(projectId, number, reviewed),
+    onSuccess,
+  });
+}
+
 export function useDeleteIssue(projectId: string, number: number) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -183,6 +217,7 @@ export function useDeleteIssue(projectId: string, number: number) {
     onSuccess: () => {
       queryClient.removeQueries({ queryKey: projectsKeys.issue(projectId, number) });
       queryClient.invalidateQueries({ queryKey: projectsKeys.issues(projectId), exact: true });
+      queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
     },
   });
 }

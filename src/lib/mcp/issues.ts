@@ -11,6 +11,7 @@ import {
   parseIssueCommentInput,
   parseIssueInput,
   parseIssueStatusInput,
+  setIssueReviewed,
   setIssueStatus,
 } from "@/lib/api/issues.server";
 import { getProject, setIssueLink } from "@/lib/api/projects.server";
@@ -32,6 +33,7 @@ function issueListView(issue: IssueListItem) {
     author: issue.author,
     lastActivityAt: issue.lastActivityAt,
     commentCount: issue.commentCount,
+    reviewed: issue.reviewedByMe,
   };
 }
 
@@ -88,7 +90,8 @@ export function registerIssueTools(server: McpServer): void {
     "list_issues",
     {
       title: "Listar issues",
-      description: "Issues de un proyecto (tickets con hilo de conversación), del de actividad más reciente al más antiguo.",
+      description:
+        "Issues de un proyecto (tickets con hilo de conversación), del de actividad más reciente al más antiguo. reviewed dice si la persona conectada ya lo revisó después de su última actividad.",
       inputSchema: z.object({
         projectId,
         status: z.enum(["ABIERTO", "CERRADO", "TODOS"]).default("ABIERTO").describe("Filtrar por estado"),
@@ -108,7 +111,7 @@ export function registerIssueTools(server: McpServer): void {
     {
       title: "Ver issue",
       description:
-        "Un issue con su cuerpo, todo su hilo de comentarios y las features y tareas vinculadas a él. Devuelve el labelsToken que piden link_issue y unlink_issue.",
+        "Un issue con su cuerpo, todo su hilo de comentarios y las features y tareas vinculadas a él. Devuelve el labelsToken que piden link_issue y unlink_issue. Leerlo no lo marca como revisado: para eso está mark_issue_reviewed.",
       inputSchema: z.object({ projectId, number }),
       annotations: { readOnlyHint: true },
     },
@@ -193,6 +196,26 @@ export function registerIssueTools(server: McpServer): void {
         const issue = await setIssueStatus(args.projectId, args.number, { status: "ABIERTO" });
         if (!issue) return fail(`No existe el issue #${args.number} en ese proyecto`);
         return json(issueView(issue));
+      }),
+  );
+
+  server.registerTool(
+    "mark_issue_reviewed",
+    {
+      title: "Marcar issue como revisado",
+      description:
+        "Marca un issue como revisado por la persona conectada (o lo desmarca con reviewed: false). Es personal: no cambia nada para el resto. Cualquier actividad nueva de otra persona (comentario, edición, cierre, reapertura o vínculo) lo vuelve a dejar sin revisar; lo que hace la propia persona no.",
+      inputSchema: z.object({
+        projectId,
+        number,
+        reviewed: z.boolean().default(true).describe("true marca como revisado; false lo desmarca"),
+      }),
+    },
+    (args) =>
+      run(async () => {
+        const issue = await setIssueReviewed(args.projectId, args.number, args.reviewed ?? true);
+        if (!issue) return fail(`No existe el issue #${args.number} en ese proyecto`);
+        return json(issueListView(issue));
       }),
   );
 
