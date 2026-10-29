@@ -1,5 +1,6 @@
 import "server-only";
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { cache } from "react";
 import { headers } from "next/headers";
 import type { CurrentMember } from "@/lib/auth/current-member";
@@ -26,7 +27,19 @@ export class AuthError extends Error {
 }
 
 /**
- * Member asociado a la sesión, o null si no hay sesión activa.
+ * Identidad fijada por un token OAuth del MCP (src/app/api/mcp/route.ts). Va aparte de
+ * la sesión por cookie para que el token sirva solo en esa ruta: el resto de /api
+ * sigue aceptando únicamente la cookie.
+ */
+const tokenMember = new AsyncLocalStorage<string>();
+
+/** Ejecuta fn con memberId como identidad de los guards, en lugar de la sesión. */
+export function runAsMember<T>(memberId: string, fn: () => T): T {
+  return tokenMember.run(memberId, fn);
+}
+
+/**
+ * Member asociado a la sesión (o al token del MCP), o null si no hay sesión activa.
  *
  * Relee la fila en lugar de usar session.user: role e isVerifiedByCoordinator no
  * están declarados como additionalFields, así que no viajan en la sesión. Como
@@ -35,10 +48,10 @@ export class AuthError extends Error {
  * cache() de React deduplica la llamada dentro de un mismo request.
  */
 export const getCurrentMember = cache(async (): Promise<CurrentMember | null> => {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return null;
+  const memberId = tokenMember.getStore() ?? (await auth.api.getSession({ headers: await headers() }))?.user.id;
+  if (!memberId) return null;
 
-  const member = await prisma.member.findUnique({ where: { id: session.user.id } });
+  const member = await prisma.member.findUnique({ where: { id: memberId } });
   if (!member) return null;
 
   return {
@@ -66,6 +79,18 @@ export async function requireCoordinacion(): Promise<CurrentMember> {
   const member = await requireMember();
   if (member.role !== "COORDINACION") {
     throw new AuthError(403, "FORBIDDEN_ROLE", "Esta acción requiere rol de coordinación");
+  }
+  return member;
+}
+
+/**
+ * requireMember() + no ROOKIE. Es la regla de acceso al MCP; en la app los Rookies
+ * entran igual que el resto.
+ */
+export async function requireMcpAccess(): Promise<CurrentMember> {
+  const member = await requireMember();
+  if (member.role === "ROOKIE") {
+    throw new AuthError(403, "FORBIDDEN_ROLE", "El acceso por MCP no está disponible para Rookies");
   }
   return member;
 }
