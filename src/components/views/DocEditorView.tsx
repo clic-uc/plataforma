@@ -8,7 +8,6 @@ import { DocCommentsPanel } from "@/components/views/DocCommentsPanel";
 import { DocVersionModal } from "@/components/views/DocVersionModal";
 import {
   useCreateDocComment,
-  useProject,
   useProjectDoc,
   useProjectDocComments,
   useProjectDocVersions,
@@ -30,7 +29,6 @@ const HIGHLIGHT_CSS = `
 // El padre monta este componente con key={docId}, así que el estado local
 // se reinicia solo al cambiar de documento (ver docs/[docId]/page.tsx).
 export function DocEditorView({ projectId, docId }: { projectId: string; docId: string }) {
-  const { data: project } = useProject(projectId);
   const { data: doc } = useProjectDoc(projectId, docId);
   // Solo se guarda lo que la persona edita; mientras no edite, el contenido es el del documento.
   // Copiar doc.content a un useState al montar dejaba el editor con un valor viejo (o vacío)
@@ -63,7 +61,7 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
 
   const { textareaRef, format, onKeyDown } = useMarkdownEditor(content, setContent);
 
-  if (!project || !doc) return null;
+  if (!doc) return null;
 
   // Restaurar lleva el contenido al editor sin guardarlo: se aplica con "Guardar cambios",
   // que registra una versión nueva en vez de borrar las posteriores.
@@ -131,21 +129,10 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
               )}
             </div>
           )}
-          <div style={{ fontFamily: "var(--font-space-mono)", fontSize: 9, color: "var(--text-3)", marginTop: 10, textAlign: "right" }}>
-            Admite Markdown
-          </div>
         </div>
       </div>
 
       <div>
-        <div className="doc-sc">
-          <div className="ds-lbl">Metadatos</div>
-          <div className="ds-row"><span className="ds-key">Tipo</span><span className="ds-val"><Badge color={doc.badgeColor} style={{ fontSize: 9 }}>{doc.type}</Badge></span></div>
-          <div className="ds-row"><span className="ds-key">Proyecto</span><span className="ds-val" style={{ fontSize: 11 }}>{project.name}</span></div>
-          {doc.author && <div className="ds-row"><span className="ds-key">Autor</span><span className="ds-val" style={{ fontSize: 11 }}>{doc.author}</span></div>}
-          <div className="ds-row"><span className="ds-key">Creado</span><span className="ds-val" style={{ fontSize: 11, fontFamily: "var(--font-space-mono)" }}>{doc.date}</span></div>
-        </div>
-
         <DocCommentsPanel
           comments={comments}
           composing={composing}

@@ -277,8 +277,9 @@ Weekly StandUp, this week's hours chart and the hours history.
   - Comments are not versioned: a comment tied to text that only exists in an unsaved change stays
     there if it is not saved.
   - Comments are made only from the preview: text cannot be highlighted in the `textarea`.
-- **The metadata (type, author, date) is read-only on purpose**: the type is the project's slot, and
-  author/date describe the creation. Who edited and when is in the history.
+- **The editor shows no metadata card** (type, project, author, creation date): it was visually
+  redundant with the title and breadcrumb. The API still returns those fields (`get_document` uses
+  them). Who edited and when is in the version history.
 
 ### Features and tasks
 
