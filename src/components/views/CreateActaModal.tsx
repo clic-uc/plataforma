@@ -1,19 +1,34 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Modal } from "@/components/ui/Modal";
 import { toISODateInput } from "@/lib/api/format";
-import { useCreateActa } from "@/lib/api/projects";
+import { useCreateActa, useProject } from "@/lib/api/projects";
 
 export function CreateActaModal({ projectId, onClose }: { projectId: string; onClose: () => void }) {
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(toISODateInput(new Date()));
 
+  const router = useRouter();
+  const { data: project } = useProject(projectId);
   const mutation = useCreateActa(projectId);
 
+  // La respuesta es el proyecto entero: el acta nueva es la que no estaba antes de crear.
+  // Se abre directo en el editor, que es lo siguiente que se hace con un acta.
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    mutation.mutate({ title, date }, { onSuccess: onClose });
+    const before = new Set(project?.actas.map((acta) => acta.id));
+    mutation.mutate(
+      { title, date },
+      {
+        onSuccess: (updated) => {
+          const created = updated.actas.find((acta) => !before.has(acta.id));
+          if (created) router.push(`/proyectos/${projectId}/docs/${created.id}`);
+          else onClose();
+        },
+      },
+    );
   }
 
   return (
@@ -45,8 +60,8 @@ export function CreateActaModal({ projectId, onClose }: { projectId: string; onC
 
         <div className="modal-footer" style={{ padding: 0, border: "none", marginTop: 4 }}>
           <button type="button" className="btn-ghost" onClick={onClose}>Cancelar</button>
-          <button type="submit" className="btn-primary" disabled={mutation.isPending}>
-            {mutation.isPending ? "Creando…" : "Crear acta"}
+          <button type="submit" className="btn-primary" disabled={mutation.isPending || mutation.isSuccess}>
+            {mutation.isPending || mutation.isSuccess ? "Creando…" : "Crear acta"}
           </button>
         </div>
       </form>

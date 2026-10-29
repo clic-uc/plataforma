@@ -611,7 +611,9 @@ export function parseCreateFeatureInput(body: unknown): CreateFeatureInput | nul
   const priority = typeof b.priority === "string" ? b.priority : "";
   if (!(Object.values(Priority) as string[]).includes(priority)) return null;
 
-  return { name, priority: priority as Priority };
+  const description = typeof b.description === "string" ? b.description.trim() || null : null;
+
+  return { name, priority: priority as Priority, description };
 }
 
 async function renumberFeatureLabels(tx: Prisma.TransactionClient, projectId: string): Promise<void> {
@@ -636,7 +638,14 @@ export async function createFeature(projectId: string, input: CreateFeatureInput
   const label = nextLabel("F", existing.map((f) => f.label));
 
   await prisma.feature.create({
-    data: { projectId, label, name: input.name, priority: input.priority, status: "PENDIENTE" },
+    data: {
+      projectId,
+      label,
+      name: input.name,
+      priority: input.priority,
+      status: "PENDIENTE",
+      description: input.description,
+    },
   });
 
   return getProject(projectId);
@@ -720,7 +729,9 @@ export function parseCreateTaskInput(body: unknown): CreateTaskInput | null {
   const column = typeof b.column === "string" ? b.column : "";
   if (!(Object.values(KanbanColumn) as string[]).includes(column)) return null;
 
-  return { featureId, assigneeId, name, type: type as TaskType, column: column as KanbanColumn };
+  const description = typeof b.description === "string" ? b.description.trim() || null : null;
+
+  return { featureId, assigneeId, name, type: type as TaskType, column: column as KanbanColumn, description };
 }
 
 async function renumberTaskLabels(tx: Prisma.TransactionClient, projectId: string): Promise<void> {
@@ -770,6 +781,7 @@ export async function createTask(
       type: input.type,
       active: true,
       column: input.column,
+      description: input.description,
     },
   });
 
@@ -782,9 +794,8 @@ export function parseUpdateTaskInput(body: unknown): UpdateTaskInput | null {
 
   const b = body as Record<string, unknown>;
   const active = typeof b.active === "boolean" ? b.active : true;
-  const description = typeof b.description === "string" ? b.description.trim() || null : null;
 
-  return { ...base, active, description };
+  return { ...base, active };
 }
 
 export async function updateTask(

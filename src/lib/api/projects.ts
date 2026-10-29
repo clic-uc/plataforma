@@ -147,6 +147,7 @@ export interface CreateProjectInput {
 export interface CreateFeatureInput {
   name: string;
   priority: Priority;
+  description: string | null;
 }
 
 export interface UpdateFeatureInput {
@@ -163,11 +164,11 @@ export interface CreateTaskInput {
   name: string;
   type: TaskType;
   column: KanbanColumn;
+  description: string | null;
 }
 
 export interface UpdateTaskInput extends CreateTaskInput {
   active: boolean;
-  description: string | null;
 }
 
 export interface CreateActaInput {
