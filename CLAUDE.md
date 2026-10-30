@@ -162,7 +162,7 @@ hook. And deleting a member's row deletes the person entirely, sessions included
 ## Domain behaviour
 
 How each module works today, including the decisions that were made deliberately (so they are not
-mistaken for omissions). What is still missing lives in `docs/TODO.md`.
+mistaken for omissions). What is still missing lives in the platform's issues (see **Pending work**).
 
 ### Dashboard (`/dashboard`)
 
@@ -526,14 +526,21 @@ Claude Code) or any MCP client. Streamable HTTP, stateless.
   `src/lib/mcp/` by domain; `run()` turns `AuthError`/`ApiError` into error results the model reads.
   Names are English `snake_case`, descriptions Spanish.
 - **Scope**: read projects, my tasks, calendar, members, my hours and StandUp; submit the StandUp;
-  log, edit and delete own hours; create and edit tasks; create events; read and edit documents and
-  actas; list, read, open, comment, close, reopen and mark as reviewed issues (by number, no token); link and unlink them to
-  features and tasks (labelsToken), and create a task already linked (`issueNumber`). Coordination actions (projects, teams, approvals, roles) and every other delete are left out
-  on purpose: rare, and some cannot be undone.
-- **Tasks go by label with `labelsToken`**, like the UI: `get_project` returns it and `update_task` /
-  `create_task` (with a feature) require it. `update_task` takes partial fields and fills the rest
-  from the current task; that read cannot mix two tasks because `updateTask` rejects a stale token
-  first. Both take `difficulty`; `update_task` takes `minutesSpent` (hours on move, same rules as the
+  log, edit and delete own hours; create and edit tasks and features; create events; read and edit
+  documents and actas; list, read, open, edit, comment, close, reopen and mark as reviewed issues (by
+  number, no token; editing follows the UI rule: author or coordination); link and unlink them to
+  features and tasks (labelsToken), and create a task or feature already linked (`issueNumber`).
+  Coordination actions (projects, teams, approvals, roles) and every other delete are left out on
+  purpose: rare, and some cannot be undone.
+- **Creating is suggested to go through a confirmed draft**: the server's `instructions` ask the model
+  to show the full draft of anything it creates (issue, feature, task, event…) and wait for a yes, so
+  the person does not end up iterating on created content (each issue edit also unmarks it as
+  reviewed for everyone else). It is a suggestion, not a check.
+- **Tasks and features go by label with `labelsToken`**, like the UI: `get_project` returns it and
+  `update_task`, `update_feature` and `create_task` (with a feature) require it. `update_task`,
+  `update_feature` and `update_issue` take partial fields and fill the rest from the current row. For
+  tasks and features that read cannot mix two of them because the update rejects a stale token
+  first. Both task tools take `difficulty`; `update_task` takes `minutesSpent` (hours on move, same rules as the
   UI) and `get_project` returns who worked and reviewed each task. `log_time` / `update_time_entry`
   take an optional `taskLabel` + `labelsToken` + `kind` to link hours to a task; `update_time_entry`
   keeps the current link when `taskLabel` is omitted and the project does not change.
@@ -573,5 +580,28 @@ approve the account from "Pendientes". The `prisma/seed` folder is gone.
 
 ## Known state
 
-`docs/TODO.md` lists only what is pending: gaps and ideas not built yet. This file describes how
-things work today, including the decisions that were made deliberately.
+What is pending (gaps and ideas not built yet) lives as **issues in the platform itself**, not in a
+file: see **Pending work** below. This file describes how things work today, including the decisions
+that were made deliberately.
+
+## Pending work
+
+Gaps, ideas and open decisions are tracked as issues of the **"Plataforma Interna"** project, through
+the `clic` MCP server (`list_issues`, `get_issue`, `create_issue`, `comment_issue`, `close_issue`…).
+There is no `docs/TODO.md`; do not recreate it.
+
+- **Before building something, check the open issues** (`list_issues`) in case it is already
+  described. When the work for an issue is done, **offer to close it** (`RESUELTO`, with a comment of
+  what was done); do not close it until the user accepts.
+- **One issue per piece of work**, not a list: something that can be done, discussed or closed on its
+  own. Use the type (`BUG` / `IDEA` / `PREGUNTA`) instead of putting it in the title, and write a
+  title that stands on its own (the number is the identifier, so do not number or prefix it).
+- **Confirm the draft before creating** an issue, feature or task: show it in full and wait for the
+  user to say it is ready, so that what gets created does not need rounds of edits afterwards. A
+  request for changes is not confirmation, and a batch needs a yes on the set before any is created.
+  The MCP server's `instructions` (`src/lib/mcp/server.ts`) carry the same suggestion for every
+  project that connects `clic`; keep the two in step.
+- Link an issue to the features and tasks that come out of it instead of describing them again
+  (`link_issue`, or `create_task` / `create_feature` with `issueNumber`).
+- When a decision from an issue ends up shaping how something works, move it to **Domain behaviour**
+  above, since this file is where deliberate decisions live.

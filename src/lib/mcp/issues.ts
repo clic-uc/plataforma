@@ -13,6 +13,7 @@ import {
   parseIssueStatusInput,
   setIssueReviewed,
   setIssueStatus,
+  updateIssue,
 } from "@/lib/api/issues.server";
 import { getProject, setIssueLink } from "@/lib/api/projects.server";
 import type { IssueDetail, IssueListItem } from "@/lib/api/issues";
@@ -143,6 +144,38 @@ export function registerIssueTools(server: McpServer): void {
 
         const issue = await createIssue(args.projectId, input);
         if (!issue) return fail("No existe el proyecto");
+        return json(issueView(issue));
+      }),
+  );
+
+  server.registerTool(
+    "update_issue",
+    {
+      title: "Editar issue",
+      description:
+        "Edita el título, el cuerpo o el tipo de un issue: solo cambian los campos que se envían. Solo quien lo abrió o coordinación. Cuenta como actividad del issue. Para agregar algo a la conversación, usa comment_issue.",
+      inputSchema: z.object({
+        projectId,
+        number,
+        title: z.string().min(1).optional(),
+        body: z.string().optional().describe("Cuerpo completo en Markdown (GFM): reemplaza al actual"),
+        type: z.enum(IssueType).optional(),
+      }),
+    },
+    (args) =>
+      run(async () => {
+        const current = await getIssue(args.projectId, args.number);
+        if (!current) return fail(`No existe el issue #${args.number} en ese proyecto`);
+
+        const input = parseIssueInput({
+          title: args.title ?? current.title,
+          body: args.body ?? current.body,
+          type: args.type ?? current.type,
+        });
+        if (!input) return fail("Datos inválidos");
+
+        const issue = await updateIssue(args.projectId, args.number, input);
+        if (!issue) return fail(`No existe el issue #${args.number} en ese proyecto`);
         return json(issueView(issue));
       }),
   );

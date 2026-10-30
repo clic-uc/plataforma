@@ -11,9 +11,17 @@ const { projects, issues, events, tiempo } = vi.hoisted(() => ({
     updateProjectDoc: vi.fn(),
     updateTask: vi.fn(),
     createTask: vi.fn(),
+    createFeature: vi.fn(),
+    updateFeature: vi.fn(),
     setIssueLink: vi.fn(),
   },
-  issues: { getIssue: vi.fn(), createIssue: vi.fn(), setIssueStatus: vi.fn(), setIssueReviewed: vi.fn() },
+  issues: {
+    getIssue: vi.fn(),
+    createIssue: vi.fn(),
+    updateIssue: vi.fn(),
+    setIssueStatus: vi.fn(),
+    setIssueReviewed: vi.fn(),
+  },
   events: { createEvent: vi.fn() },
   tiempo: { createTimeEntry: vi.fn(), updateTimeEntry: vi.fn(), getTimeEntryLink: vi.fn(), resolveTaskLabel: vi.fn() },
 }));
@@ -241,6 +249,57 @@ describe("create_task", () => {
   });
 });
 
+describe("features", () => {
+  function feature(overrides: Partial<ProjectFeature> = {}): ProjectFeature {
+    return {
+      id: "F-01",
+      name: "Auth",
+      priority: "alta",
+      priorityValue: "ALTA",
+      status: "Pendiente",
+      statusColor: "gray",
+      statusValue: "PENDIENTE",
+      description: "Con GitHub",
+      taskCount: 0,
+      issues: [],
+      ...overrides,
+    };
+  }
+
+  it("create_feature devuelve la de label más alto y pasa el issue de origen", async () => {
+    projects.createFeature.mockResolvedValue(project([], [feature({ id: "F-01" }), feature({ id: "F-02", name: "MCP", issues: [4] })]));
+    const result = await call("create_feature", { projectId: "p1", name: "MCP", priority: "MEDIA", issueNumber: 4 });
+    expect(projects.createFeature.mock.calls[0][1]).toMatchObject({ name: "MCP", priority: "MEDIA", issueNumber: 4, description: null });
+    expect(JSON.parse(text(result))).toMatchObject({ id: "F-02", name: "MCP", issues: [4] });
+  });
+
+  it("update_feature completa los campos omitidos con los actuales", async () => {
+    projects.getProject.mockResolvedValue(project([], [feature()]));
+    projects.updateFeature.mockResolvedValue(project([], [feature({ statusValue: "HECHO" })]));
+    await call("update_feature", { projectId: "p1", featureId: "F-01", labelsToken: "tok", status: "HECHO" });
+    expect(projects.updateFeature).toHaveBeenCalledWith(
+      "p1",
+      "F-01",
+      { name: "Auth", priority: "ALTA", status: "HECHO", description: "Con GitHub" },
+      "tok",
+    );
+  });
+
+  it("update_feature con description null la quita, a diferencia de omitirla", async () => {
+    projects.getProject.mockResolvedValue(project([], [feature()]));
+    projects.updateFeature.mockResolvedValue(project([], [feature({ description: null })]));
+    await call("update_feature", { projectId: "p1", featureId: "F-01", labelsToken: "tok", description: null });
+    expect(projects.updateFeature.mock.calls[0][2]).toMatchObject({ description: null });
+  });
+
+  it("update_feature responde error si la feature no existe", async () => {
+    projects.getProject.mockResolvedValue(project([], [feature()]));
+    const result = await call("update_feature", { projectId: "p1", featureId: "F-09", labelsToken: "tok" });
+    expect(result.isError).toBe(true);
+    expect(projects.updateFeature).not.toHaveBeenCalled();
+  });
+});
+
 describe("update_document", () => {
   const doc = (content: string) => ({ title: "Kickoff", type: "Kickoff", badgeColor: "blue", author: "", date: "", content });
 
@@ -319,6 +378,21 @@ describe("issues", () => {
     const result = await call("create_issue", { projectId: "p1", title: "   ", body: "", type: "IDEA" });
     expect(result.isError).toBe(true);
     expect(issues.createIssue).not.toHaveBeenCalled();
+  });
+
+  it("update_issue completa los campos omitidos con los actuales", async () => {
+    issues.getIssue.mockResolvedValue({ ...issue, body: "Pasa en Safari" });
+    issues.updateIssue.mockResolvedValue({ ...issue, title: "Login falla en Safari" });
+    const result = await call("update_issue", { projectId: "p1", number: 3, title: "Login falla en Safari" });
+    expect(issues.updateIssue).toHaveBeenCalledWith("p1", 3, { title: "Login falla en Safari", body: "Pasa en Safari", type: "BUG" });
+    expect(JSON.parse(text(result))).toMatchObject({ title: "Login falla en Safari" });
+  });
+
+  it("update_issue responde error si el issue no existe", async () => {
+    issues.getIssue.mockResolvedValue(null);
+    const result = await call("update_issue", { projectId: "p1", number: 99, title: "X" });
+    expect(result.isError).toBe(true);
+    expect(issues.updateIssue).not.toHaveBeenCalled();
   });
 
   it("get_issue incluye las features y tareas vinculadas con el labelsToken", async () => {

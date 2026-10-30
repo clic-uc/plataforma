@@ -3,19 +3,23 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
-import { KanbanColumn, TaskDifficulty, TaskType } from "@/generated/prisma/enums";
+import { FeatureStatus, KanbanColumn, Priority, TaskDifficulty, TaskType } from "@/generated/prisma/enums";
 import {
+  createFeature,
   createTask,
   getAssignedTasks,
   getProject,
   getProjectDoc,
   getProjects,
+  parseCreateFeatureInput,
   parseCreateTaskInput,
+  parseUpdateFeatureInput,
   parseUpdateTaskInput,
+  updateFeature,
   updateProjectDoc,
   updateTask,
 } from "@/lib/api/projects.server";
-import type { ProjectDetail, ProjectTask } from "@/lib/api/projects";
+import type { ProjectDetail, ProjectFeature, ProjectTask } from "@/lib/api/projects";
 import { labelNumber } from "@/lib/api/labels";
 import { MAX_ENTRY_MINUTES, MINUTES_STEP, isValidEntryMinutes } from "@/lib/tiempo";
 import { fail, json, run } from "@/lib/mcp/result";
@@ -56,6 +60,18 @@ function taskWithHistoryView(task: ProjectTask) {
 
 const difficultyDescription = "Dificultad estimada: BAJA, MEDIA o ALTA";
 
+function featureView(feature: ProjectFeature) {
+  return {
+    id: feature.id,
+    name: feature.name,
+    priority: feature.priorityValue,
+    status: feature.statusValue,
+    description: feature.description,
+    taskCount: feature.taskCount,
+    issues: feature.issues,
+  };
+}
+
 function projectView(project: ProjectDetail) {
   return {
     id: project.id,
@@ -68,15 +84,7 @@ function projectView(project: ProjectDetail) {
     startDate: project.startDateISO,
     labelsToken: project.labelsToken,
     team: project.team.map((m) => ({ id: m.id, name: m.name })),
-    features: project.features.map((f) => ({
-      id: f.id,
-      name: f.name,
-      priority: f.priorityValue,
-      status: f.statusValue,
-      description: f.description,
-      taskCount: f.taskCount,
-      issues: f.issues,
-    })),
+    features: project.features.map(featureView),
     tasks: project.tasks.map(taskWithHistoryView),
     documents: project.docs.map((d) => ({ docId: d.key, name: d.name, filled: d.filled, author: d.author, date: d.date })),
     actas: project.actas.map((a) => ({ docId: a.id, title: a.title, date: a.date })),
@@ -128,7 +136,7 @@ export function registerProjectTools(server: McpServer): void {
     {
       title: "Ver proyecto",
       description:
-        "Detalle de un proyecto: equipo, features (F-01…), tareas (T-01…), documentos y actas. Devuelve el labelsToken que piden las tools que editan tareas. Cada tarea trae su dificultad, quién la trabajó (workedBy: asignados mientras estuvo En progreso) y quién la revisó (reviewedBy: asignados mientras estuvo En revisión), y los minutos dedicados registrados por todo el equipo (minutesWorked, minutesReviewed).",
+        "Detalle de un proyecto: equipo, features (F-01…), tareas (T-01…), documentos y actas. Devuelve el labelsToken que piden las tools que editan tareas y features. Cada tarea trae su dificultad, quién la trabajó (workedBy: asignados mientras estuvo En progreso) y quién la revisó (reviewedBy: asignados mientras estuvo En revisión), y los minutos dedicados registrados por todo el equipo (minutesWorked, minutesReviewed).",
       inputSchema: z.object({ projectId }),
       annotations: { readOnlyHint: true },
     },
@@ -276,6 +284,83 @@ export function registerProjectTools(server: McpServer): void {
         const updated = project?.tasks.find((t) => t.id === args.taskId);
         if (!updated) return fail("No existe la tarea o la feature");
         return json(taskView(updated));
+      }),
+  );
+
+  server.registerTool(
+    "create_feature",
+    {
+      title: "Crear feature",
+      description: "Crea una feature en un proyecto. Nace en estado PENDIENTE. Descripción en Markdown (GFM).",
+      inputSchema: z.object({
+        projectId,
+        name: z.string().min(1),
+        priority: z.enum(Priority),
+        description: z.string().optional(),
+        issueNumber: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Número del issue del que sale la feature (el 12 de #12); queda vinculada a él"),
+      }),
+    },
+    (args) =>
+      run(async () => {
+        const input = parseCreateFeatureInput({
+          name: args.name,
+          priority: args.priority,
+          description: args.description ?? null,
+          issueNumber: args.issueNumber ?? null,
+        });
+        if (!input) return fail("Datos inválidos");
+
+        const project = await createFeature(args.projectId, input);
+        if (!project) return fail("No existe el proyecto");
+
+        // createFeature devuelve el proyecto entero; la feature nueva es la del label más alto.
+        const created = project.features.reduce((a, b) => (labelNumber("F", b.id) > labelNumber("F", a.id) ? b : a));
+        return json(featureView(created));
+      }),
+  );
+
+  server.registerTool(
+    "update_feature",
+    {
+      title: "Editar feature",
+      description:
+        "Edita una feature: solo cambian los campos que se envían. El estado (PENDIENTE, EN_PROGRESO, HECHO) es manual: no se deriva de sus tareas.",
+      inputSchema: z.object({
+        projectId,
+        featureId: z.string().describe("Label de la feature (F-01)"),
+        labelsToken,
+        name: z.string().min(1).optional(),
+        priority: z.enum(Priority).optional(),
+        status: z.enum(FeatureStatus).optional(),
+        description: z.string().nullable().optional().describe("Markdown (GFM), o null para quitarla"),
+      }),
+    },
+    (args) =>
+      run(async () => {
+        // Igual que update_task: lo omitido se completa con lo actual, y updateFeature
+        // rechaza un labelsToken viejo antes de escribir.
+        const current = await getProject(args.projectId);
+        if (!current) return fail("No existe el proyecto");
+        const feature = current.features.find((f) => f.id === args.featureId);
+        if (!feature) return fail(`No existe la feature ${args.featureId}`);
+
+        const input = parseUpdateFeatureInput({
+          name: args.name ?? feature.name,
+          priority: args.priority ?? feature.priorityValue,
+          status: args.status ?? feature.statusValue,
+          description: args.description !== undefined ? args.description : feature.description,
+        });
+        if (!input) return fail("Datos inválidos");
+
+        const project = await updateFeature(args.projectId, args.featureId, input, args.labelsToken);
+        const updated = project?.features.find((f) => f.id === args.featureId);
+        if (!updated) return fail(`No existe la feature ${args.featureId}`);
+        return json(featureView(updated));
       }),
   );
 
