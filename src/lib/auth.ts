@@ -34,7 +34,14 @@ export const auth = betterAuth({
   plugins: [
     mcp({
       loginPage: "/login",
-      oidcConfig: { loginPage: "/login", consentPage: "/autorizar", requirePKCE: true },
+      oidcConfig: {
+        loginPage: "/login",
+        consentPage: "/autorizar",
+        requirePKCE: true,
+        // Los clientes MCP no piden scope, y con el default ("openid") el plugin no
+        // entrega refresh token: había que volver a autenticar cada hora.
+        defaultScope: "openid offline_access",
+      },
     }),
   ],
   hooks: {
