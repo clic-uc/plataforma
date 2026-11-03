@@ -600,6 +600,13 @@ Gaps, ideas and open decisions are tracked as issues of the **"Plataforma Intern
 the `clic` MCP server (`list_issues`, `get_issue`, `create_issue`, `comment_issue`, `close_issue`…).
 There is no `docs/TODO.md`; do not recreate it.
 
+- **The task comes first.** Before starting any work (code, a fix, a document), the first step,
+  before reading code or planning, is to find the task that covers it (`get_project`,
+  `list_my_tasks`) or, if there is none, draft one (confirmed as below, linked to its issue), and
+  leave it in En progreso with its assignee. Kanban metrics measure calendar time from En progreso to
+  Listo (cycle time, time per column), so a task created or moved late loses the real time spent.
+  Move it as the work moves: Por revisar when it waits for review, Listo when it is merged. The MCP
+  server's `instructions` carry the same rule; keep the two in step.
 - **Before building something, check the open issues** (`list_issues`) in case it is already
   described. When the work for an issue is done, **offer to close it** (`RESUELTO`, with a comment of
   what was done); do not close it until the user accepts.
