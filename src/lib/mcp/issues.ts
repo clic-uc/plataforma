@@ -2,21 +2,24 @@ import "server-only";
 
 import { z } from "zod";
 import type { CallToolResult, McpServer } from "@modelcontextprotocol/server";
-import { IssueCloseReason, IssueType } from "@/generated/prisma/enums";
+import { IssueCloseReason, IssueType, Priority } from "@/generated/prisma/enums";
 import {
   createIssue,
   createIssueComment,
   getIssue,
   getProjectIssues,
   parseIssueCommentInput,
+  parseIssueCreateInput,
   parseIssueInput,
+  parseIssuePriorityInput,
   parseIssueStatusInput,
+  setIssuePriority,
   setIssueReviewed,
   setIssueStatus,
   updateIssue,
 } from "@/lib/api/issues.server";
 import { getProject, setIssueLink } from "@/lib/api/projects.server";
-import type { IssueDetail, IssueListItem } from "@/lib/api/issues";
+import { matchesPriorityFilter, type IssueDetail, type IssueListItem } from "@/lib/api/issues";
 import type { ProjectDetail } from "@/lib/api/projects";
 import { fail, json, run } from "@/lib/mcp/result";
 
@@ -29,6 +32,7 @@ function issueListView(issue: IssueListItem) {
     number: issue.number,
     title: issue.title,
     type: issue.type,
+    priority: issue.priority,
     status: issue.status,
     closeReason: issue.closeReason,
     author: issue.author,
@@ -92,18 +96,26 @@ export function registerIssueTools(server: McpServer): void {
     {
       title: "Listar issues",
       description:
-        "Issues de un proyecto (tickets con hilo de conversación), del de actividad más reciente al más antiguo. reviewed dice si la persona conectada ya lo revisó después de su última actividad.",
+        "Issues de un proyecto (tickets con hilo de conversación), del de actividad más reciente al más antiguo. reviewed dice si la persona conectada ya lo revisó después de su última actividad. priority es ALTA, MEDIA, BAJA o null (sin prioridad); se puede filtrar por ella.",
       inputSchema: z.object({
         projectId,
         status: z.enum(["ABIERTO", "CERRADO", "TODOS"]).default("ABIERTO").describe("Filtrar por estado"),
+        priority: z
+          .enum(["ALTA", "MEDIA", "BAJA", "SIN", "TODAS"])
+          .default("TODAS")
+          .describe("Filtrar por prioridad: una en particular, SIN (los que no tienen) o TODAS"),
       }),
       annotations: { readOnlyHint: true },
     },
-    ({ projectId, status }) =>
+    ({ projectId, status, priority }) =>
       run(async () => {
         const issues = await getProjectIssues(projectId);
         if (!issues) return fail("No existe el proyecto");
-        return json(issues.filter((i) => status === "TODOS" || i.status === status).map(issueListView));
+        return json(
+          issues
+            .filter((i) => (status === "TODOS" || i.status === status) && matchesPriorityFilter(i.priority, priority ?? "TODAS"))
+            .map(issueListView),
+        );
       }),
   );
 
@@ -129,17 +141,23 @@ export function registerIssueTools(server: McpServer): void {
     {
       title: "Abrir issue",
       description:
-        "Abre un issue en un proyecto: un ticket para discutir un bug, una idea o una pregunta antes de convertirlo en features o tareas. Cuerpo en Markdown (GFM).",
+        "Abre un issue en un proyecto: un ticket para discutir un bug, una idea o una pregunta antes de convertirlo en features o tareas. Cuerpo en Markdown (GFM). La prioridad es opcional: si no se indica, nace sin prioridad.",
       inputSchema: z.object({
         projectId,
         title: z.string().min(1),
         body: z.string().default(""),
         type: z.enum(IssueType),
+        priority: z.enum(Priority).optional(),
       }),
     },
     (args) =>
       run(async () => {
-        const input = parseIssueInput({ title: args.title, body: args.body ?? "", type: args.type });
+        const input = parseIssueCreateInput({
+          title: args.title,
+          body: args.body ?? "",
+          type: args.type,
+          priority: args.priority ?? null,
+        });
         if (!input) return fail("Datos inválidos");
 
         const issue = await createIssue(args.projectId, input);
@@ -153,28 +171,47 @@ export function registerIssueTools(server: McpServer): void {
     {
       title: "Editar issue",
       description:
-        "Edita el título, el cuerpo o el tipo de un issue: solo cambian los campos que se envían. Solo quien lo abrió o coordinación. Cuenta como actividad del issue. Para agregar algo a la conversación, usa comment_issue.",
+        "Edita el título, el cuerpo, el tipo o la prioridad de un issue: solo cambian los campos que se envían. Título, cuerpo y tipo solo los edita quien lo abrió o coordinación, y cuentan como actividad del issue (lo dejan sin revisar para el resto). La prioridad la cambia cualquier miembro y no cuenta como actividad: no reordena la lista ni lo desmarca como revisado para nadie. Para agregar algo a la conversación, usa comment_issue.",
       inputSchema: z.object({
         projectId,
         number,
         title: z.string().min(1).optional(),
         body: z.string().optional().describe("Cuerpo completo en Markdown (GFM): reemplaza al actual"),
         type: z.enum(IssueType).optional(),
+        priority: z.enum(Priority).nullable().optional().describe("null quita la prioridad"),
       }),
     },
     (args) =>
       run(async () => {
-        const current = await getIssue(args.projectId, args.number);
-        if (!current) return fail(`No existe el issue #${args.number} en ese proyecto`);
+        const editsContent = args.title !== undefined || args.body !== undefined || args.type !== undefined;
+        const priority = args.priority === undefined ? undefined : parseIssuePriorityInput({ priority: args.priority });
+        if (priority === null) return fail("Prioridad inválida");
+        if (!editsContent && !priority) return fail("Indica al menos un campo");
 
-        const input = parseIssueInput({
-          title: args.title ?? current.title,
-          body: args.body ?? current.body,
-          type: args.type ?? current.type,
-        });
-        if (!input) return fail("Datos inválidos");
+        let issue: IssueDetail | null = null;
 
-        const issue = await updateIssue(args.projectId, args.number, input);
+        // Primero lo que es actividad (y exige ser autor o coordinación): si se rechaza,
+        // la prioridad tampoco cambia.
+        if (editsContent) {
+          const current = await getIssue(args.projectId, args.number);
+          if (!current) return fail(`No existe el issue #${args.number} en ese proyecto`);
+
+          const input = parseIssueInput({
+            title: args.title ?? current.title,
+            body: args.body ?? current.body,
+            type: args.type ?? current.type,
+          });
+          if (!input) return fail("Datos inválidos");
+
+          issue = await updateIssue(args.projectId, args.number, input);
+          if (!issue) return fail(`No existe el issue #${args.number} en ese proyecto`);
+        }
+
+        // Cambiar la prioridad no es actividad: no deshace la marca de revisión de nadie.
+        if (priority) {
+          issue = await setIssuePriority(args.projectId, args.number, priority.priority);
+        }
+
         if (!issue) return fail(`No existe el issue #${args.number} en ese proyecto`);
         return json(issueView(issue));
       }),

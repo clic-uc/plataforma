@@ -20,7 +20,7 @@ import {
   IssuesTabIcon,
 } from "@/components/icons";
 import type { KanbanColumn } from "@/generated/prisma/enums";
-import { KANBAN_COLUMN_OPTIONS, kanbanColumnValue, priorityColor } from "@/lib/api/status";
+import { KANBAN_COLUMN_OPTIONS, kanbanColumnValue, PRIORITY_OPTIONS, priorityColor } from "@/lib/api/status";
 import {
   taskMoveErrorMessage,
   taskToUpdateInput,
@@ -43,7 +43,7 @@ import { CreateActaModal } from "@/components/views/CreateActaModal";
 import { ProjectTeamModal } from "@/components/views/ProjectTeamModal";
 import { CreateIssueModal } from "@/components/views/CreateIssueModal";
 import { ProjectIssuesList } from "@/components/views/ProjectIssuesList";
-import { useProjectIssues, type IssueFilter } from "@/lib/api/issues";
+import { useProjectIssues, type IssueFilter, type IssueOrder, type IssuePriorityFilter } from "@/lib/api/issues";
 import { useCurrentMember, useIsCoordinacion } from "@/components/providers/CurrentMemberProvider";
 import { moveNeedsDialog, planMove } from "@/lib/task-move";
 
@@ -101,6 +101,8 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const [managingTeam, setManagingTeam] = useState(false);
   const [creatingIssue, setCreatingIssue] = useState(false);
   const [issueFilter, setIssueFilter] = useState<IssueFilter>("ABIERTO");
+  const [issuePriorityFilter, setIssuePriorityFilter] = useState<IssuePriorityFilter>("TODAS");
+  const [issueOrder, setIssueOrder] = useState<IssueOrder>("ACTIVIDAD");
   const isCoordinacion = useIsCoordinacion();
   const me = useCurrentMember();
   const [featureFilter, setFeatureFilter] = useState("");
@@ -251,6 +253,27 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                 <option value="ABIERTO">Abiertos</option>
                 <option value="CERRADO">Cerrados</option>
                 <option value="TODOS">Todos</option>
+              </select>
+              <select
+                className="filter-select sm"
+                value={issuePriorityFilter}
+                onChange={(e) => setIssuePriorityFilter(e.target.value as IssuePriorityFilter)}
+                aria-label="Filtrar por prioridad"
+              >
+                <option value="TODAS">Toda prioridad</option>
+                {PRIORITY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+                <option value="SIN">Sin prioridad</option>
+              </select>
+              <select
+                className="filter-select sm"
+                value={issueOrder}
+                onChange={(e) => setIssueOrder(e.target.value as IssueOrder)}
+                aria-label="Ordenar"
+              >
+                <option value="ACTIVIDAD">Por actividad</option>
+                <option value="PRIORIDAD">Por prioridad</option>
               </select>
               <button className="btn-xs btn-xs-p" onClick={() => setCreatingIssue(true)}>+ Nuevo issue</button>
             </div>
@@ -422,7 +445,15 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        {tab === "issues" && <ProjectIssuesList projectId={project.id} issues={issues} filter={issueFilter} />}
+        {tab === "issues" && (
+          <ProjectIssuesList
+            projectId={project.id}
+            issues={issues}
+            filter={issueFilter}
+            priorityFilter={issuePriorityFilter}
+            order={issueOrder}
+          />
+        )}
       </div>
 
       <aside className="card pd-side">
