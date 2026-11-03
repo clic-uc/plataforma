@@ -296,10 +296,16 @@ Weekly StandUp, this week's hours chart and the hours history.
 
 ### Members (`/miembros`)
 
-- **Editing permissions**: each person edits their own profile (name, birthday, skills, availability).
-  Role, status and level are assigned by coordination, which can also edit anyone's profile.
+- **Editing permissions**: each person edits their own profile (name, birthday, skills, availability,
+  rank). Role, status and level are assigned by coordination, which can also edit anyone's profile.
   `PATCH /api/members/[id]` carries those fields in an optional `admin` block; if someone who is not
   coordination sends it, 403 `FORBIDDEN_ROLE`.
+- **Rank (the stars) is a self-assessment**: the general capabilities each person considers they
+  have, 1 to 5 stars (`Member.rank`, CHECK in migration `20261103130000_member_rank`). So each person
+  sets their own from "Editar mi perfil", in the profile part of the body (`rank`, required), not in
+  `admin`. It has nothing to do with the level: until that migration the stars were derived from
+  `level` (0–4); the migration copied what was shown, raised to 1. What happens to the level is
+  open in the platform's issues ("Calcular el nivel de un miembro por experiencia").
 - **There is always at least one coordinator.** A coordinator can drop their own role only if another
   one remains (409 `LAST_COORDINATOR`), and nobody can delete themselves (422 `CANNOT_REMOVE_SELF`).
   Those two rules suffice: whoever changes someone else's role or deletes them is coordination and

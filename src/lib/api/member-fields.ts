@@ -8,6 +8,13 @@ export const MAX_SKILLS = 20;
 export const MAX_SKILL_LENGTH = 40;
 export const MAX_LEVEL = 99;
 
+/** Rango: autoevaluación en estrellas, de 1 a MAX_RANK. */
+export const MAX_RANK = 5;
+
+export function isRank(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= MAX_RANK;
+}
+
 // ─── Disponibilidad ───
 
 export const AVAILABILITY_DAYS = [
