@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { IssueType } from "@/generated/prisma/enums";
+import type { IssueType, Priority } from "@/generated/prisma/enums";
 import { Modal } from "@/components/ui/Modal";
 import { MarkdownToolbar, useMarkdownEditor } from "@/components/ui/MarkdownToolbar";
-import { ISSUE_TYPE_OPTIONS } from "@/lib/api/status";
+import { ISSUE_TYPE_OPTIONS, PRIORITY_OPTIONS } from "@/lib/api/status";
 import { errorMessage } from "@/lib/api/http";
 import { MAX_ISSUE_BODY_LENGTH, MAX_ISSUE_TITLE_LENGTH, useCreateIssue } from "@/lib/api/issues";
 
@@ -13,6 +13,7 @@ export function CreateIssueModal({ projectId, onClose }: { projectId: string; on
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [type, setType] = useState<IssueType>("IDEA");
+  const [priority, setPriority] = useState<Priority | null>(null);
   const [body, setBody] = useState("");
   const { textareaRef, format, onKeyDown } = useMarkdownEditor(body, setBody);
 
@@ -21,7 +22,7 @@ export function CreateIssueModal({ projectId, onClose }: { projectId: string; on
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     mutation.mutate(
-      { title, type, body },
+      { title, type, body, priority },
       { onSuccess: (created) => router.push(`/proyectos/${projectId}/issues/${created.number}`) },
     );
   }
@@ -41,13 +42,28 @@ export function CreateIssueModal({ projectId, onClose }: { projectId: string; on
           />
         </div>
 
-        <div className="form-field">
-          <div className="f-label">Tipo</div>
-          <select className="field-select" value={type} onChange={(e) => setType(e.target.value as IssueType)}>
-            {ISSUE_TYPE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
+        <div className="field-row">
+          <div className="form-field">
+            <div className="f-label">Tipo</div>
+            <select className="field-select" value={type} onChange={(e) => setType(e.target.value as IssueType)}>
+              {ISSUE_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-field">
+            <div className="f-label">Prioridad</div>
+            <select
+              className="field-select"
+              value={priority ?? ""}
+              onChange={(e) => setPriority((e.target.value || null) as Priority | null)}
+            >
+              <option value="">Sin prioridad</option>
+              {PRIORITY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="form-field">

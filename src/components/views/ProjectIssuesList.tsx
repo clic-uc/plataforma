@@ -2,10 +2,17 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { IssueType } from "@/generated/prisma/enums";
+import type { IssueType, Priority } from "@/generated/prisma/enums";
 import { Badge } from "@/components/ui/Badge";
-import { issueCloseReasonLabel, issueTypeLabel } from "@/lib/api/status";
-import type { IssueFilter, IssueListItem } from "@/lib/api/issues";
+import { issueCloseReasonLabel, issueTypeLabel, PRIORITY_OPTIONS, priorityColor, priorityLabel } from "@/lib/api/status";
+import {
+  matchesPriorityFilter,
+  sortIssuesByPriority,
+  type IssueFilter,
+  type IssueListItem,
+  type IssueOrder,
+  type IssuePriorityFilter,
+} from "@/lib/api/issues";
 
 // Reutiliza los colores de los tipos de tarea (.tt-*): bug en rojo, idea en azul, pregunta en violeta.
 const issueTypeClass: Record<IssueType, string> = {
@@ -16,6 +23,19 @@ const issueTypeClass: Record<IssueType, string> = {
 
 export function IssueTypeTag({ type }: { type: IssueType }) {
   return <span className={`task-type ${issueTypeClass[type]}`}>{issueTypeLabel[type]}</span>;
+}
+
+const priorityName = Object.fromEntries(PRIORITY_OPTIONS.map((opt) => [opt.value, opt.label])) as Record<Priority, string>;
+
+/** Punto con el color de prioridad de las features (--prio-*) y su nombre. Sin prioridad no muestra nada. */
+function IssuePriorityTag({ priority }: { priority: Priority | null }) {
+  if (!priority) return null;
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-text-2" title={`Prioridad ${priorityLabel[priority]}`}>
+      <span className="size-[7px] rounded-full" style={{ background: priorityColor[priorityLabel[priority]] }} aria-hidden />
+      {priorityName[priority]}
+    </span>
+  );
 }
 
 const emptyText: Record<IssueFilter, string> = {
@@ -33,22 +53,37 @@ export function ProjectIssuesList({
   projectId,
   issues,
   filter,
+  priorityFilter,
+  order,
 }: {
   projectId: string;
   issues: IssueListItem[];
   filter: IssueFilter;
+  priorityFilter: IssuePriorityFilter;
+  order: IssueOrder;
 }) {
-  // El estado (abiertos/cerrados/todos) lo elige ProjectDetailView; "sin revisar" se filtra acá.
+  // Estado, prioridad y orden los elige ProjectDetailView; "sin revisar" se filtra acá.
   const [onlyUnreviewed, setOnlyUnreviewed] = useState(false);
 
   const byStatus = filter === "TODOS" ? issues : issues.filter((issue) => issue.status === filter);
-  const unreviewedCount = byStatus.filter((issue) => !issue.reviewedByMe).length;
-  const visible = onlyUnreviewed ? byStatus.filter((issue) => !issue.reviewedByMe) : byStatus;
+  const filtered = byStatus.filter((issue) => matchesPriorityFilter(issue.priority, priorityFilter));
+  const unreviewedCount = filtered.filter((issue) => !issue.reviewedByMe).length;
+  // La lista llega por actividad; ordenar por prioridad la conserva dentro de cada nivel.
+  const ordered = order === "PRIORIDAD" ? sortIssuesByPriority(filtered) : filtered;
+  const visible = onlyUnreviewed ? ordered.filter((issue) => !issue.reviewedByMe) : ordered;
 
   if (byStatus.length === 0) {
     return (
       <div className="ph">
         <div className="ph-text">{emptyText[filter]}</div>
+      </div>
+    );
+  }
+
+  if (filtered.length === 0) {
+    return (
+      <div className="ph">
+        <div className="ph-text">Ningún issue de esta lista tiene esa prioridad.</div>
       </div>
     );
   }
@@ -104,6 +139,7 @@ export function ProjectIssuesList({
                 {issue.author || "Ex miembro"} · {issue.lastActivityAt}
               </div>
             </div>
+            <IssuePriorityTag priority={issue.priority} />
             <IssueTypeTag type={issue.type} />
             {issue.closeReason && (
               <Badge color="gray">{issueCloseReasonLabel[issue.closeReason]}</Badge>
