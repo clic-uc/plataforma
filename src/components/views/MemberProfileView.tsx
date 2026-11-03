@@ -16,6 +16,7 @@ import {
   LockAchievementIcon,
 } from "@/components/icons";
 import { errorMessage } from "@/lib/api/http";
+import { MAX_RANK } from "@/lib/api/member-fields";
 import { useDeleteMember, useMember } from "@/lib/api/members";
 
 const achievementIcon = {
@@ -50,7 +51,7 @@ export function MemberProfileView({ memberId }: { memberId: string }) {
     deleteMember.mutate(member.id, { onSuccess: () => router.push("/miembros") });
   }
 
-  const stars = "★".repeat(member.rankFilled) + "☆".repeat(4 - member.rankFilled);
+  const stars = "★".repeat(member.rank) + "☆".repeat(MAX_RANK - member.rank);
 
   return (
     <section className="perfil-layout">
@@ -76,8 +77,8 @@ export function MemberProfileView({ memberId }: { memberId: string }) {
           <hr className="perfil-divider" />
           <div className="perfil-stats">
             <div className="perfil-stat">
-              <div className="perfil-stat-val stars" aria-label={`Rango ${member.rankFilled} de 4`}>
-                {member.rankFilled > 0 ? stars : "—"}
+              <div className="perfil-stat-val stars" aria-label={`Rango ${member.rank} de ${MAX_RANK}`}>
+                {stars}
               </div>
               <div className="perfil-stat-lbl">Rango</div>
             </div>

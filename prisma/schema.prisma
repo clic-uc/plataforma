@@ -125,6 +125,11 @@ model Member {
   skills   String[]     @default([])
   level    Int          @default(0)
 
+  /// Autoevaluación de 1 a 5 estrellas: las capacidades generales que la
+  /// persona considera tener. La edita cada uno desde su perfil; no depende
+  /// del nivel. CHECK 1–5 en la migración 20261103130000_member_rank.
+  rank Int @default(1)
+
   /// Bloques de la semana en que la persona declara estar disponible, como
   /// "LUN_MANANA". Los valores válidos viven en src/lib/api/member-fields.ts.
   availability String[] @default([])

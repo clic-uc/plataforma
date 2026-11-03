@@ -12,6 +12,7 @@ import {
   birthdayFromDate,
   birthdayToDate,
   formatBirthday,
+  isRank,
   normalizeSkills,
   parseAvailability,
   sanitizeAvailability,
@@ -42,10 +43,6 @@ function toAchievementIcon(icon: string): AchievementIcon {
 /** Standups que muestra el perfil. */
 const RECENT_STANDUPS = 6;
 
-function rankFromLevel(level: number): number {
-  return Math.min(4, Math.max(0, level));
-}
-
 export async function getMembers(): Promise<MemberListItem[]> {
   await requireMember();
 
@@ -68,9 +65,9 @@ export async function getMembers(): Promise<MemberListItem[]> {
     status: memberStatusLabel[member.status],
     statusColor: memberStatusColor[member.status],
     statusValue: member.status,
-    rankFilled: rankFromLevel(member.level),
+    rank: member.rank,
     birthday: member.birthday ? formatBirthday(member.birthday) : "—",
-    projects: member.projects.map((pm) => ({ id: pm.project.id, name: pm.project.name })),
+    projects:member.projects.map((pm) => ({ id: pm.project.id, name: pm.project.name })),
   }));
 }
 
@@ -98,7 +95,7 @@ export async function getMember(id: string): Promise<MemberDetail | null> {
     status: memberStatusLabel[member.status],
     statusColor: memberStatusColor[member.status],
     statusValue: member.status,
-    rankFilled: rankFromLevel(member.level),
+    rank: member.rank,
     birthday: member.birthday ? formatBirthday(member.birthday) : "—",
     birthdayValue: member.birthday ? birthdayFromDate(member.birthday) : null,
     joinedAt: formatMonthYear(member.joinedAt),
@@ -125,8 +122,9 @@ export async function getMember(id: string): Promise<MemberDetail | null> {
 // ─── Edición ───
 //
 // Cada persona edita su propio perfil (nombre, cumpleaños, habilidades,
-// disponibilidad). Rol, estado y nivel los asigna coordinación, que
-// además puede editar el perfil de cualquiera.
+// disponibilidad, rango). Rol, estado y nivel los asigna coordinación, que
+// además puede editar el perfil de cualquiera. El rango es una autoevaluación,
+// por eso va en el perfil y no en el bloque de coordinación.
 
 function parseText(value: unknown, maxLength: number): string | null {
   const text = typeof value === "string" ? value.trim() : "";
@@ -168,7 +166,9 @@ export function parseUpdateMemberInput(body: unknown): UpdateMemberInput | null 
   const availability = parseAvailability(b.availability);
   if (!availability) return null;
 
-  const input: UpdateMemberInput = { name, birthday, skills, availability };
+  if (!isRank(b.rank)) return null;
+
+  const input: UpdateMemberInput = { name, birthday, skills, availability, rank: b.rank };
   if (b.admin !== undefined) {
     const admin = parseAdminInput(b.admin);
     if (!admin) return null;
@@ -219,6 +219,7 @@ export async function updateMember(id: string, input: UpdateMemberInput): Promis
       birthday: input.birthday ? birthdayToDate(input.birthday) : null,
       skills: input.skills,
       availability: input.availability,
+      rank: input.rank,
       ...input.admin,
     },
   });

@@ -17,7 +17,8 @@ export interface MemberListItem {
   status: string;
   statusColor: BadgeColor;
   statusValue: MemberStatus;
-  rankFilled: number;
+  /** Autoevaluación, de 1 a 5 estrellas. */
+  rank: number;
   birthday: string;
   projects: { id: string; name: string }[];
 }
@@ -75,6 +76,7 @@ export interface MemberProfileInput {
   birthday: string | null;
   skills: string[];
   availability: AvailabilitySlot[];
+  rank: number;
 }
 
 /** Campos que asigna coordinación. */

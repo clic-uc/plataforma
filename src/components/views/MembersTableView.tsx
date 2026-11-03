@@ -138,11 +138,7 @@ export function MembersTableView() {
                         </div>
                       </td>
                       <td>
-                        {m.rankFilled > 0 ? (
-                          <RankStars filled={m.rankFilled} />
-                        ) : (
-                          <span className="dir-empty-val" title="Sin rango asignado">—</span>
-                        )}
+                        <RankStars filled={m.rank} />
                       </td>
                       <td>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }} onClick={(e) => e.stopPropagation()}>
