@@ -51,6 +51,7 @@ function memberRow(id: string) {
     role: "EQUIPO",
     status: "ACTIVO",
     level: 2,
+    rank: 3,
     streak: 0,
     birthday: null,
     joinedAt: new Date(2026, 0, 1),
@@ -62,7 +63,7 @@ function memberRow(id: string) {
   };
 }
 
-const profile = { name: "Ana Rojas", birthday: "03-08", skills: ["React"], availability: ["LUN_MANANA"] };
+const profile = { name: "Ana Rojas", birthday: "03-08", skills: ["React"], availability: ["LUN_MANANA"], rank: 3 };
 const admin = { role: "EQUIPO", status: "HIATUS", level: 3 };
 
 beforeEach(() => {
@@ -82,6 +83,14 @@ describe("parseUpdateMemberInput", () => {
     const withoutBirthday: Record<string, unknown> = { ...profile };
     delete withoutBirthday.birthday;
     expect(parseUpdateMemberInput(withoutBirthday)).toBeNull();
+  });
+
+  it("exige el rango, entero de 1 a 5", () => {
+    expect(parseUpdateMemberInput({ ...profile, rank: 1 })).toEqual({ ...profile, rank: 1 });
+    expect(parseUpdateMemberInput({ ...profile, rank: 5 })).toEqual({ ...profile, rank: 5 });
+    for (const rank of [0, 6, 2.5, "3", null, undefined]) {
+      expect(parseUpdateMemberInput({ ...profile, rank })).toBeNull();
+    }
   });
 
   it("rechaza valores inválidos", () => {
@@ -114,6 +123,7 @@ describe("updateMember", () => {
         birthday: new Date("2000-03-08T12:00:00.000Z"),
         skills: ["React"],
         availability: ["LUN_MANANA"],
+        rank: 3,
       },
     });
   });

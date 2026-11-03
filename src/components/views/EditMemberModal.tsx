@@ -11,6 +11,7 @@ import { MEMBER_ROLE_OPTIONS, MEMBER_STATUS_OPTIONS } from "@/lib/api/status";
 import {
   MAX_LEVEL,
   MAX_NAME_LENGTH,
+  MAX_RANK,
   MAX_SKILLS,
   MAX_SKILL_LENGTH,
   MONTH_OPTIONS,
@@ -34,6 +35,7 @@ export function EditMemberModal({ member, onClose }: { member: MemberDetail; onC
   const [birthDay, setBirthDay] = useState(initialBirthday ? String(initialBirthday.day) : "");
   const [skillsText, setSkillsText] = useState(member.skills.join(", "));
   const [availability, setAvailability] = useState<AvailabilitySlot[]>(member.availability);
+  const [rank, setRank] = useState(member.rank);
   const [role, setRole] = useState<MemberRole>(member.roleValue);
   const [status, setStatus] = useState<MemberStatus>(member.statusValue);
   const [level, setLevel] = useState(String(member.level));
@@ -63,6 +65,7 @@ export function EditMemberModal({ member, onClose }: { member: MemberDetail; onC
       birthday: birthMonth && birthDay ? toBirthdayValue(Number(birthMonth), Number(birthDay)) : null,
       skills,
       availability,
+      rank,
     };
     if (isCoordinacion) input.admin = { role, status, level: Number(level) };
 
@@ -108,6 +111,22 @@ export function EditMemberModal({ member, onClose }: { member: MemberDetail; onC
                 <option key={d} value={d}>{d}</option>
               ))}
             </select>
+          </div>
+        </div>
+
+        <div className="form-field">
+          <div className="f-label">Rango</div>
+          <select className="field-select" value={rank} onChange={(e) => setRank(Number(e.target.value))}>
+            {Array.from({ length: MAX_RANK }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n}>
+                {"★".repeat(n) + "☆".repeat(MAX_RANK - n)} · {n} de {MAX_RANK}
+              </option>
+            ))}
+          </select>
+          <div className="field-hint">
+            {isSelf
+              ? "Las capacidades generales que consideras tener. Ajústalo cuando sientas que cambió."
+              : "Autoevaluación de la persona: las capacidades generales que considera tener."}
           </div>
         </div>
 
