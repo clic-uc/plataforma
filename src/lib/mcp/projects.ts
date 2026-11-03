@@ -5,16 +5,21 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { FeatureStatus, KanbanColumn, Priority, TaskDifficulty, TaskType } from "@/generated/prisma/enums";
 import {
+  createActa,
   createFeature,
+  createProjectDoc,
   createTask,
   getAssignedTasks,
   getProject,
   getProjectDoc,
+  getProjectDocComments,
   getProjects,
+  parseCreateActaInput,
   parseCreateFeatureInput,
   parseCreateTaskInput,
   parseUpdateFeatureInput,
   parseUpdateTaskInput,
+  resolveProjectDocComment,
   updateFeature,
   updateProjectDoc,
   updateTask,
@@ -369,14 +374,15 @@ export function registerProjectTools(server: McpServer): void {
     {
       title: "Leer documento",
       description:
-        "Contenido Markdown de un documento o acta de un proyecto. Devuelve `version`, que update_document exige.",
+        "Contenido Markdown de un documento o acta de un proyecto, con sus comentarios. Devuelve `version`, que update_document exige. Cada comentario cita un fragmento (quote) tal como se lee en la vista previa, sin la sintaxis Markdown; occurrence dice cuál de sus repeticiones es (0 = la primera).",
       inputSchema: z.object({ projectId, docId }),
       annotations: { readOnlyHint: true },
     },
     ({ projectId, docId }) =>
       run(async () => {
         const doc = await getProjectDoc(projectId, docId);
-        if (!doc) return fail("No existe el documento (los que no están creados no se pueden leer)");
+        if (!doc) return fail("No existe el documento (los que no están creados se crean con create_document)");
+        const comments = (await getProjectDocComments(projectId, docId)) ?? [];
         return json({
           title: doc.title,
           type: doc.type,
@@ -384,7 +390,88 @@ export function registerProjectTools(server: McpServer): void {
           date: doc.date,
           version: contentVersion(doc.content),
           content: doc.content,
+          comments,
         });
+      }),
+  );
+
+  server.registerTool(
+    "create_document",
+    {
+      title: "Crear documento",
+      description:
+        "Crea uno de los documentos fijos de un proyecto que todavía está vacío (lo mismo que hacer clic en su fila en la app), con contenido inicial opcional en Markdown (GFM, sin HTML ni listas de tareas). Los que ya existen se editan con update_document.",
+      inputSchema: z.object({
+        projectId,
+        slot: z.enum(["kickoff", "requerimientos", "tecnico", "decisiones", "informe"]),
+        content: z.string().optional(),
+      }),
+    },
+    ({ projectId, slot, content }) =>
+      run(async () => {
+        if (await getProjectDoc(projectId, slot)) {
+          return fail("El documento ya existe: léelo con get_document y edítalo con update_document.");
+        }
+        if (!(await createProjectDoc(projectId, slot))) return fail("No existe el proyecto");
+
+        const doc = content?.trim() ? await updateProjectDoc(projectId, slot, content) : await getProjectDoc(projectId, slot);
+        if (!doc) return fail("No existe el documento");
+        return json({ docId: slot, title: doc.title, version: contentVersion(doc.content) });
+      }),
+  );
+
+  server.registerTool(
+    "create_acta",
+    {
+      title: "Crear acta",
+      description:
+        "Crea un acta en un proyecto, con contenido inicial opcional en Markdown (GFM, sin HTML ni listas de tareas). Devuelve su docId para get_document y update_document.",
+      inputSchema: z.object({
+        projectId,
+        title: z.string().min(1),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato "YYYY-MM-DD"').describe("Fecha de la reunión"),
+        content: z.string().optional(),
+      }),
+    },
+    ({ projectId, title, date, content }) =>
+      run(async () => {
+        const input = parseCreateActaInput({ title, date });
+        if (!input) return fail("Datos inválidos");
+
+        // createActa devuelve el proyecto entero; el acta nueva es la que no estaba antes,
+        // como lo resuelve CreateActaModal.
+        const before = await getProject(projectId);
+        if (!before) return fail("No existe el proyecto");
+        const existing = new Set(before.actas.map((a) => a.id));
+        const project = await createActa(projectId, input);
+        const created = project?.actas.find((a) => !existing.has(a.id));
+        if (!created) return fail("No existe el proyecto");
+
+        const doc = content?.trim()
+          ? await updateProjectDoc(projectId, created.id, content)
+          : await getProjectDoc(projectId, created.id);
+        if (!doc) return fail("No existe el acta");
+        return json({ docId: created.id, title: doc.title, date, version: contentVersion(doc.content) });
+      }),
+  );
+
+  server.registerTool(
+    "resolve_document_comment",
+    {
+      title: "Resolver comentario de documento",
+      description:
+        "Resuelve un comentario de un documento o acta, como el botón «Resolver» de la app: lo borra y no queda registro. Antes, muéstrale a la persona qué comentarios vas a resolver y espera su confirmación.",
+      inputSchema: z.object({
+        projectId,
+        docId,
+        commentId: z.string().describe("id del comentario (de get_document)"),
+      }),
+      annotations: { destructiveHint: true },
+    },
+    ({ projectId, docId, commentId }) =>
+      run(async () => {
+        if (!(await resolveProjectDocComment(projectId, docId, commentId))) return fail("No existe el comentario");
+        return json({ resolved: commentId });
       }),
   );
 
