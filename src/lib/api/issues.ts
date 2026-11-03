@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { IssueCloseReason, IssueStatus, IssueType } from "@/generated/prisma/enums";
+import type { IssueCloseReason, IssueStatus, IssueType, Priority } from "@/generated/prisma/enums";
 import { assertOk } from "@/lib/api/http";
 import { dashboardKeys } from "@/lib/api/dashboard";
 import { projectsKeys } from "@/lib/api/projects";
@@ -14,6 +14,8 @@ export interface IssueListItem {
   number: number;
   title: string;
   type: IssueType;
+  /** null = "Sin prioridad". */
+  priority: Priority | null;
   status: IssueStatus;
   closeReason: IssueCloseReason | null;
   /** Vacío si el autor ya no existe. */
@@ -67,11 +69,39 @@ export interface IssueInput {
   type: IssueType;
 }
 
+/** Al abrir un issue la prioridad es opcional; después se cambia aparte (setIssuePriority). */
+export interface IssueCreateInput extends IssueInput {
+  priority: Priority | null;
+}
+
 /** Cerrar exige motivo; reabrir no lleva. */
 export type IssueStatusInput = { status: "CERRADO"; closeReason: IssueCloseReason } | { status: "ABIERTO" };
 
 /** Filtro de la lista: abiertos, cerrados o todos. */
 export type IssueFilter = IssueStatus | "TODOS";
+
+/** Filtro por prioridad de la lista: una en particular, "sin prioridad" o todas. */
+export type IssuePriorityFilter = Priority | "SIN" | "TODAS";
+
+export function matchesPriorityFilter(priority: Priority | null, filter: IssuePriorityFilter): boolean {
+  if (filter === "TODAS") return true;
+  if (filter === "SIN") return priority === null;
+  return priority === filter;
+}
+
+/** Orden de la lista: por última actividad (el del servidor) o por prioridad. */
+export type IssueOrder = "ACTIVIDAD" | "PRIORIDAD";
+
+const PRIORITY_RANK: Record<Priority, number> = { ALTA: 0, MEDIA: 1, BAJA: 2 };
+
+/**
+ * De alta a sin prioridad. El orden es estable, así que dentro de cada nivel se conserva el
+ * de entrada (la lista llega por actividad, de la más reciente a la más antigua).
+ */
+export function sortIssuesByPriority<T extends { priority: Priority | null }>(issues: readonly T[]): T[] {
+  const rank = (priority: Priority | null) => (priority === null ? 3 : PRIORITY_RANK[priority]);
+  return [...issues].sort((a, b) => rank(a.priority) - rank(b.priority));
+}
 
 async function fetchIssues(projectId: string): Promise<IssueListItem[]> {
   const res = await fetch(`/api/projects/${projectId}/issues`);
@@ -86,7 +116,7 @@ async function fetchIssue(projectId: string, number: number): Promise<IssueDetai
   return res.json();
 }
 
-async function createIssueRequest(projectId: string, input: IssueInput): Promise<IssueDetail> {
+async function createIssueRequest(projectId: string, input: IssueCreateInput): Promise<IssueDetail> {
   const res = await fetch(`/api/projects/${projectId}/issues`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -113,6 +143,16 @@ async function setIssueStatusRequest(projectId: string, number: number, input: I
     body: JSON.stringify(input),
   });
   await assertOk(res, input.status === "CERRADO" ? "No se pudo cerrar el issue" : "No se pudo reabrir el issue");
+  return res.json();
+}
+
+async function setIssuePriorityRequest(projectId: string, number: number, priority: Priority | null): Promise<IssueDetail> {
+  const res = await fetch(`/api/projects/${projectId}/issues/${number}/priority`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ priority }),
+  });
+  await assertOk(res, "No se pudo cambiar la prioridad");
   return res.json();
 }
 
@@ -180,7 +220,7 @@ function useIssueMutationSuccess(projectId: string) {
 export function useCreateIssue(projectId: string) {
   const onSuccess = useIssueMutationSuccess(projectId);
   return useMutation({
-    mutationFn: (input: IssueInput) => createIssueRequest(projectId, input),
+    mutationFn: (input: IssueCreateInput) => createIssueRequest(projectId, input),
     onSuccess,
   });
 }
@@ -197,6 +237,14 @@ export function useSetIssueStatus(projectId: string, number: number) {
   const onSuccess = useIssueMutationSuccess(projectId);
   return useMutation({
     mutationFn: (input: IssueStatusInput) => setIssueStatusRequest(projectId, number, input),
+    onSuccess,
+  });
+}
+
+export function useSetIssuePriority(projectId: string, number: number) {
+  const onSuccess = useIssueMutationSuccess(projectId);
+  return useMutation({
+    mutationFn: (priority: Priority | null) => setIssuePriorityRequest(projectId, number, priority),
     onSuccess,
   });
 }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CallToolResult, McpServer } from "@modelcontextprotocol/server";
 import { ApiError } from "@/lib/api/errors";
+import { AuthError } from "@/lib/auth/guards";
 import type { ProjectDetail, ProjectFeature, ProjectTask } from "@/lib/api/projects";
 import { registerTools } from "@/lib/mcp/server";
 
@@ -22,8 +23,10 @@ const { projects, issues, events, tiempo } = vi.hoisted(() => ({
   issues: {
     getIssue: vi.fn(),
     createIssue: vi.fn(),
+    getProjectIssues: vi.fn(),
     updateIssue: vi.fn(),
     setIssueStatus: vi.fn(),
+    setIssuePriority: vi.fn(),
     setIssueReviewed: vi.fn(),
   },
   events: { createEvent: vi.fn(), getEvent: vi.fn(), updateEvent: vi.fn() },
@@ -419,6 +422,7 @@ describe("issues", () => {
     number: 3,
     title: "Login falla",
     type: "BUG",
+    priority: null,
     status: "CERRADO",
     closeReason: "RESUELTO",
     author: "Ana",
@@ -481,6 +485,71 @@ describe("issues", () => {
     const result = await call("update_issue", { projectId: "p1", number: 99, title: "X" });
     expect(result.isError).toBe(true);
     expect(issues.updateIssue).not.toHaveBeenCalled();
+  });
+
+  it("update_issue con solo la prioridad no pasa por updateIssue, que es actividad", async () => {
+    issues.setIssuePriority.mockResolvedValue({ ...issue, priority: "ALTA" });
+    const result = await call("update_issue", { projectId: "p1", number: 3, priority: "ALTA" });
+    expect(issues.setIssuePriority).toHaveBeenCalledWith("p1", 3, "ALTA");
+    expect(issues.updateIssue).not.toHaveBeenCalled();
+    expect(issues.getIssue).not.toHaveBeenCalled();
+    expect(JSON.parse(text(result))).toMatchObject({ priority: "ALTA" });
+  });
+
+  it("update_issue con priority null la quita", async () => {
+    issues.setIssuePriority.mockResolvedValue(issue);
+    await call("update_issue", { projectId: "p1", number: 3, priority: null });
+    expect(issues.setIssuePriority).toHaveBeenCalledWith("p1", 3, null);
+  });
+
+  it("update_issue con contenido y prioridad edita primero y devuelve el último detalle", async () => {
+    issues.getIssue.mockResolvedValue(issue);
+    issues.updateIssue.mockResolvedValue({ ...issue, title: "Nuevo" });
+    issues.setIssuePriority.mockResolvedValue({ ...issue, title: "Nuevo", priority: "BAJA" });
+    const result = await call("update_issue", { projectId: "p1", number: 3, title: "Nuevo", priority: "BAJA" });
+    expect(issues.updateIssue.mock.invocationCallOrder[0]).toBeLessThan(issues.setIssuePriority.mock.invocationCallOrder[0]);
+    expect(JSON.parse(text(result))).toMatchObject({ title: "Nuevo", priority: "BAJA" });
+  });
+
+  it("update_issue no cambia la prioridad si la edición se rechaza por permisos", async () => {
+    issues.getIssue.mockResolvedValue(issue);
+    issues.updateIssue.mockRejectedValueOnce(new AuthError(403, "FORBIDDEN_ROLE", "Solo quien abrió el issue o coordinación puede editarlo"));
+    const result = await call("update_issue", { projectId: "p1", number: 3, title: "Nuevo", priority: "ALTA" });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain("coordinación");
+    expect(issues.setIssuePriority).not.toHaveBeenCalled();
+  });
+
+  it("update_issue sin campos o con una prioridad inválida responde error", async () => {
+    expect((await call("update_issue", { projectId: "p1", number: 3 })).isError).toBe(true);
+    expect((await call("update_issue", { projectId: "p1", number: 3, priority: "URGENTE" })).isError).toBe(true);
+    expect(issues.updateIssue).not.toHaveBeenCalled();
+    expect(issues.setIssuePriority).not.toHaveBeenCalled();
+  });
+
+  it("create_issue pasa la prioridad, o null si se omite", async () => {
+    issues.createIssue.mockResolvedValue(issue);
+    await call("create_issue", { projectId: "p1", title: "X", body: "", type: "IDEA", priority: "MEDIA" });
+    await call("create_issue", { projectId: "p1", title: "X", body: "", type: "IDEA" });
+    expect(issues.createIssue.mock.calls[0][1]).toMatchObject({ priority: "MEDIA" });
+    expect(issues.createIssue.mock.calls[1][1]).toMatchObject({ priority: null });
+  });
+
+  it("list_issues filtra por prioridad e incluye la prioridad", async () => {
+    issues.getProjectIssues.mockResolvedValue([
+      { ...issue, number: 1, status: "ABIERTO", priority: "ALTA" },
+      { ...issue, number: 2, status: "ABIERTO", priority: null },
+      { ...issue, number: 3, status: "ABIERTO", priority: "BAJA" },
+    ]);
+    const numbers = async (priority: string) =>
+      JSON.parse(text(await call("list_issues", { projectId: "p1", status: "ABIERTO", priority }))).map(
+        (i: { number: number }) => i.number,
+      );
+    expect(await numbers("TODAS")).toEqual([1, 2, 3]);
+    expect(await numbers("SIN")).toEqual([2]);
+    expect(await numbers("ALTA")).toEqual([1]);
+    const [first] = JSON.parse(text(await call("list_issues", { projectId: "p1", status: "ABIERTO", priority: "TODAS" })));
+    expect(first).toMatchObject({ number: 1, priority: "ALTA" });
   });
 
   it("get_issue incluye las features y tareas vinculadas con el labelsToken", async () => {

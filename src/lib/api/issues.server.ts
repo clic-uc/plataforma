@@ -1,6 +1,6 @@
 import "server-only";
 
-import { IssueCloseReason, IssueType } from "@/generated/prisma/enums";
+import { IssueCloseReason, IssueType, Priority } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { AuthError, requireCoordinacion, requireMember } from "@/lib/auth/guards";
@@ -12,6 +12,7 @@ import {
   MAX_ISSUE_COMMENT_LENGTH,
   MAX_ISSUE_TITLE_LENGTH,
   type IssueComment,
+  type IssueCreateInput,
   type IssueDetail,
   type IssueInput,
   type IssueListItem,
@@ -24,7 +25,8 @@ import {
 // y no se renumera, así que estas mutaciones no llevan labelsToken. Cualquier miembro
 // aprobado abre, comenta, cierra y reabre issues en cualquier proyecto; título, cuerpo
 // y tipo los edita el autor o coordinación; cada comentario, solo su autor; eliminar
-// es de coordinación.
+// es de coordinación. La prioridad la cambia cualquier miembro y no es actividad: es
+// clasificación, no hay nada nuevo que leer (como editar un comentario).
 //
 // "Revisado" es por persona (IssueReview): mi marca vale si es de la última actividad
 // del issue o posterior. Toda actividad propia la renueva con el mismo instante y en
@@ -77,6 +79,7 @@ function toListItem(issue: IssueListRow): IssueListItem {
     number: issue.number,
     title: issue.title,
     type: issue.type,
+    priority: issue.priority,
     status: issue.status,
     closeReason: issue.closeReason,
     author: issue.author?.name ?? "",
@@ -140,6 +143,31 @@ export function parseIssueInput(body: unknown): IssueInput | null {
   return { title, body: text, type: type as IssueType };
 }
 
+function isPriority(value: unknown): value is Priority {
+  return typeof value === "string" && (Object.values(Priority) as string[]).includes(value);
+}
+
+/** Como parseIssueInput, más la prioridad opcional: si no viene, el issue nace sin prioridad. */
+export function parseIssueCreateInput(body: unknown): IssueCreateInput | null {
+  const input = parseIssueInput(body);
+  if (!input) return null;
+
+  const priority = (body as Record<string, unknown>).priority ?? null;
+  if (priority !== null && !isPriority(priority)) return null;
+  return { ...input, priority };
+}
+
+/**
+ * `{ priority }` con una prioridad o null ("Sin prioridad"). La clave es obligatoria, como
+ * assigneeId en las tareas: un body sin ella no limpia la prioridad por accidente.
+ */
+export function parseIssuePriorityInput(body: unknown): { priority: Priority | null } | null {
+  if (typeof body !== "object" || body === null || !("priority" in body)) return null;
+  const { priority } = body as { priority: unknown };
+  if (priority !== null && !isPriority(priority)) return null;
+  return { priority };
+}
+
 export function parseIssueStatusInput(body: unknown): IssueStatusInput | null {
   if (typeof body !== "object" || body === null) return null;
   const b = body as Record<string, unknown>;
@@ -191,7 +219,7 @@ export async function getIssue(projectId: string, number: number): Promise<Issue
   return loadDetail(projectId, number, member);
 }
 
-export async function createIssue(projectId: string, input: IssueInput): Promise<IssueDetail | null> {
+export async function createIssue(projectId: string, input: IssueCreateInput): Promise<IssueDetail | null> {
   const member = await requireMember();
 
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
@@ -216,6 +244,7 @@ export async function createIssue(projectId: string, input: IssueInput): Promise
           title: input.title,
           body: input.body,
           type: input.type,
+          priority: input.priority,
           authorId: member.id,
           createdAt: now,
           lastActivityAt: now,
@@ -270,6 +299,23 @@ export async function setIssueStatus(
       : { status: input.status, closeReason: null, closedAt: null, closedById: null };
 
   await prisma.issue.update({ where: { id: issue.id }, data: { ...data, ...ownActivity(issue.id, member.id, now) } });
+
+  return loadDetail(projectId, number, member);
+}
+
+/**
+ * Cambia la prioridad (null la quita). Cualquier miembro, y sin ownActivity: no mueve
+ * lastActivityAt, así que no reordena la lista ni desmarca el issue para nadie.
+ */
+export async function setIssuePriority(
+  projectId: string,
+  number: number,
+  priority: Priority | null,
+): Promise<IssueDetail | null> {
+  const member = await requireMember();
+
+  const { count } = await prisma.issue.updateMany({ where: { projectId, number }, data: { priority } });
+  if (count === 0) return null;
 
   return loadDetail(projectId, number, member);
 }

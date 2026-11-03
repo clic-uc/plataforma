@@ -483,6 +483,13 @@ features or tasks. `Issue` + `IssueComment` (migration `20261028130000_issues`).
 - **Status**: `ABIERTO` / `CERRADO`. Closing requires a reason (`RESUELTO`, `DESCARTADO`,
   `DUPLICADO`); reopening clears it. A CHECK in the migration keeps `closeReason`/`closedAt` set if
   and only if it is closed. Type is `BUG` / `IDEA` / `PREGUNTA` (an enum, not free labels).
+- **Priority** (`ALTA`/`MEDIA`/`BAJA`, the features' enum; null = "Sin prioridad", migration
+  `20261103120000_issue_priority`): optional when opening, then changed from the issue's sidebar
+  (`PUT /api/projects/[id]/issues/[number]/priority`, `{ priority }` required even if null). **Any
+  member** changes it, and it is **not activity**: classification, not something new to read, so it
+  does not move `lastActivityAt` or unmark the issue for anyone. Closing keeps it. The list filters by
+  it and orders by activity (default) or by priority (high → none, by activity within each level;
+  `sortIssuesByPriority`).
 - **Permissions**: any approved member opens, comments, closes and reopens issues on any project.
   Title, body and type are edited by the author or `COORDINACION`. Each comment is edited only by its
   author (`editedAt` shows "editado"), not even by coordination. Deleting an issue is coordination
@@ -529,7 +536,8 @@ Claude Code) or any MCP client. Streamable HTTP, stateless.
   log, edit and delete own hours; create and edit tasks and features; create and edit events; create
   documents and actas, read them with their comments, edit them, and resolve comments; list, read,
   open, edit, comment, close, reopen and mark as reviewed issues (by
-  number, no token; editing follows the UI rule: author or coordination); link and unlink them to
+  number, no token; editing follows the UI rule: author or coordination, except `priority`, which
+  `update_issue` sets for any member without counting as activity; `list_issues` filters by it); link and unlink them to
   features and tasks (labelsToken), and create a task or feature already linked (`issueNumber`).
   Coordination actions (projects, teams, approvals, roles) and every other delete are left out on
   purpose: rare, and some cannot be undone.

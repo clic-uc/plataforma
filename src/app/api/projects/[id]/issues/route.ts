@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createIssue, getProjectIssues, parseIssueInput } from "@/lib/api/issues.server";
+import { createIssue, getProjectIssues, parseIssueCreateInput } from "@/lib/api/issues.server";
 import { withAuth } from "@/lib/api/route-handler";
 
 type Context = { params: Promise<{ id: string }> };
@@ -14,7 +14,7 @@ async function getHandler(_request: Request, { params }: Context) {
 async function postHandler(request: Request, { params }: Context) {
   const { id } = await params;
 
-  const input = parseIssueInput(await request.json());
+  const input = parseIssueCreateInput(await request.json());
   if (!input) return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
 
   const issue = await createIssue(id, input);

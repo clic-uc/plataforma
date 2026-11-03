@@ -8,9 +8,12 @@ import {
   getProjectIssues,
   ownActivity,
   parseIssueCommentInput,
+  parseIssueCreateInput,
   parseIssueInput,
   parseIssueNumber,
+  parseIssuePriorityInput,
   parseIssueStatusInput,
+  setIssuePriority,
   setIssueReviewed,
   setIssueStatus,
   updateIssue,
@@ -60,6 +63,7 @@ function detailRow(overrides: Record<string, unknown> = {}) {
     title: "Login falla",
     body: "",
     type: "BUG",
+    priority: null,
     status: "ABIERTO",
     closeReason: null,
     authorId: "autor",
@@ -148,6 +152,48 @@ describe("parseIssueInput", () => {
   });
 });
 
+describe("parseIssueCreateInput", () => {
+  const valid = { title: "Login falla", body: "", type: "BUG" };
+
+  it("sin prioridad nace sin prioridad", () => {
+    expect(parseIssueCreateInput(valid)).toEqual({ ...valid, priority: null });
+  });
+
+  it("acepta una prioridad válida o null explícito", () => {
+    expect(parseIssueCreateInput({ ...valid, priority: "ALTA" })).toEqual({ ...valid, priority: "ALTA" });
+    expect(parseIssueCreateInput({ ...valid, priority: null })).toEqual({ ...valid, priority: null });
+  });
+
+  it("rechaza una prioridad inválida", () => {
+    expect(parseIssueCreateInput({ ...valid, priority: "URGENTE" })).toBeNull();
+    expect(parseIssueCreateInput({ ...valid, priority: 1 })).toBeNull();
+  });
+
+  it("valida el resto como parseIssueInput", () => {
+    expect(parseIssueCreateInput({ ...valid, title: "  ", priority: "ALTA" })).toBeNull();
+    expect(parseIssueCreateInput(null)).toBeNull();
+  });
+});
+
+describe("parseIssuePriorityInput", () => {
+  it("acepta una prioridad o null", () => {
+    expect(parseIssuePriorityInput({ priority: "MEDIA" })).toEqual({ priority: "MEDIA" });
+    expect(parseIssuePriorityInput({ priority: null })).toEqual({ priority: null });
+  });
+
+  it("exige la clave, para no quitar la prioridad por accidente", () => {
+    expect(parseIssuePriorityInput({})).toBeNull();
+    expect(parseIssuePriorityInput({ priority: undefined })).toBeNull();
+  });
+
+  it("rechaza valores inválidos y lo que no es objeto", () => {
+    expect(parseIssuePriorityInput({ priority: "URGENTE" })).toBeNull();
+    expect(parseIssuePriorityInput({ priority: "" })).toBeNull();
+    expect(parseIssuePriorityInput(null)).toBeNull();
+    expect(parseIssuePriorityInput("ALTA")).toBeNull();
+  });
+});
+
 describe("parseIssueStatusInput", () => {
   it("cerrar exige un motivo válido", () => {
     expect(parseIssueStatusInput({ status: "CERRADO", closeReason: "RESUELTO" })).toEqual({
@@ -182,11 +228,22 @@ describe("parseIssueCommentInput", () => {
 });
 
 describe("createIssue", () => {
-  const input = { title: "Login falla", body: "", type: "BUG" as const };
+  const input = { title: "Login falla", body: "", type: "BUG" as const, priority: null };
 
   beforeEach(() => {
     prisma.project.findUnique.mockResolvedValue({ id: "p1" });
     prisma.issue.findUnique.mockImplementation(async () => detailRow());
+  });
+
+  it("guarda la prioridad, o null si no tiene", async () => {
+    prisma.issue.findFirst.mockResolvedValue(null);
+    prisma.issue.create.mockResolvedValue({});
+
+    await createIssue("p1", { ...input, priority: "ALTA" });
+    await createIssue("p1", input);
+
+    expect(prisma.issue.create.mock.calls[0][0].data.priority).toBe("ALTA");
+    expect(prisma.issue.create.mock.calls[1][0].data.priority).toBeNull();
   });
 
   it("usa el máximo + 1", async () => {
@@ -336,6 +393,48 @@ describe("setIssueStatus", () => {
   });
 });
 
+describe("setIssuePriority", () => {
+  beforeEach(() => {
+    prisma.issue.findUnique.mockImplementation(async () => detailRow({ priority: "MEDIA" }));
+  });
+
+  it("cambia solo la prioridad, direccionando por proyecto y número", async () => {
+    prisma.issue.updateMany.mockResolvedValue({ count: 1 });
+
+    const issue = await setIssuePriority("p1", 3, "MEDIA");
+
+    expect(prisma.issue.updateMany).toHaveBeenCalledWith({ where: { projectId: "p1", number: 3 }, data: { priority: "MEDIA" } });
+    expect(issue?.priority).toBe("MEDIA");
+  });
+
+  it("null quita la prioridad", async () => {
+    prisma.issue.updateMany.mockResolvedValue({ count: 1 });
+
+    await setIssuePriority("p1", 3, null);
+
+    expect(prisma.issue.updateMany.mock.calls[0][0].data).toEqual({ priority: null });
+  });
+
+  it("no es actividad: no mueve lastActivityAt ni toca las revisiones", async () => {
+    prisma.issue.updateMany.mockResolvedValue({ count: 1 });
+
+    await setIssuePriority("p1", 3, "BAJA");
+
+    expect(prisma.issue.updateMany.mock.calls[0][0].data).not.toHaveProperty("lastActivityAt");
+    expect(prisma.issue.updateMany.mock.calls[0][0].data).not.toHaveProperty("reviews");
+    expect(prisma.issue.update).not.toHaveBeenCalled();
+    expect(prisma.issueReview.upsert).not.toHaveBeenCalled();
+    expect(prisma.issueReview.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("devuelve null si el issue no existe", async () => {
+    prisma.issue.updateMany.mockResolvedValue({ count: 0 });
+
+    expect(await setIssuePriority("p1", 99, "ALTA")).toBeNull();
+    expect(prisma.issue.findUnique).not.toHaveBeenCalled();
+  });
+});
+
 describe("createIssueComment", () => {
   it("crea el comentario y actualiza la actividad en la misma transacción", async () => {
     mockIssue({ id: "i1", authorId: "otra" });
@@ -454,7 +553,7 @@ describe("reviewedByMe", () => {
   it("lee solo mi revisión y la compara con la última actividad", async () => {
     prisma.project.findUnique.mockResolvedValue({ id: "p1" });
     prisma.issue.findMany.mockResolvedValue([
-      detailRow({ number: 1, lastActivityAt: activity, reviews: [{ reviewedAt: activity }] }),
+      detailRow({ number: 1, lastActivityAt: activity, reviews: [{ reviewedAt: activity }], priority: "ALTA" }),
       detailRow({ number: 2, lastActivityAt: activity, reviews: [{ reviewedAt: new Date("2026-10-19T12:00:00Z") }] }),
       detailRow({ number: 3, lastActivityAt: activity, reviews: [] }),
     ]);
@@ -466,6 +565,7 @@ describe("reviewedByMe", () => {
       [2, false],
       [3, false],
     ]);
+    expect(issues?.map((i) => i.priority)).toEqual(["ALTA", null, null]);
     expect(prisma.issue.findMany.mock.calls[0][0].include.reviews).toEqual({
       where: { memberId: "yo" },
       select: { reviewedAt: true },

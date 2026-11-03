@@ -245,6 +245,8 @@ model Issue {
   title          String
   body           String
   type           IssueType
+  /// null = "Sin prioridad". La cambia cualquier miembro y no cuenta como actividad; cerrar la conserva.
+  priority       Priority?
   status         IssueStatus       @default(ABIERTO)
   closeReason    IssueCloseReason?
   authorId       String?

@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
-import type { IssueCloseReason, IssueType } from "@/generated/prisma/enums";
+import type { IssueCloseReason, IssueType, Priority } from "@/generated/prisma/enums";
 import { Badge } from "@/components/ui/Badge";
 import { Markdown } from "@/components/ui/Markdown";
 import { MarkdownToolbar, useMarkdownEditor } from "@/components/ui/MarkdownToolbar";
@@ -19,6 +19,7 @@ import {
   useCreateIssueComment,
   useDeleteIssue,
   useIssue,
+  useSetIssuePriority,
   useSetIssueReviewed,
   useSetIssueStatus,
   useUpdateIssue,
@@ -31,6 +32,7 @@ import {
   issueCloseReasonLabel,
   issueStatusColor,
   issueStatusLabel,
+  PRIORITY_OPTIONS,
 } from "@/lib/api/status";
 
 /** Ctrl+Enter (o Cmd+Enter) envía el formulario del textarea. */
@@ -192,6 +194,7 @@ export function IssueView({ projectId, number }: { projectId: string; number: nu
 
   const updateIssue = useUpdateIssue(projectId, number);
   const setStatus = useSetIssueStatus(projectId, number);
+  const setPriority = useSetIssuePriority(projectId, number);
   const deleteIssue = useDeleteIssue(projectId, number);
   const createComment = useCreateIssueComment(projectId, number);
   const updateComment = useUpdateIssueComment(projectId, number);
@@ -228,7 +231,7 @@ export function IssueView({ projectId, number }: { projectId: string; number: nu
   }
 
   // Acciones de la barra lateral: su error se muestra bajo ellas.
-  const sideError = [setStatus, deleteIssue].find((m) => m.isError)?.error ?? null;
+  const sideError = [setStatus, setPriority, deleteIssue].find((m) => m.isError)?.error ?? null;
 
   return (
     <section className="doc-ew">
@@ -403,6 +406,23 @@ export function IssueView({ projectId, number }: { projectId: string; number: nu
               </button>
             </div>
           )}
+        </div>
+
+        <div className="side-sec">
+          <div className="ds-lbl">Prioridad</div>
+          {/* Cualquier miembro la cambia, y no es actividad: no desmarca el issue para nadie. */}
+          <select
+            className="field-select"
+            value={setPriority.isPending ? (setPriority.variables ?? "") : (issue.priority ?? "")}
+            disabled={setPriority.isPending}
+            onChange={(e) => setPriority.mutate((e.target.value || null) as Priority | null)}
+            aria-label="Prioridad"
+          >
+            <option value="">Sin prioridad</option>
+            {PRIORITY_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
 
         <div className="side-sec">
