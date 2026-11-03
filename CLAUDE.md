@@ -526,8 +526,9 @@ Claude Code) or any MCP client. Streamable HTTP, stateless.
   `src/lib/mcp/` by domain; `run()` turns `AuthError`/`ApiError` into error results the model reads.
   Names are English `snake_case`, descriptions Spanish.
 - **Scope**: read projects, my tasks, calendar, members, my hours and StandUp; submit the StandUp;
-  log, edit and delete own hours; create and edit tasks and features; create events; read and edit
-  documents and actas; list, read, open, edit, comment, close, reopen and mark as reviewed issues (by
+  log, edit and delete own hours; create and edit tasks and features; create and edit events; create
+  documents and actas, read them with their comments, edit them, and resolve comments; list, read,
+  open, edit, comment, close, reopen and mark as reviewed issues (by
   number, no token; editing follows the UI rule: author or coordination); link and unlink them to
   features and tasks (labelsToken), and create a task or feature already linked (`issueNumber`).
   Coordination actions (projects, teams, approvals, roles) and every other delete are left out on
@@ -547,6 +548,15 @@ Claude Code) or any MCP client. Streamable HTTP, stateless.
 - **Documents**: `update_document` replaces the whole content and requires the `version` (a hash of
   the content) that `get_document` returned, so an edit does not silently overwrite someone else's
   save made while the model was writing. Not atomic; the version history covers the rest.
+  `create_document` (an empty fixed slot) and `create_acta` take optional initial content, saved as
+  the first version. `get_document` carries the comments, and `resolve_document_comment` deletes one
+  like "Resolver" (its description asks for confirmation first). **There is no tool to comment a
+  document**: comments anchor to the preview's text without Markdown syntax, which the model does not
+  see, so it would guess the quote; feedback goes in an issue instead.
+- **Events**: `update_event` takes partial fields like `update_task`; moving the first day shifts the
+  last one so a multi-day event keeps its length. Same permissions as the UI (creator or
+  coordination), one occurrence of a series. There is no `delete_event`, nor deletes of tasks or
+  features (labels renumber, history goes).
 - **Dates and times are Chile's**: `create_event` takes wall-clock times in `America/Santiago` and
   `list_events` returns them that way (`zonedTimeToInstant` / `instantToZonedTime` in
   `src/lib/calendar.ts`), so the model never computes the DST offset.

@@ -9,6 +9,10 @@ const { projects, issues, events, tiempo } = vi.hoisted(() => ({
     getProject: vi.fn(),
     getProjectDoc: vi.fn(),
     updateProjectDoc: vi.fn(),
+    createProjectDoc: vi.fn(),
+    createActa: vi.fn(),
+    getProjectDocComments: vi.fn(),
+    resolveProjectDocComment: vi.fn(),
     updateTask: vi.fn(),
     createTask: vi.fn(),
     createFeature: vi.fn(),
@@ -22,7 +26,7 @@ const { projects, issues, events, tiempo } = vi.hoisted(() => ({
     setIssueStatus: vi.fn(),
     setIssueReviewed: vi.fn(),
   },
-  events: { createEvent: vi.fn() },
+  events: { createEvent: vi.fn(), getEvent: vi.fn(), updateEvent: vi.fn() },
   tiempo: { createTimeEntry: vi.fn(), updateTimeEntry: vi.fn(), getTimeEntryLink: vi.fn(), resolveTaskLabel: vi.fn() },
 }));
 
@@ -324,6 +328,90 @@ describe("update_document", () => {
     expect(result.isError).toBe(true);
     expect(projects.updateProjectDoc).not.toHaveBeenCalled();
   });
+
+  it("get_document incluye los comentarios", async () => {
+    const comment = { id: "c1", author: "Ana", date: "", quote: "alcance", occurrence: 0, body: "¿Incluye la app?" };
+    projects.getProjectDoc.mockResolvedValue(doc("v1"));
+    projects.getProjectDocComments.mockResolvedValue([comment]);
+
+    const read = JSON.parse(text(await call("get_document", { projectId: "p1", docId: "kickoff" })));
+
+    expect(read.comments).toEqual([comment]);
+  });
+});
+
+describe("create_document", () => {
+  const doc = (content: string) => ({ title: "Kickoff", type: "Kickoff", badgeColor: "blue", author: "", date: "", content });
+
+  it("crea el documento vacío y guarda el contenido inicial", async () => {
+    projects.getProjectDoc.mockResolvedValue(null);
+    projects.createProjectDoc.mockResolvedValue(project([]));
+    projects.updateProjectDoc.mockResolvedValue(doc("# Kickoff"));
+
+    const result = await call("create_document", { projectId: "p1", slot: "kickoff", content: "# Kickoff" });
+
+    expect(result.isError).toBeUndefined();
+    expect(projects.createProjectDoc).toHaveBeenCalledWith("p1", "kickoff");
+    expect(projects.updateProjectDoc).toHaveBeenCalledWith("p1", "kickoff", "# Kickoff");
+    expect(JSON.parse(text(result))).toMatchObject({ docId: "kickoff" });
+  });
+
+  it("sin contenido no guarda una versión", async () => {
+    projects.getProjectDoc.mockResolvedValueOnce(null).mockResolvedValueOnce(doc(""));
+    projects.createProjectDoc.mockResolvedValue(project([]));
+
+    const result = await call("create_document", { projectId: "p1", slot: "kickoff" });
+
+    expect(result.isError).toBeUndefined();
+    expect(projects.updateProjectDoc).not.toHaveBeenCalled();
+  });
+
+  it("si ya existe manda a update_document sin tocarlo", async () => {
+    projects.getProjectDoc.mockResolvedValue(doc("v1"));
+
+    const result = await call("create_document", { projectId: "p1", slot: "kickoff", content: "otra cosa" });
+
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain("update_document");
+    expect(projects.createProjectDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe("create_acta", () => {
+  const withActas = (ids: string[]) => ({ ...project([]), actas: ids.map((id) => ({ id, title: "", date: "" })) });
+
+  it("devuelve el id del acta nueva y guarda el contenido inicial", async () => {
+    projects.getProject.mockResolvedValue(withActas(["a1"]));
+    projects.createActa.mockResolvedValue(withActas(["a1", "a2"]));
+    projects.updateProjectDoc.mockResolvedValue({ title: "Kickoff", content: "Notas" });
+
+    const result = await call("create_acta", { projectId: "p1", title: "Kickoff", date: "2026-10-26", content: "Notas" });
+
+    expect(projects.createActa).toHaveBeenCalledWith("p1", { title: "Kickoff", date: "2026-10-26" });
+    expect(projects.updateProjectDoc).toHaveBeenCalledWith("p1", "a2", "Notas");
+    expect(JSON.parse(text(result))).toMatchObject({ docId: "a2", date: "2026-10-26" });
+  });
+
+  it("rechaza un título vacío sin llegar a la base", async () => {
+    const result = await call("create_acta", { projectId: "p1", title: "  ", date: "2026-10-26" });
+    expect(result.isError).toBe(true);
+    expect(projects.createActa).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolve_document_comment", () => {
+  it("resuelve el comentario", async () => {
+    projects.resolveProjectDocComment.mockResolvedValue(true);
+    const result = await call("resolve_document_comment", { projectId: "p1", docId: "kickoff", commentId: "c1" });
+    expect(result.isError).toBeUndefined();
+    expect(projects.resolveProjectDocComment).toHaveBeenCalledWith("p1", "kickoff", "c1");
+  });
+
+  it("responde error si no existe", async () => {
+    projects.resolveProjectDocComment.mockResolvedValue(false);
+    const result = await call("resolve_document_comment", { projectId: "p1", docId: "kickoff", commentId: "c9" });
+    expect(result.isError).toBe(true);
+  });
 });
 
 describe("issues", () => {
@@ -466,6 +554,89 @@ describe("create_event", () => {
 
   it("exige horas si no es de día completo", async () => {
     const result = await call("create_event", { title: "X", kind: "OTRO", allDay: false, date: "2026-07-15" });
+    expect(result.isError).toBe(true);
+  });
+});
+
+describe("update_event", () => {
+  const event = {
+    id: "e1",
+    title: "Daily",
+    description: "Estado",
+    location: null,
+    kind: "REUNION",
+    allDay: false,
+    // 10:00–10:30 en Chile (UTC-4 en julio).
+    startsAt: "2026-07-15T14:00:00.000Z",
+    endsAt: "2026-07-15T14:30:00.000Z",
+    seriesId: null,
+    project: { id: "p1", name: "San Miguel" },
+    createdBy: null,
+    canEdit: true,
+  };
+
+  it("completa los campos omitidos con los actuales", async () => {
+    events.getEvent.mockResolvedValue(event);
+    events.updateEvent.mockResolvedValue(event);
+
+    const result = await call("update_event", { id: "e1", startTime: "16:00", endTime: "16:30" });
+
+    expect(result.isError).toBeUndefined();
+    expect(events.updateEvent).toHaveBeenCalledWith("e1", {
+      title: "Daily",
+      description: "Estado",
+      location: null,
+      kind: "REUNION",
+      allDay: false,
+      startsAt: "2026-07-15T20:00:00.000Z",
+      endsAt: "2026-07-15T20:30:00.000Z",
+      projectId: "p1",
+    });
+  });
+
+  it("mover el primer día corre el último de un evento de varios días", async () => {
+    const offsite = { ...event, allDay: true, startsAt: "2026-09-17T00:00:00.000Z", endsAt: "2026-09-20T00:00:00.000Z" };
+    events.getEvent.mockResolvedValue(offsite);
+    events.updateEvent.mockResolvedValue(offsite);
+
+    await call("update_event", { id: "e1", date: "2026-09-24" });
+
+    expect(events.updateEvent.mock.calls[0][1]).toMatchObject({
+      startsAt: "2026-09-24T00:00:00.000Z",
+      endsAt: "2026-09-27T00:00:00.000Z",
+    });
+  });
+
+  it("null quita el proyecto, a diferencia de omitirlo", async () => {
+    events.getEvent.mockResolvedValue(event);
+    events.updateEvent.mockResolvedValue(event);
+
+    await call("update_event", { id: "e1", projectId: null });
+
+    expect(events.updateEvent.mock.calls[0][1]).toMatchObject({ projectId: null });
+  });
+
+  it("pasar a un evento con hora exige ambas horas", async () => {
+    events.getEvent.mockResolvedValue({ ...event, allDay: true, startsAt: "2026-09-18T00:00:00.000Z", endsAt: "2026-09-19T00:00:00.000Z" });
+
+    const result = await call("update_event", { id: "e1", allDay: false, startTime: "10:00" });
+
+    expect(result.isError).toBe(true);
+    expect(events.updateEvent).not.toHaveBeenCalled();
+  });
+
+  it("rechaza un fin anterior al inicio sin llegar a la base", async () => {
+    events.getEvent.mockResolvedValue(event);
+
+    const result = await call("update_event", { id: "e1", startTime: "11:00" });
+
+    expect(result.isError).toBe(true);
+    expect(events.updateEvent).not.toHaveBeenCalled();
+  });
+
+  it("responde error si el evento no existe", async () => {
+    events.getEvent.mockResolvedValue(null);
+    const result = await call("update_event", { id: "e9", title: "X" });
     expect(result.isError).toBe(true);
   });
 });

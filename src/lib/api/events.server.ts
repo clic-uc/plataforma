@@ -198,6 +198,13 @@ export async function createEvent(input: CreateEventInput): Promise<CalendarEven
   return created.map((event) => toView(event, member));
 }
 
+export async function getEvent(id: string): Promise<CalendarEventView | null> {
+  const member = await requireMember();
+
+  const event = await prisma.calendarEvent.findUnique({ where: { id }, include: eventInclude });
+  return event ? toView(event, member) : null;
+}
+
 export async function updateEvent(id: string, input: UpdateEventInput): Promise<CalendarEventView | null> {
   const member = await requireMember();
 
