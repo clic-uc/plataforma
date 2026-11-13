@@ -1,11 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatLabel, labelsToken, type LabelledRow } from "@/lib/api/labels";
 import { AuthError, requireCoordinacion } from "@/lib/auth/guards";
 import {
   addProjectMember,
+  createActa,
   deleteFeature,
   deleteTask,
   parseAddProjectMemberInput,
+  parseCreateActaInput,
+  parseCreateProjectInput,
+  parseUpdateProjectInput,
   createProjectDocComment,
   createTask,
   getProject,
@@ -23,7 +27,7 @@ const { prisma } = vi.hoisted(() => ({
   prisma: {
     project: { findUnique: vi.fn() },
     document: { findUnique: vi.fn() },
-    acta: { findFirst: vi.fn() },
+    acta: { findFirst: vi.fn(), create: vi.fn() },
     docComment: { create: vi.fn(), deleteMany: vi.fn() },
     member: { findUnique: vi.fn() },
     feature: { findMany: vi.fn(), update: vi.fn() },
@@ -69,7 +73,7 @@ const projectRow = {
   client: "CLIC",
   description: "",
   status: "ACTIVO",
-  startDate: new Date(2026, 0, 15),
+  startDate: new Date("2026-01-15T00:00:00.000Z"),
   archived: false,
   members: [],
   features: [],
@@ -82,6 +86,52 @@ const rows = (prefix: "F" | "T", ids: string[]): LabelledRow[] =>
   ids.map((id, i) => ({ id, label: formatLabel(prefix, i + 1) }));
 
 const validTask = { featureId: null, assigneeId: null, name: "Login", type: "FEATURE", column: "PENDIENTE", difficulty: null };
+
+describe("fechas sin hora de proyectos y actas", () => {
+  // Se guardan a medianoche UTC. Con el proceso en hora de Chile, leerlas o escribirlas en
+  // hora local las corría un día (el 1 de agosto se leía 31 de julio).
+  const originalTZ = process.env.TZ;
+  beforeAll(() => {
+    process.env.TZ = "America/Santiago";
+  });
+  afterAll(() => {
+    process.env.TZ = originalTZ;
+  });
+  beforeEach(resetPrisma);
+
+  const aug1 = () => new Date("2026-08-01T00:00:00.000Z");
+
+  it("getProject lee el inicio del proyecto y la fecha de las actas en UTC", async () => {
+    prisma.project.findUnique.mockResolvedValue({
+      ...projectRow,
+      startDate: aug1(),
+      actas: [{ id: "a1", title: "Kickoff", date: aug1(), content: "" }],
+    });
+
+    const detail = await getProject("p1");
+
+    expect(detail).toMatchObject({ startDate: "ago 2026", startDateISO: "2026-08-01" });
+    expect(detail!.actas[0].date).toBe("1 ago");
+  });
+
+  it("createActa guarda la fecha a medianoche UTC", async () => {
+    prisma.project.findUnique.mockResolvedValue(projectRow);
+
+    await createActa("p1", { title: "Kickoff", date: "2026-08-01" });
+
+    expect(prisma.acta.create).toHaveBeenCalledWith({
+      data: { projectId: "p1", title: "Kickoff", date: aug1() },
+    });
+  });
+
+  it("rechaza fechas que no existen", () => {
+    const project = { name: "P", client: "C", description: "D", status: "DESARROLLO", archived: false };
+    expect(parseCreateActaInput({ title: "Kickoff", date: "2026-02-30" })).toBeNull();
+    expect(parseCreateProjectInput({ ...project, startDate: "2026-02-30" })).toBeNull();
+    expect(parseUpdateProjectInput({ ...project, startDate: "2026-13-01" })).toBeNull();
+    expect(parseCreateProjectInput({ ...project, startDate: "2026-02-28" })).toMatchObject({ startDate: "2026-02-28" });
+  });
+});
 
 describe("parseCreateTaskInput / parseUpdateTaskInput", () => {
   it("acepta un body válido y normaliza strings vacíos a null", () => {
