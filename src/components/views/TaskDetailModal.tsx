@@ -17,12 +17,15 @@ export function TaskDetailModal({
   projectId,
   task,
   labelsToken: openedLabelsToken,
+  canEdit,
   onEdit,
   onClose,
 }: {
   projectId: string;
   task: ProjectTask;
   labelsToken: string;
+  /** Si la persona trabaja en el proyecto; si no, el detalle es solo de lectura. */
+  canEdit: boolean;
   /** Cierra el detalle y abre la edición (campos, columna, eliminar). */
   onEdit: () => void;
   onClose: () => void;
@@ -49,15 +52,18 @@ export function TaskDetailModal({
           {task.assignee?.name ?? "Sin asignar"}
         </span>
         <DifficultyMeter difficulty={task.difficulty} withLabel />
-        <button type="button" className="btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={onEdit}>
-          Editar
-        </button>
+        {canEdit && (
+          <button type="button" className="btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={onEdit}>
+            Editar
+          </button>
+        )}
       </div>
 
       <LinkedIssuesField projectId={projectId} issues={task.issues} />
 
       <DescriptionEditor
         description={task.description}
+        canEdit={canEdit}
         saving={mutation.isPending}
         error={mutation.error}
         onSave={saveDescription}

@@ -386,7 +386,8 @@ Weekly StandUp, this week's hours chart and the hours history.
   documents and actas like `DocVersion` (a CHECK for a single parent). Selecting text in the
   **preview** shows "+ Comentar" and the comment lands in the side panel.
   - **No threads and no resolve-versus-delete distinction**: "Resolver" deletes the row (hard
-    delete). Any member can resolve any comment. Nothing records what was resolved.
+    delete). Any member can comment, but only the project's team (and coordination) resolves, and
+    it can resolve anyone's comment. Nothing records what was resolved.
   - **The fragment is anchored by its text, not by position**: `quote` (the preview text, without the
     Markdown syntax) and `occurrence` (which of its repetitions, 0 = the first). Positions would
     drift with any earlier edit; the text survives. The pure logic is in `src/lib/comments.ts` and the
@@ -445,7 +446,8 @@ Weekly StandUp, this week's hours chart and the hours history.
   `EditTaskModal`, and deleting is a red text action at the left of that modal's footer, with the same
   confirmation as before. The `labelsToken` is pinned when the detail opens and travels to the edit and
   the delete without being reread. Deleting a project likewise lives in `EditProjectModal`.
-- **Task assignment**: any member can assign, but only people on the project's team
+- **Task assignment**: whoever can edit the project's tasks (its team and coordination, see
+  Authorization scope) assigns them, and only to people on the project's team
   (`assertAssignable` in `projects.server.ts` answers 422 otherwise). A project without a team does not
   allow assigning until coordination builds it. `assigneeId` is required in the body of task
   POST/PATCH, even if `null`, so a client that does not know the field does not unassign by accident.
@@ -485,7 +487,8 @@ features or tasks. `Issue` + `IssueComment` (migration `20261028130000_issues`).
   feature or task by label, so they require `X-Labels-Token` like every label mutation; the issue
   goes by number. `ProjectTask.issues` / `ProjectFeature.issues` carry the linked numbers, and the
   task/feature detail modals link back to them. Deleting either side removes the link. Linking or
-  unlinking counts as issue activity.
+  unlinking counts as issue activity. Linking, unlinking and creating from an issue change the plan,
+  so they are for the project's team and coordination, unlike the rest of the issue.
 - **Status**: `ABIERTO` / `CERRADO`. Closing requires a reason (`RESUELTO`, `DESCARTADO`,
   `DUPLICADO`); reopening clears it. A CHECK in the migration keeps `closeReason`/`closedAt` set if
   and only if it is closed. Type is `BUG` / `IDEA` / `PREGUNTA` (an enum, not free labels).
@@ -496,7 +499,8 @@ features or tasks. `Issue` + `IssueComment` (migration `20261028130000_issues`).
   does not move `lastActivityAt` or unmark the issue for anyone. Closing keeps it. The list filters by
   it and orders by activity (default) or by priority (high → none, by activity within each level;
   `sortIssuesByPriority`).
-- **Permissions**: any approved member opens, comments, closes and reopens issues on any project.
+- **Permissions**: any approved member opens, comments, closes and reopens issues on any project,
+  team or not (see Authorization scope).
   Title, body and type are edited by the author or `COORDINACION`. Each comment is edited only by its
   author (`editedAt` shows "editado"), not even by coordination. Deleting an issue is coordination
   only and takes its thread; comments cannot be deleted. Closing is the normal way out.
@@ -616,13 +620,27 @@ Claude Code) or any MCP client. Streamable HTTP, stateless.
 
 ### Authorization scope
 
-- **Only projects are told apart.** Only `COORDINACION` can create, edit or delete projects and
-  compose their team. Everything else — tasks, features, actas, documents, comments, issues — can be done by
-  any approved member on **any** project, whether or not they are on it. `ProjectMember` only restricts
-  who a task can be assigned to.
-- **The UI hides coordination actions** (new/edit/delete project, managing the team) through
-  `useIsCoordinacion()` from `CurrentMemberProvider`. That is presentation only: the server is what
-  rejects with 403.
+Decided in Plataforma Interna #32.
+
+- **Projects themselves are coordination's.** Only `COORDINACION` creates, edits or deletes projects
+  and composes their team.
+- **Everyone sees every project.** Any approved member reads any project — tasks, features,
+  documents, actas, issues, history — whether or not they are on its team. Lists, the Dashboard and the
+  MCP are not filtered by team.
+- **Only the team works on it.** Creating, editing, moving and deleting tasks and features, linking
+  them to issues (`setIssueLink`, and creating them from an issue), creating and editing documents and
+  actas, and resolving document comments is for the project's team (`ProjectMember`) and coordination.
+  Anyone else gets 403 `NOT_ON_TEAM`. The check is `assertProjectWriter(member, projectId)`
+  (`src/lib/auth/guards.ts`), called after the function has checked the project or entity exists, so a
+  missing one is still a 404. Rookies follow the same rule (they are only kept out of the MCP).
+- **Conversation stays open.** Opening, commenting, closing, reopening, prioritizing and marking issues
+  as reviewed, and commenting on documents, is for any approved member on any project: it is how
+  someone outside a team gives feedback without touching its plan.
+- Tasks are assigned only to people on the team (`assertAssignable`, 422).
+- **The UI hides what the person cannot do**: coordination actions through `useIsCoordinacion()`,
+  project work through `useCanEditProject(project)` (both in `CurrentMemberProvider`, the latter on top
+  of the pure `canEditProject` in `src/lib/project-access.ts`, using the team that `ProjectDetail`
+  already carries). That is presentation only: the server is what rejects with 403.
 
 ### Data and seed
 

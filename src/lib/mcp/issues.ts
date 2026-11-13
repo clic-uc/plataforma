@@ -298,7 +298,7 @@ export function registerIssueTools(server: McpServer): void {
     {
       title: "Vincular a issue",
       description:
-        "Vincula una feature o tarea existente con un issue del mismo proyecto (una puede tener varios issues y un issue varias). Para una tarea nueva, mejor create_task con issueNumber.",
+        "Vincula una feature o tarea existente con un issue del mismo proyecto (una puede tener varios issues y un issue varias). Solo el equipo del proyecto o coordinación, porque cambia la feature o la tarea. Para una tarea nueva, mejor create_task con issueNumber.",
       inputSchema: linkSchema,
     },
     (args) => run(() => setLink(args, true)),
@@ -308,7 +308,8 @@ export function registerIssueTools(server: McpServer): void {
     "unlink_issue",
     {
       title: "Desvincular de issue",
-      description: "Quita el vínculo entre una feature o tarea y un issue. No borra ninguna de las dos.",
+      description:
+        "Quita el vínculo entre una feature o tarea y un issue. No borra ninguna de las dos. Solo el equipo del proyecto o coordinación.",
       inputSchema: linkSchema,
     },
     (args) => run(() => setLink(args, false)),

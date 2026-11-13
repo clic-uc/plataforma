@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 
 /// El status HTTP no basta: PENDING_APPROVAL y FORBIDDEN_ROLE son ambos 403 pero
 /// el cliente los trata distinto (redirect a /pendiente vs. error en la vista).
-export type AuthErrorCode = "UNAUTHENTICATED" | "PENDING_APPROVAL" | "FORBIDDEN_ROLE";
+export type AuthErrorCode = "UNAUTHENTICATED" | "PENDING_APPROVAL" | "FORBIDDEN_ROLE" | "NOT_ON_TEAM";
 
 /// Los guards lanzan en lugar de redirigir: prefetchQuery captura las excepciones
 /// del queryFn, por lo que un redirect() de Next invocado dentro de una función
@@ -81,6 +81,35 @@ export async function requireCoordinacion(): Promise<CurrentMember> {
     throw new AuthError(403, "FORBIDDEN_ROLE", "Esta acción requiere rol de coordinación");
   }
   return member;
+}
+
+/** Si el miembro está en el equipo del proyecto (ProjectMember). */
+export async function isOnProjectTeam(projectId: string, memberId: string): Promise<boolean> {
+  const membership = await prisma.projectMember.findUnique({
+    where: { projectId_memberId: { projectId, memberId } },
+    select: { memberId: true },
+  });
+  return membership !== null;
+}
+
+/**
+ * El miembro (ya autenticado con requireMember) es del equipo del proyecto o de
+ * coordinación; si no, 403 NOT_ON_TEAM. Protege el trabajo sobre un proyecto (tareas,
+ * features, documentos, actas, resolver comentarios); verlo, comentar documentos y los
+ * issues siguen abiertos a cualquier miembro. La versión pura para la UI es
+ * canEditProject (src/lib/project-access.ts).
+ *
+ * Va aparte de requireMember para que quien llama autentique primero, compruebe que el
+ * proyecto o la entidad existan (404) y recién entonces decida el 403.
+ */
+export async function assertProjectWriter(member: CurrentMember, projectId: string): Promise<void> {
+  if (member.role === "COORDINACION") return;
+  if (await isOnProjectTeam(projectId, member.id)) return;
+  throw new AuthError(
+    403,
+    "NOT_ON_TEAM",
+    "Solo el equipo del proyecto o coordinación pueden hacer esto. Para opinar sobre el proyecto, abre o comenta un issue.",
+  );
 }
 
 /**

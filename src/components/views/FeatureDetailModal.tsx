@@ -14,6 +14,7 @@ export function FeatureDetailModal({
   feature,
   tasks,
   labelsToken: openedLabelsToken,
+  canEdit,
   onEdit,
   onClose,
 }: {
@@ -21,6 +22,8 @@ export function FeatureDetailModal({
   feature: ProjectFeature;
   tasks: ProjectTask[];
   labelsToken: string;
+  /** Si la persona trabaja en el proyecto; si no, el detalle es solo de lectura. */
+  canEdit: boolean;
   /** Cierra el detalle y abre la edición (nombre, prioridad, estado, eliminar). */
   onEdit: () => void;
   onClose: () => void;
@@ -47,9 +50,11 @@ export function FeatureDetailModal({
         <Badge color={feature.statusColor}>{feature.status}</Badge>
         <span>Prioridad {feature.priority}</span>
         <span>{feature.taskCount} {feature.taskCount === 1 ? "tarea" : "tareas"}</span>
-        <button type="button" className="btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={onEdit}>
-          Editar
-        </button>
+        {canEdit && (
+          <button type="button" className="btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={onEdit}>
+            Editar
+          </button>
+        )}
       </div>
 
       <div className="form-field">
@@ -74,6 +79,7 @@ export function FeatureDetailModal({
 
       <DescriptionEditor
         description={feature.description}
+        canEdit={canEdit}
         saving={mutation.isPending}
         error={mutation.error}
         onSave={saveDescription}
