@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from "react";
 import type { CurrentMember } from "@/lib/auth/current-member";
+import { canEditProject } from "@/lib/project-access";
 
 const CurrentMemberContext = createContext<CurrentMember | null>(null);
 
@@ -23,4 +24,14 @@ export function useCurrentMember(): CurrentMember {
 
 export function useIsCoordinacion(): boolean {
   return useCurrentMember().role === "COORDINACION";
+}
+
+/**
+ * Si la persona trabaja en el proyecto (su equipo o coordinación): decide si se muestran
+ * las acciones sobre tareas, features, documentos y actas. Con el proyecto aún sin cargar,
+ * false. El servidor lo hace cumplir con assertProjectWriter.
+ */
+export function useCanEditProject(project: { team: readonly { id: string }[] } | undefined | null): boolean {
+  const member = useCurrentMember();
+  return project ? canEditProject(member, project.team) : false;
 }

@@ -1,9 +1,11 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatLabel, labelsToken, type LabelledRow } from "@/lib/api/labels";
-import { AuthError, requireCoordinacion } from "@/lib/auth/guards";
+import { AuthError, assertProjectWriter, requireCoordinacion } from "@/lib/auth/guards";
 import {
   addProjectMember,
   createActa,
+  createFeature,
+  createProjectDoc,
   deleteFeature,
   deleteTask,
   parseAddProjectMemberInput,
@@ -20,17 +22,19 @@ import {
   removeProjectMember,
   resolveProjectDocComment,
   setIssueLink,
+  updateFeature,
+  updateProjectDoc,
   updateTask,
 } from "@/lib/api/projects.server";
 
 const { prisma } = vi.hoisted(() => ({
   prisma: {
     project: { findUnique: vi.fn() },
-    document: { findUnique: vi.fn() },
+    document: { findUnique: vi.fn(), update: vi.fn() },
     acta: { findFirst: vi.fn(), create: vi.fn() },
     docComment: { create: vi.fn(), deleteMany: vi.fn() },
     member: { findUnique: vi.fn() },
-    feature: { findMany: vi.fn(), update: vi.fn() },
+    feature: { findMany: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     task: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -54,6 +58,8 @@ vi.mock("@/lib/auth/guards", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/auth/guards")>()),
   requireMember: vi.fn(async () => ({ id: "yo", role: "EQUIPO" })),
   requireCoordinacion: vi.fn(async () => ({ id: "yo", role: "COORDINACION" })),
+  // Tiene sus propios tests en guards.test.ts; aquí se comprueba solo que cada escritura lo aplique.
+  assertProjectWriter: vi.fn(async () => undefined),
 }));
 
 function resetPrisma() {
@@ -213,6 +219,86 @@ describe("parseCreateFeatureInput", () => {
     for (const issueNumber of [0, 1.5, "3"]) {
       expect(parseCreateFeatureInput({ ...validFeature, issueNumber })).toBeNull();
     }
+  });
+});
+
+describe("solo el equipo del proyecto escribe su trabajo", () => {
+  const features = rows("F", ["fa"]);
+  const tasks = rows("T", ["ta"]);
+  const token = `"${labelsToken(features, tasks)}"`;
+  const notOnTeam = new AuthError(403, "NOT_ON_TEAM", "fuera del equipo");
+  const writeMocks = () => [
+    prisma.feature.create,
+    prisma.feature.updateMany,
+    prisma.task.create,
+    prisma.document.update,
+    prisma.acta.create,
+    prisma.docComment.deleteMany,
+    prisma.$transaction,
+  ];
+
+  beforeEach(() => {
+    resetPrisma();
+    vi.mocked(assertProjectWriter).mockReset();
+    vi.mocked(assertProjectWriter).mockRejectedValue(notOnTeam);
+    prisma.project.findUnique.mockResolvedValue(projectRow);
+    prisma.feature.findMany.mockResolvedValue(features);
+    prisma.task.findMany.mockResolvedValue(tasks);
+    prisma.issue.findUnique.mockResolvedValue({ id: "i3" });
+    prisma.acta.findFirst.mockResolvedValue(null);
+    prisma.document.findUnique.mockImplementation(async ({ where }: { where: { projectId_slot: { slot: string } } }) =>
+      where.projectId_slot.slot === "KICKOFF"
+        ? { id: "d1", filled: true, content: "Hola", authorId: null, date: null }
+        : { id: "d2", filled: false, content: null, authorId: null, date: null },
+    );
+  });
+  afterEach(() => {
+    // El resto del archivo da por hecho que el guard deja pasar.
+    vi.mocked(assertProjectWriter).mockReset();
+    vi.mocked(assertProjectWriter).mockResolvedValue(undefined);
+  });
+
+  const validFeatureInput = { name: "Login", priority: "ALTA", status: "PENDIENTE", description: null } as const;
+  const writes: [string, () => Promise<unknown>][] = [
+    ["createFeature", () => createFeature("p1", { ...validFeatureInput, issueNumber: null })],
+    ["updateFeature", () => updateFeature("p1", "F-01", validFeatureInput, token)],
+    ["deleteFeature", () => deleteFeature("p1", "F-01", token)],
+    ["createTask", () => createTask("p1", parseCreateTaskInput(validTask)!, null)],
+    ["updateTask", () => updateTask("p1", "T-01", parseUpdateTaskInput(validTask)!, token)],
+    ["deleteTask", () => deleteTask("p1", "T-01", token)],
+    ["setIssueLink", () => setIssueLink("p1", "task", "T-01", 3, true, token)],
+    ["updateProjectDoc", () => updateProjectDoc("p1", "kickoff", "Otro texto")],
+    ["createProjectDoc", () => createProjectDoc("p1", "tecnico")],
+    ["createActa", () => createActa("p1", { title: "Kickoff", date: "2026-11-13" })],
+    ["resolveProjectDocComment", () => resolveProjectDocComment("p1", "kickoff", "c1")],
+  ];
+
+  it.each(writes)("%s rechaza a quien no está en el equipo, sin escribir", async (_name, write) => {
+    await expect(write()).rejects.toMatchObject({ status: 403, code: "NOT_ON_TEAM" });
+    expect(assertProjectWriter).toHaveBeenCalledWith(expect.objectContaining({ id: "yo" }), "p1");
+    for (const mock of writeMocks()) expect(mock).not.toHaveBeenCalled();
+  });
+
+  it("si el proyecto no existe responde 404 (null), no 403", async () => {
+    prisma.project.findUnique.mockResolvedValue(null);
+    await expect(createActa("p1", { title: "Kickoff", date: "2026-11-13" })).resolves.toBeNull();
+    await expect(createTask("p1", parseCreateTaskInput(validTask)!, null)).resolves.toBeNull();
+    expect(assertProjectWriter).not.toHaveBeenCalled();
+  });
+
+  it("comentar un documento sigue abierto a cualquier miembro", async () => {
+    prisma.docComment.create.mockResolvedValue({
+      id: "c1",
+      author: { name: "Yo" },
+      createdAt: new Date(),
+      quote: "Hola",
+      occurrence: 0,
+      body: "Ojo",
+    });
+    await expect(createProjectDocComment("p1", "kickoff", { quote: "Hola", occurrence: 0, body: "Ojo" })).resolves.toMatchObject({
+      id: "c1",
+    });
+    expect(assertProjectWriter).not.toHaveBeenCalled();
   });
 });
 

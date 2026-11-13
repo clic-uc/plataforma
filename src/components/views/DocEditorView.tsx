@@ -6,8 +6,11 @@ import { Markdown } from "@/components/ui/Markdown";
 import { MarkdownToolbar, useMarkdownEditor } from "@/components/ui/MarkdownToolbar";
 import { DocCommentsPanel } from "@/components/views/DocCommentsPanel";
 import { DocVersionModal } from "@/components/views/DocVersionModal";
+import { useCanEditProject } from "@/components/providers/CurrentMemberProvider";
+import { errorMessage } from "@/lib/api/http";
 import {
   useCreateDocComment,
+  useProject,
   useProjectDoc,
   useProjectDocComments,
   useProjectDocVersions,
@@ -30,6 +33,8 @@ const HIGHLIGHT_CSS = `
 // se reinicia solo al cambiar de documento (ver docs/[docId]/page.tsx).
 export function DocEditorView({ projectId, docId }: { projectId: string; docId: string }) {
   const { data: doc } = useProjectDoc(projectId, docId);
+  // Editar, restaurar y resolver comentarios es del equipo y coordinación; comentar, de cualquiera.
+  const canEdit = useCanEditProject(useProject(projectId).data);
   // Solo se guarda lo que la persona edita; mientras no edite, el contenido es el del documento.
   // Copiar doc.content a un useState al montar dejaba el editor con un valor viejo (o vacío)
   // cuando el caché del navegador aún no se había actualizado con la respuesta del servidor.
@@ -37,8 +42,9 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
   const content = draft ?? doc?.content ?? "";
   // Un documento con contenido se abre para leerlo; uno vacío, directo para escribir.
   // Al empezar a editar se fija en "write" para que el primer guardado no cambie de pestaña.
+  // Quien no puede editar solo tiene la vista previa.
   const [modeChoice, setModeChoice] = useState<"write" | "preview" | null>(null);
-  const mode = modeChoice ?? (doc?.content?.trim() ? "preview" : "write");
+  const mode = canEdit ? (modeChoice ?? (doc?.content?.trim() ? "preview" : "write")) : "preview";
   const setMode = setModeChoice;
   function setContent(next: string) {
     setDraft(next);
@@ -87,35 +93,47 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
       <div>
         <div className="doc-e-head">
           <h2 className="doc-e-title">{doc.title}</h2>
-          <div className="doc-e-save">
-            {mutation.isError ? (
-              <span className="doc-e-status dirty" role="alert">No se pudo guardar. Intenta de nuevo.</span>
-            ) : (
-              <span className={`doc-e-status${dirty ? " dirty" : ""}`}>{dirty ? "Cambios sin guardar" : "Guardado"}</span>
-            )}
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={mutation.isPending || !dirty}
-              onClick={() => mutation.mutate(content)}
-            >
-              {mutation.isPending ? "Guardando…" : "Guardar cambios"}
-            </button>
-          </div>
+          {canEdit ? (
+            <div className="doc-e-save">
+              {mutation.isError ? (
+                // Mismo aspecto que .doc-e-status.dirty, pero el mensaje del servidor puede ser largo y
+                // aquí sí puede partirse en líneas.
+                <span className="max-w-72 text-right text-xs font-medium text-warn-ink" role="alert">
+                  {errorMessage(mutation.error, "No se pudo guardar. Intenta de nuevo.")}
+                </span>
+              ) : (
+                <span className={`doc-e-status${dirty ? " dirty" : ""}`}>{dirty ? "Cambios sin guardar" : "Guardado"}</span>
+              )}
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={mutation.isPending || !dirty}
+                onClick={() => mutation.mutate(content)}
+              >
+                {mutation.isPending ? "Guardando…" : "Guardar cambios"}
+              </button>
+            </div>
+          ) : (
+            <p className="max-w-60 text-right text-xs text-text-3">
+              No estás en el equipo de este proyecto: puedes leer y comentar, pero no editar.
+            </p>
+          )}
         </div>
 
         <div className="doc-frame">
           <div className="doc-frame-bar">
             <div className="doc-ftabs" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === "write"}
-                className={`doc-ftab${mode === "write" ? " active" : ""}`}
-                onClick={() => setMode("write")}
-              >
-                Escribir
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "write"}
+                  className={`doc-ftab${mode === "write" ? " active" : ""}`}
+                  onClick={() => setMode("write")}
+                >
+                  Escribir
+                </button>
+              )}
               <button
                 type="button"
                 role="tab"
@@ -145,7 +163,9 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
                 {content.trim() ? (
                   <Markdown>{content}</Markdown>
                 ) : (
-                  <div className="doc-e-empty">El documento está vacío. Pasa a «Escribir» para agregar contenido.</div>
+                  <div className="doc-e-empty">
+                    {canEdit ? "El documento está vacío. Pasa a «Escribir» para agregar contenido." : "El documento está vacío."}
+                  </div>
                 )}
               </div>
               {selection && content.trim() && (
@@ -175,11 +195,12 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
           creating={createComment.isPending}
           createFailed={createComment.isError}
           resolvingId={resolveComment.isPending ? resolveComment.variables : null}
+          resolveError={resolveComment.error}
           onCreate={(body) =>
             composing && createComment.mutate({ ...composing, body }, { onSuccess: () => setComposing(null) })
           }
           onCancel={() => setComposing(null)}
-          onResolve={(comment) => resolveComment.mutate(comment.id)}
+          onResolve={canEdit ? (comment) => resolveComment.mutate(comment.id) : undefined}
           onShow={showComment}
         />
 
@@ -188,7 +209,9 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
             Historial de versiones{versions.length > 0 && <span className="label-count">{versions.length}</span>}
           </div>
           {versions.length === 0 ? (
-            <div className="doc-v-empty">Sin versiones todavía. Se registra una al guardar.</div>
+            <div className="doc-v-empty">
+              {canEdit ? "Sin versiones todavía. Se registra una al guardar." : "Sin versiones todavía."}
+            </div>
           ) : (
             <div className="doc-v-list">
               {versions.map((version, index) => (
@@ -210,7 +233,7 @@ export function DocEditorView({ projectId, docId }: { projectId: string; docId: 
           version={versions[openIndex]}
           previous={versions[openIndex + 1]}
           canRestore={versions[openIndex].content !== content}
-          onRestore={() => restore(versions[openIndex])}
+          onRestore={canEdit ? () => restore(versions[openIndex]) : undefined}
           onClose={() => setOpenVersionId(null)}
         />
       )}

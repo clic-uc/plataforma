@@ -3,7 +3,8 @@ import "server-only";
 import type { Prisma, Standup } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { TimeEntryKind } from "@/generated/prisma/enums";
-import { requireMember } from "@/lib/auth/guards";
+import { isOnProjectTeam, requireMember } from "@/lib/auth/guards";
+import type { CurrentMember } from "@/lib/auth/current-member";
 import { ApiError } from "@/lib/api/errors";
 import {
   MAX_DESCRIPTION_LENGTH,
@@ -192,8 +193,28 @@ async function assertTaskInProject(taskId: string | null, projectId: string): Pr
   }
 }
 
-async function assertEntryTargets(input: TimeEntryInput): Promise<void> {
+/**
+ * Las horas se registran en proyectos del equipo de la persona (coordinación, en cualquiera):
+ * quien trabaja en un proyecto debería figurar en él (Plataforma Interna #32). 422 y no 403,
+ * como INVALID_PROJECT: es el proyecto elegido el que no sirve, no la acción.
+ */
+async function assertLoggableProject(member: CurrentMember, projectId: string): Promise<void> {
+  if (member.role === "COORDINACION" || (await isOnProjectTeam(projectId, member.id))) return;
+  throw new ApiError(
+    422,
+    "NOT_ON_TEAM",
+    "Solo puedes registrar horas en proyectos donde estás en el equipo. Si trabajaste en este, pídele a coordinación que te agregue.",
+  );
+}
+
+/**
+ * `keptProjectId` es el proyecto que el registro ya tenía: editar horas antiguas de un
+ * proyecto donde la persona ya no está (o nunca estuvo) se permite mientras no cambie de
+ * proyecto; moverlas a otro exige estar en su equipo.
+ */
+async function assertEntryTargets(member: CurrentMember, input: TimeEntryInput, keptProjectId?: string): Promise<void> {
   await assertProjectExists(input.projectId);
+  if (input.projectId !== keptProjectId) await assertLoggableProject(member, input.projectId);
   await assertTaskInProject(input.taskId, input.projectId);
 }
 
@@ -243,7 +264,7 @@ export async function getTimeEntryTaskOptions(projectId: string): Promise<TimeEn
 
 export async function createTimeEntry(input: TimeEntryInput): Promise<TimeEntryView> {
   const member = await requireMember();
-  await assertEntryTargets(input);
+  await assertEntryTargets(member, input);
 
   const entry = await prisma.timeEntry.create({
     data: { ...entryData(input), memberId: member.id },
@@ -262,10 +283,10 @@ export async function createTimeEntry(input: TimeEntryInput): Promise<TimeEntryV
  */
 export async function updateTimeEntry(id: string, input: TimeEntryInput): Promise<TimeEntryView | null> {
   const member = await requireMember();
-  await assertEntryTargets(input);
 
-  const current = await prisma.timeEntry.findFirst({ where: { id, memberId: member.id }, select: { id: true } });
+  const current = await prisma.timeEntry.findFirst({ where: { id, memberId: member.id }, select: { projectId: true } });
   if (!current) return null;
+  await assertEntryTargets(member, input, current.projectId);
 
   const entry = await prisma.timeEntry.update({
     where: { id },

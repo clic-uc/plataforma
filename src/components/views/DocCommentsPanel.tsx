@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { errorMessage } from "@/lib/api/http";
 import type { ProjectDocComment } from "@/lib/api/projects";
 import { MAX_COMMENT_LENGTH, type CommentAnchor } from "@/lib/comments";
 
@@ -57,6 +58,7 @@ export function DocCommentsPanel({
   creating,
   createFailed,
   resolvingId,
+  resolveError,
   onCreate,
   onCancel,
   onResolve,
@@ -68,9 +70,11 @@ export function DocCommentsPanel({
   creating: boolean;
   createFailed: boolean;
   resolvingId: string | null;
+  resolveError: Error | null;
   onCreate: (body: string) => void;
   onCancel: () => void;
-  onResolve: (comment: ProjectDocComment) => void;
+  /** Sin él no se ofrece "Resolver": solo el equipo del proyecto y coordinación resuelven. */
+  onResolve?: (comment: ProjectDocComment) => void;
   /** Lleva el fragmento del comentario a la vista. */
   onShow: (comment: ProjectDocComment) => void;
 }) {
@@ -92,6 +96,10 @@ export function DocCommentsPanel({
         />
       )}
 
+      {resolveError && (
+        <div className="modal-error">{errorMessage(resolveError, "No se pudo resolver el comentario.")}</div>
+      )}
+
       {comments.length === 0 && !composing ? (
         <div className="doc-v-empty">Selecciona un fragmento en la vista previa para comentarlo.</div>
       ) : (
@@ -106,14 +114,16 @@ export function DocCommentsPanel({
                 <span className="doc-v-date">
                   {comment.author || "Autor desconocido"} · {comment.date}
                 </span>
-                <button
-                  type="button"
-                  className="doc-c-resolve"
-                  disabled={resolvingId === comment.id}
-                  onClick={() => onResolve(comment)}
-                >
-                  {resolvingId === comment.id ? "Resolviendo…" : "Resolver"}
-                </button>
+                {onResolve && (
+                  <button
+                    type="button"
+                    className="doc-c-resolve"
+                    disabled={resolvingId === comment.id}
+                    onClick={() => onResolve(comment)}
+                  >
+                    {resolvingId === comment.id ? "Resolviendo…" : "Resolver"}
+                  </button>
+                )}
               </div>
             </div>
           ))}

@@ -11,6 +11,7 @@ import { registerTiempoTools } from "@/lib/mcp/tiempo";
 export const SERVER_INSTRUCTIONS = `Plataforma interna de CLIC: proyectos, tareas, calendario, miembros, horas y StandUps.
 
 - Todas las acciones se hacen en nombre de la persona conectada (get_me), con sus permisos.
+- Cualquier miembro ve todos los proyectos, pero solo su equipo (y coordinación) trabaja en ellos: crear, editar, mover y borrar tareas y features, vincularlas a issues, crear y editar documentos y actas, y resolver comentarios. Los issues y los comentarios en documentos siguen abiertos a todos: son la forma de opinar sobre un proyecto donde no se está. get_project dice el equipo (team); si una edición responde que solo el equipo puede hacerla, propón un issue en su lugar.
 - Fechas en "YYYY-MM-DD" y horas en hora de Chile (America/Santiago). "Hoy" es la fecha de Chile.
 - Features y tareas se identifican por label (F-01, T-01). Los labels se renumeran cuando alguien borra una, así que las tools que editan exigen el labelsToken de get_project; si responden que los identificadores cambiaron, vuelve a llamar a get_project.
 - get_project es un índice liviano: sin descripciones ni historial y, por defecto, sin las tareas en LISTO (includeDone las trae; column, assigneeId y featureId filtran). El detalle de una tarea o una feature, con su descripción, se pide con get_task y get_feature, que devuelven también el labelsToken.

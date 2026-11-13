@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/ui/Modal";
 import { toISODateInput } from "@/lib/api/format";
+import { errorMessage } from "@/lib/api/http";
 import { useCreateActa, useProject } from "@/lib/api/projects";
 
 export function CreateActaModal({ projectId, onClose }: { projectId: string; onClose: () => void }) {
@@ -56,7 +57,9 @@ export function CreateActaModal({ projectId, onClose }: { projectId: string; onC
           />
         </div>
 
-        {mutation.isError && <div className="modal-error">No se pudo crear el acta. Intenta de nuevo.</div>}
+        {mutation.isError && (
+          <div className="modal-error">{errorMessage(mutation.error, "No se pudo crear el acta. Intenta de nuevo.")}</div>
+        )}
 
         <div className="modal-footer" style={{ padding: 0, border: "none", marginTop: 4 }}>
           <button type="button" className="btn-ghost" onClick={onClose}>Cancelar</button>
