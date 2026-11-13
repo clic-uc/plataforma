@@ -14,7 +14,10 @@ export type ApiErrorCode =
   | "INVALID_ISSUE"
   | "ASSIGNEE_REQUIRED"
   | "TIME_NOT_ALLOWED"
-  | "INVALID_TASK";
+  | "INVALID_TASK"
+  | "ALREADY_INVITED"
+  | "ALREADY_MEMBER"
+  | "INVITATION_USED";
 
 /**
  * Rechazo de dominio que la capa .server.ts no puede expresar devolviendo null

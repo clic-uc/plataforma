@@ -98,10 +98,28 @@ export interface ApproveMemberInput {
   role: MemberRole;
 }
 
+/** Usuario de GitHub que puede crear una cuenta y todavía no la creó. */
+export interface MemberInvitation {
+  id: string;
+  /** En minúsculas, sin "@". */
+  githubLogin: string;
+  role: string;
+  roleValue: MemberRole;
+  /** null si quien invitó ya no es miembro. */
+  invitedBy: string | null;
+  createdAt: string;
+}
+
+export interface CreateInvitationInput {
+  githubLogin: string;
+  role: MemberRole;
+}
+
 export const membersKeys = {
   all: ["members"] as const,
   list: () => [...membersKeys.all, "list"] as const,
   pending: () => [...membersKeys.all, "pending"] as const,
+  invitations: () => [...membersKeys.all, "invitations"] as const,
   detail: (id: string) => [...membersKeys.all, "detail", id] as const,
 };
 
@@ -149,6 +167,27 @@ async function deleteMemberRequest(id: string): Promise<void> {
   await assertOk(res, "No se pudo eliminar la cuenta");
 }
 
+async function fetchInvitations(): Promise<MemberInvitation[]> {
+  const res = await fetch("/api/members/invitations");
+  await assertOk(res, "No se pudo cargar la lista de invitaciones");
+  return res.json();
+}
+
+async function createInvitationRequest(input: CreateInvitationInput): Promise<MemberInvitation> {
+  const res = await fetch("/api/members/invitations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  await assertOk(res, "No se pudo agregar la invitación");
+  return res.json();
+}
+
+async function deleteInvitationRequest(id: string): Promise<void> {
+  const res = await fetch(`/api/members/invitations/${id}`, { method: "DELETE" });
+  await assertOk(res, "No se pudo quitar la invitación");
+}
+
 export function useMembers(options?: { enabled?: boolean }) {
   return useQuery({ queryKey: membersKeys.list(), queryFn: fetchMembers, ...options });
 }
@@ -160,6 +199,27 @@ export function useMember(id: string, options?: { enabled?: boolean }) {
 /** Solo coordinación: para el resto el servidor responde 403. */
 export function usePendingMembers(options?: { enabled?: boolean }) {
   return useQuery({ queryKey: membersKeys.pending(), queryFn: fetchPendingMembers, ...options });
+}
+
+/** Solo coordinación: para el resto el servidor responde 403. */
+export function useInvitations(options?: { enabled?: boolean }) {
+  return useQuery({ queryKey: membersKeys.invitations(), queryFn: fetchInvitations, ...options });
+}
+
+export function useCreateInvitation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateInvitationInput) => createInvitationRequest(input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: membersKeys.invitations() }),
+  });
+}
+
+export function useDeleteInvitation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteInvitationRequest(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: membersKeys.invitations() }),
+  });
 }
 
 export function useUpdateMember(id: string) {
