@@ -168,7 +168,7 @@ export function registerTiempoTools(server: McpServer): void {
     {
       title: "Registrar horas",
       description:
-        "Registra horas propias en un proyecto. No se pueden registrar días futuros (según la fecha de Chile). Opcionalmente se vinculan a una tarea del proyecto (taskLabel + labelsToken de get_project) como trabajo o revisión; así suman en las horas dedicadas de la tarea.",
+        "Registra horas propias en un proyecto donde la persona está en el equipo (coordinación, en cualquiera; el equipo viene en list_projects). No se pueden registrar días futuros (según la fecha de Chile). Opcionalmente se vinculan a una tarea del proyecto (taskLabel + labelsToken de get_project) como trabajo o revisión; así suman en las horas dedicadas de la tarea.",
       inputSchema: z.object({
         ...entryFields,
         date: dayKey.optional().describe('"YYYY-MM-DD"; por defecto, hoy en Chile'),
@@ -196,7 +196,7 @@ export function registerTiempoTools(server: McpServer): void {
     {
       title: "Editar registro de horas",
       description:
-        "Reemplaza un registro de horas propio. Hay que enviar fecha, proyecto, minutos y descripción. La tarea vinculada se conserva si se omite taskLabel y el proyecto no cambia (cambiar de proyecto la quita); taskLabel con un label la cambia y null la quita.",
+        "Reemplaza un registro de horas propio. Hay que enviar fecha, proyecto, minutos y descripción. La tarea vinculada se conserva si se omite taskLabel y el proyecto no cambia (cambiar de proyecto la quita); taskLabel con un label la cambia y null la quita. Moverlo a otro proyecto exige estar en su equipo; uno antiguo de un proyecto ajeno se edita mientras no cambie de proyecto.",
       inputSchema: z.object({
         id: z.string().describe("id del registro (de list_time_entries)"),
         date: dayKey,

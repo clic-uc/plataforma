@@ -279,8 +279,13 @@ Weekly StandUp, this week's hours chart and the hours history.
   (`src/components/ui/`), shared with the move dialog and the task edit modal.
 - **Minutes come in 15-minute steps**, from 15 min to 24 h per entry. The sum of a day is not checked
   against 24 h. Hours cannot be logged in the future (by Chile's "today").
-- **Any existing project**: being on its team is not required, in line with the rest of the
-  authorization (see below). The form does not offer archived projects.
+- **Only projects of your team** (Plataforma Interna #32): whoever works on a project should be on
+  it. Logging on another one is 422 `NOT_ON_TEAM`; coordination logs on any. Hours already logged on
+  a project the person is not on (from before the rule, or after leaving the team) are kept and stay
+  editable as long as they do not change project; moving them to a project requires being on its
+  team. The form offers only those projects, not archived ones, and the current one when editing;
+  with none, it explains why. Pending hours of someone who has since left the team can no longer be
+  logged ("Descartar" still works).
 - **Deleting a project deletes its hours** (`deleteProject`), like its tasks. To keep them, archive it.
 - **Dates**: `Standup.weekStart` and `TimeEntry.date` are dates without time at midnight UTC, like
   all-day events; over the API they travel as `"YYYY-MM-DD"`. Week math and the chart aggregation
@@ -636,6 +641,8 @@ Decided in Plataforma Interna #32.
 - **Conversation stays open.** Opening, commenting, closing, reopening, prioritizing and marking issues
   as reviewed, and commenting on documents, is for any approved member on any project: it is how
   someone outside a team gives feedback without touching its plan.
+- **Hours** are logged only on projects where the person is on the team (coordination is exempt;
+  see Time and StandUps).
 - Tasks are assigned only to people on the team (`assertAssignable`, 422).
 - **The UI hides what the person cannot do**: coordination actions through `useIsCoordinacion()`,
   project work through `useCanEditProject(project)` (both in `CurrentMemberProvider`, the latter on top

@@ -5,6 +5,8 @@ import type { TimeEntryKind } from "@/generated/prisma/enums";
 import { Modal } from "@/components/ui/Modal";
 import { errorMessage } from "@/lib/api/http";
 import { useProjects } from "@/lib/api/projects";
+import { canEditProject } from "@/lib/project-access";
+import { useCurrentMember } from "@/components/providers/CurrentMemberProvider";
 import { KANBAN_COLUMN_OPTIONS } from "@/lib/api/status";
 import {
   useCreateTimeEntry,
@@ -62,10 +64,13 @@ export function TimeEntryModal({ entry, onClose }: { entry?: TimeEntryView; onCl
   const [taskChoice, setTaskChoice] = useState<string | undefined>(undefined);
   const [kindChoice, setKindChoice] = useState<LinkedKind | undefined>(undefined);
 
+  const me = useCurrentMember();
   const { data: projects = [] } = useProjects();
-  // Los archivados no se ofrecen, salvo el que ya tiene el registro que se edita.
+  // Solo los proyectos donde se puede registrar (el equipo de la persona; coordinación, todos) y
+  // no archivados. El que ya tiene el registro que se edita se ofrece siempre: las horas antiguas
+  // de un proyecto ajeno se editan mientras no cambien de proyecto.
   const options = projects
-    .filter((p) => !p.archived || p.id === entry?.project.id)
+    .filter((p) => p.id === entry?.project.id || (!p.archived && canEditProject(me, p.team)))
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
 
   const tasksQuery = useTimeEntryTaskOptions(projectId || null);
@@ -169,6 +174,12 @@ export function TimeEntryModal({ entry, onClose }: { entry?: TimeEntryView; onCl
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
+          {projects.length > 0 && options.length === 0 && (
+            <p className="mt-1 text-xs text-text-2">
+              Las horas se registran en proyectos donde estás en el equipo, y todavía no estás en ninguno. Pídele a
+              coordinación que te agregue.
+            </p>
+          )}
         </div>
 
         {projectId && (
