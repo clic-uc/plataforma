@@ -5,13 +5,16 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { createAuthMiddleware } from "better-auth/api";
 import { mcp } from "better-auth/plugins";
 import { prisma } from "@/lib/prisma";
+import { isTestLoginEnabled } from "@/lib/auth/test-login";
 
 export const auth = betterAuth({
   // Explícito aunque Better Auth lo lea solo de BETTER_AUTH_URL: el plugin mcp usa
   // options.baseURL como issuer del servidor OAuth y sin él publica metadata vacía.
   baseURL: process.env.BETTER_AUTH_URL,
   database: prismaAdapter(prisma, { provider: "postgresql" }),
-  emailAndPassword: { enabled: false },
+  // Solo para los usuarios de prueba de la rama dev (src/lib/auth/test-login.ts); nunca en
+  // Vercel. Sin registro: las cuentas las crea scripts/dev-test-users.mjs.
+  emailAndPassword: { enabled: isTestLoginEnabled(), disableSignUp: true },
   // Better Auth escribe sobre Member; no hay modelo User propio. Los campos de
   // dominio tienen @default en el schema, así que el INSERT de la librería
   // produce una fila válida y no se necesitan databaseHooks.

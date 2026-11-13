@@ -5,9 +5,15 @@ import { useSearchParams } from "next/navigation";
 import { GithubIcon } from "@/components/icons";
 import { authClient } from "@/lib/auth-client";
 
-export function LoginCard() {
+type TestLogin = {
+  users: readonly { role: string; label: string; email: string }[];
+  password: string;
+};
+
+export function LoginCard({ testLogin }: { testLogin: TestLogin | null }) {
   const searchParams = useSearchParams();
   const [pending, setPending] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
 
   // Better Auth propaga los fallos del callback como ?error=... Sin leerlo, un
   // login rechazado es indistinguible de un botón que no hizo nada.
@@ -16,6 +22,26 @@ export function LoginCard() {
   async function handleGithub() {
     setPending(true);
     await authClient.signIn.social({ provider: "github", callbackURL: "/dashboard" });
+  }
+
+  async function handleTestUser(email: string) {
+    if (!testLogin) return;
+    setPending(true);
+    setTestError(null);
+    const { error: signInError } = await authClient.signIn.email({ email, password: testLogin.password });
+    if (signInError) {
+      setPending(false);
+      setTestError(
+        "No se pudo entrar. ¿Corriste `pnpm dev:test-users` contra la rama dev después del último reset?",
+      );
+      return;
+    }
+    // Si se llegó aquí desde la autorización de un cliente MCP, /login trae su query
+    // (client_id, redirect_uri…). Con GitHub el navegador sigue el redirect a /autorizar;
+    // este login va por fetch, así que se retoma la autorización con la sesión ya creada.
+    window.location.assign(
+      searchParams.has("client_id") ? `/api/auth/mcp/authorize?${searchParams.toString()}` : "/dashboard",
+    );
   }
 
   return (
@@ -45,6 +71,26 @@ export function LoginCard() {
       <p className="auth-note">
         Si es tu primera vez, tu cuenta quedará a la espera de que coordinación la apruebe.
       </p>
+
+      {testLogin && (
+        <div className="mt-5 border-t border-border pt-4 text-left">
+          <p className="text-xs text-text-2">Usuarios de prueba · solo en desarrollo</p>
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            {testLogin.users.map((user) => (
+              <button
+                key={user.role}
+                type="button"
+                className="btn-ghost justify-center"
+                onClick={() => handleTestUser(user.email)}
+                disabled={pending}
+              >
+                {user.label}
+              </button>
+            ))}
+          </div>
+          {testError && <p className="mt-2 text-xs text-danger">{testError}</p>}
+        </div>
+      )}
     </div>
   );
 }

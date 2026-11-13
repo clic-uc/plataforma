@@ -631,6 +631,24 @@ removed, together with the `tsx` dependency only they used: the database holds r
 wiped demo records nobody reseeded. To get test data in a fresh database, sign in with GitHub and
 approve the account from "Pendientes". The `prisma/seed` folder is gone.
 
+**Test users on the `dev` Neon branch**: one approved member per role (Rookie, Equipo,
+Coordinación), to test permissions and each role's journey without real accounts.
+
+- `pnpm dev:test-users` (`scripts/dev-test-users.mjs`) creates them, plus the project Test
+  (`test-project-dev`) with Equipo and Coordinación on its team and the Rookie outside it. It is
+  idempotent and refuses to run unless `NEON_BRANCH` in `.env.local` is `dev`; run it again after
+  every "Reset from parent", which copies production over `dev`.
+- They sign in with **email and password**, which Better Auth enables only when
+  `ENABLE_TEST_LOGIN=1` and the process is not on Vercel (`isTestLoginEnabled`,
+  `src/lib/auth/test-login.ts`). With it, `/login` shows a button per role. Sign-up stays disabled:
+  the script is the only way those accounts exist. Emails `rookie@` / `equipo@` /
+  `coordinacion@test.clic.local`, password `clic-dev-pass` unless `TEST_USERS_PASSWORD` says
+  otherwise (the list and the default live in both the script and `test-login.ts`).
+- They work for the MCP too (`clic-local`): the email sign-in goes through `fetch`, so instead of
+  following the plugin's redirect to `/autorizar` like GitHub does, `LoginCard` resumes the
+  authorization itself when `/login` carries an OAuth query (`client_id`). The Rookie gets 403
+  from `/api/mcp`, as it should.
+
 ## Known state
 
 What is pending (gaps and ideas not built yet) lives as **issues in the platform itself**, not in a
