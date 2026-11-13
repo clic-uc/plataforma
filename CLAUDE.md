@@ -551,12 +551,23 @@ Claude Code) or any MCP client. Streamable HTTP, stateless.
   to show the full draft of anything it creates (issue, feature, task, event…) and wait for a yes, so
   the person does not end up iterating on created content (each issue edit also unmarks it as
   reviewed for everyone else). It is a suggestion, not a check.
-- **Tasks and features go by label with `labelsToken`**, like the UI: `get_project` returns it and
+- **`get_project` is a light index on purpose.** It once returned every task and feature with its full
+  Markdown description and history, and in a large project that passed 150k characters, which the client
+  rejects for exceeding its token limit (and the number only grew, since finished tasks never leave). Now
+  rows carry no description or history, tasks in `LISTO` are left out unless `includeDone`, and `column`,
+  `assigneeId` and `featureId` filter; `taskCounts` (`total` vs. `shown`) says how much was hidden. The
+  `labelsToken` is computed from the whole project, never from the filtered view. The detail comes from
+  `get_task` / `get_feature` (by label, with the description and, for tasks, who worked and reviewed
+  them and the hours), which also return the `labelsToken`. `list_my_tasks` has no description either.
+  A new tool that returns a list should follow the same rule: summaries in the list, the unbounded text
+  (descriptions, bodies, threads) behind a read of one item.
+- **Tasks and features go by label with `labelsToken`**, like the UI: `get_project`, `get_task` and
+  `get_feature` return it and
   `update_task`, `update_feature` and `create_task` (with a feature) require it. `update_task`,
   `update_feature` and `update_issue` take partial fields and fill the rest from the current row. For
   tasks and features that read cannot mix two of them because the update rejects a stale token
   first. Both task tools take `difficulty`; `update_task` takes `minutesSpent` (hours on move, same rules as the
-  UI) and `get_project` returns who worked and reviewed each task. `log_time` / `update_time_entry`
+  UI) and `get_task` returns who worked and reviewed each task. `log_time` / `update_time_entry`
   take an optional `taskLabel` + `labelsToken` + `kind` to link hours to a task; `update_time_entry`
   keeps the current link when `taskLabel` is omitted and the project does not change.
 - **Documents**: `update_document` replaces the whole content and requires the `version` (a hash of
@@ -576,7 +587,15 @@ Claude Code) or any MCP client. Streamable HTTP, stateless.
   `src/lib/calendar.ts`), so the model never computes the DST offset.
 - **Connecting**: the production server (`clic`, `https://clicuc.vercel.app/api/mcp`) is registered in
   `.mcp.json`, so Claude Code offers it to anyone who opens the repo; approve it and run `/mcp` to sign
-  in with GitHub. The local server is not in `.mcp.json` (it only answers while `pnpm dev` runs); add
+  in with GitHub. That file only covers this repo. To have `clic` in **every** repo (the clients'
+  projects too), each person adds it once with user scope, and the other repos that should offer it to
+  anyone who clones them carry the same `.mcp.json` (same name, `clic`, so the two do not duplicate):
+
+  ```bash
+  claude mcp add --scope user --transport http clic https://clicuc.vercel.app/api/mcp
+  ```
+
+  The local server is not in `.mcp.json` (it only answers while `pnpm dev` runs); add
   it per person, with user scope so it shows up both in the terminal and in the VS Code extension
   (local scope is keyed by the project path, and Windows spells the drive `C:` in one and `c:` in the
   other):

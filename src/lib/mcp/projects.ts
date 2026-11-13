@@ -50,8 +50,27 @@ function taskView(task: ProjectTask) {
   };
 }
 
-/** En get_project: quién la trabajó y la revisó, y las horas dedicadas (totales del equipo). */
-function taskWithHistoryView(task: ProjectTask) {
+/**
+ * Fila de tarea de get_project: sin descripción ni historial. Esas dos partes son las
+ * que hacían crecer la respuesta sin tope (una descripción es Markdown libre), y se
+ * piden por tarea con get_task.
+ */
+function taskRowView(task: ProjectTask) {
+  return {
+    id: task.id,
+    featureId: task.featureId,
+    name: task.name,
+    type: task.typeValue,
+    column: task.columnValue,
+    active: task.active,
+    assignee: task.assignee ? { id: task.assignee.id, name: task.assignee.name } : null,
+    difficulty: task.difficulty,
+    issues: task.issues,
+  };
+}
+
+/** En get_task: la tarea completa, con quién la trabajó y la revisó y las horas dedicadas (totales del equipo). */
+function taskDetailView(task: ProjectTask) {
   const { history } = task;
   return {
     ...taskView(task),
@@ -65,19 +84,46 @@ function taskWithHistoryView(task: ProjectTask) {
 
 const difficultyDescription = "Dificultad estimada: BAJA, MEDIA o ALTA";
 
-function featureView(feature: ProjectFeature) {
+function featureRowView(feature: ProjectFeature) {
   return {
     id: feature.id,
     name: feature.name,
     priority: feature.priorityValue,
     status: feature.statusValue,
-    description: feature.description,
     taskCount: feature.taskCount,
     issues: feature.issues,
   };
 }
 
-function projectView(project: ProjectDetail) {
+function featureView(feature: ProjectFeature) {
+  return { ...featureRowView(feature), description: feature.description };
+}
+
+export interface TaskFilter {
+  /** Incluir las que están en LISTO. Pedir una `column` explícita lo anula. */
+  includeDone: boolean;
+  column?: KanbanColumn;
+  assigneeId?: string;
+  /** Label de la feature (F-01). */
+  featureId?: string;
+}
+
+/** Las tareas que get_project devuelve. Es solo lo que se muestra: el labelsToken sale del proyecto entero. */
+export function filterTasks(tasks: ProjectTask[], filter: TaskFilter): ProjectTask[] {
+  return tasks.filter((t) => {
+    if (filter.column) {
+      if (t.columnValue !== filter.column) return false;
+    } else if (!filter.includeDone && t.columnValue === KanbanColumn.LISTO) {
+      return false;
+    }
+    if (filter.assigneeId && t.assignee?.id !== filter.assigneeId) return false;
+    if (filter.featureId && t.featureId !== filter.featureId) return false;
+    return true;
+  });
+}
+
+function projectView(project: ProjectDetail, filter: TaskFilter) {
+  const tasks = filterTasks(project.tasks, filter);
   return {
     id: project.id,
     name: project.name,
@@ -89,8 +135,10 @@ function projectView(project: ProjectDetail) {
     startDate: project.startDateISO,
     labelsToken: project.labelsToken,
     team: project.team.map((m) => ({ id: m.id, name: m.name })),
-    features: project.features.map(featureView),
-    tasks: project.tasks.map(taskWithHistoryView),
+    features: project.features.map(featureRowView),
+    // total vs. shown: sin esto, un proyecto con las terminadas ocultas parecería tener menos tareas.
+    taskCounts: { total: project.tasks.length, shown: tasks.length },
+    tasks: tasks.map(taskRowView),
     documents: project.docs.map((d) => ({ docId: d.key, name: d.name, filled: d.filled, author: d.author, date: d.date })),
     actas: project.actas.map((a) => ({ docId: a.id, title: a.title, date: a.date })),
   };
@@ -141,15 +189,63 @@ export function registerProjectTools(server: McpServer): void {
     {
       title: "Ver proyecto",
       description:
-        "Detalle de un proyecto: equipo, features (F-01…), tareas (T-01…), documentos y actas. Devuelve el labelsToken que piden las tools que editan tareas y features. Cada tarea trae su dificultad, quién la trabajó (workedBy: asignados mientras estuvo En progreso) y quién la revisó (reviewedBy: asignados mientras estuvo En revisión), y los minutos dedicados registrados por todo el equipo (minutesWorked, minutesReviewed).",
-      inputSchema: z.object({ projectId }),
+        "Índice de un proyecto: equipo, features (F-01…), tareas (T-01…), documentos y actas. Es liviano a propósito: las features y tareas vienen sin descripción y las tareas sin historial; para eso, get_task y get_feature. Por defecto omite las tareas en LISTO (taskCounts dice cuántas hay y cuántas se muestran): includeDone las incluye, y column, assigneeId y featureId filtran. Devuelve el labelsToken que piden las tools que editan tareas y features; no depende de los filtros.",
+      inputSchema: z.object({
+        projectId,
+        includeDone: z.boolean().default(false).describe("Incluir las tareas en LISTO"),
+        column: z.enum(KanbanColumn).optional().describe("Solo las tareas de esta columna (con LISTO incluye las terminadas)"),
+        assigneeId: z.string().optional().describe("Solo las tareas de este miembro (id de list_members o del equipo)"),
+        featureId: z.string().optional().describe("Solo las tareas de esta feature (label, F-01)"),
+      }),
       annotations: { readOnlyHint: true },
     },
-    ({ projectId }) =>
+    ({ projectId, includeDone, ...filter }) =>
       run(async () => {
         const project = await getProject(projectId);
         if (!project) return fail("No existe el proyecto");
-        return json(projectView(project));
+        return json(projectView(project, { includeDone: includeDone ?? false, ...filter }));
+      }),
+  );
+
+  server.registerTool(
+    "get_task",
+    {
+      title: "Ver tarea",
+      description:
+        "Una tarea con su descripción completa, su dificultad, quién la trabajó (workedBy: asignados mientras estuvo En progreso), quién la revisó (reviewedBy: asignados mientras estuvo En revisión) y los minutos dedicados registrados por todo el equipo (minutesWorked, minutesReviewed). Devuelve el labelsToken de ese momento, el que piden update_task y link_issue.",
+      inputSchema: z.object({ projectId, taskId: z.string().describe("Label de la tarea (T-01)") }),
+      annotations: { readOnlyHint: true },
+    },
+    ({ projectId, taskId }) =>
+      run(async () => {
+        const project = await getProject(projectId);
+        if (!project) return fail("No existe el proyecto");
+        const task = project.tasks.find((t) => t.id === taskId);
+        if (!task) return fail(`No existe la tarea ${taskId}`);
+        return json({ ...taskDetailView(task), labelsToken: project.labelsToken });
+      }),
+  );
+
+  server.registerTool(
+    "get_feature",
+    {
+      title: "Ver feature",
+      description:
+        "Una feature con su descripción completa (Markdown) y las tareas que tiene (sin descripción: get_task). Devuelve el labelsToken de ese momento, el que piden update_feature y link_issue.",
+      inputSchema: z.object({ projectId, featureId: z.string().describe("Label de la feature (F-01)") }),
+      annotations: { readOnlyHint: true },
+    },
+    ({ projectId, featureId }) =>
+      run(async () => {
+        const project = await getProject(projectId);
+        if (!project) return fail("No existe el proyecto");
+        const feature = project.features.find((f) => f.id === featureId);
+        if (!feature) return fail(`No existe la feature ${featureId}`);
+        return json({
+          ...featureView(feature),
+          labelsToken: project.labelsToken,
+          tasks: project.tasks.filter((t) => t.featureId === featureId).map(taskRowView),
+        });
       }),
   );
 
@@ -157,7 +253,8 @@ export function registerProjectTools(server: McpServer): void {
     "list_my_tasks",
     {
       title: "Mis tareas",
-      description: "Tareas asignadas a la persona conectada, en todos los proyectos.",
+      description:
+        "Tareas asignadas a la persona conectada, en todos los proyectos. Sin descripción: para leerla, get_task con el id del proyecto y el label.",
       inputSchema: z.object({
         includeDone: z.boolean().default(false).describe("Incluir las que están en LISTO"),
       }),
@@ -175,7 +272,6 @@ export function registerProjectTools(server: McpServer): void {
             type: t.typeValue,
             column: t.columnValue,
             active: t.active,
-            description: t.description,
             difficulty: t.difficulty,
           })),
         );

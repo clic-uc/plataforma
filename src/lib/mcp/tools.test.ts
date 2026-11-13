@@ -8,6 +8,7 @@ import { registerTools } from "@/lib/mcp/server";
 const { projects, issues, events, tiempo } = vi.hoisted(() => ({
   projects: {
     getProject: vi.fn(),
+    getAssignedTasks: vi.fn(),
     getProjectDoc: vi.fn(),
     updateProjectDoc: vi.fn(),
     createProjectDoc: vi.fn(),
@@ -108,6 +109,166 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+function feature(overrides: Partial<ProjectFeature> = {}): ProjectFeature {
+  return {
+    id: "F-01",
+    name: "Acceso",
+    priority: "alta",
+    priorityValue: "ALTA",
+    status: "Pendiente",
+    statusColor: "gray",
+    statusValue: "PENDIENTE",
+    description: "Texto largo de la feature",
+    taskCount: 1,
+    issues: [],
+    ...overrides,
+  };
+}
+
+function fullProject(tasks: ProjectTask[], features: ProjectFeature[] = []): ProjectDetail {
+  return { ...project(tasks, features), team: [], docs: [], actas: [] };
+}
+
+describe("get_project", () => {
+  const done = task({ id: "T-02", columnValue: "LISTO", name: "Hecha" });
+  const open = task({ id: "T-01", description: "Descripción larga de la tarea" });
+
+  it("es un índice: sin descripciones ni historial", async () => {
+    projects.getProject.mockResolvedValue(fullProject([open], [feature()]));
+
+    const raw = text(await call("get_project", { projectId: "p1" }));
+    const result = JSON.parse(raw);
+
+    expect(raw).not.toContain("Descripción larga");
+    expect(raw).not.toContain("Texto largo");
+    expect(result.tasks[0]).toEqual({
+      id: "T-01",
+      featureId: "F-01",
+      name: "Login",
+      type: "FEATURE",
+      column: "PENDIENTE",
+      active: true,
+      assignee: { id: "m1", name: "Ana" },
+      difficulty: null,
+      issues: [],
+    });
+    expect(result.features[0]).not.toHaveProperty("description");
+    expect(result.labelsToken).toBe("tok");
+  });
+
+  it("omite las tareas en LISTO salvo includeDone, y taskCounts dice cuántas hay", async () => {
+    projects.getProject.mockResolvedValue(fullProject([open, done]));
+
+    const hidden = JSON.parse(text(await call("get_project", { projectId: "p1" })));
+    expect(hidden.tasks.map((t: { id: string }) => t.id)).toEqual(["T-01"]);
+    expect(hidden.taskCounts).toEqual({ total: 2, shown: 1 });
+
+    const all = JSON.parse(text(await call("get_project", { projectId: "p1", includeDone: true })));
+    expect(all.tasks.map((t: { id: string }) => t.id)).toEqual(["T-01", "T-02"]);
+    expect(all.taskCounts).toEqual({ total: 2, shown: 2 });
+  });
+
+  it("una column explícita manda sobre includeDone, y los filtros se combinan", async () => {
+    const other = task({ id: "T-03", featureId: null, assignee: { id: "m2", name: "Beto", initials: "B" } });
+    projects.getProject.mockResolvedValue(fullProject([open, done, other]));
+
+    const ids = async (args: Record<string, unknown>) =>
+      JSON.parse(text(await call("get_project", { projectId: "p1", ...args }))).tasks.map((t: { id: string }) => t.id);
+
+    expect(await ids({ column: "LISTO" })).toEqual(["T-02"]);
+    expect(await ids({ assigneeId: "m2" })).toEqual(["T-03"]);
+    expect(await ids({ featureId: "F-01" })).toEqual(["T-01"]);
+    expect(await ids({ featureId: "F-01", assigneeId: "m2" })).toEqual([]);
+  });
+
+  it("el labelsToken no depende de los filtros", async () => {
+    projects.getProject.mockResolvedValue(fullProject([open, done]));
+    const result = JSON.parse(text(await call("get_project", { projectId: "p1", assigneeId: "nadie" })));
+    expect(result.tasks).toEqual([]);
+    expect(result.labelsToken).toBe("tok");
+  });
+
+  it("responde error si el proyecto no existe", async () => {
+    projects.getProject.mockResolvedValue(null);
+    expect((await call("get_project", { projectId: "x" })).isError).toBe(true);
+  });
+});
+
+describe("get_task", () => {
+  it("trae la descripción, dificultad, quién trabajó y revisó, las horas y el labelsToken", async () => {
+    projects.getProject.mockResolvedValue(
+      fullProject([
+        task({
+          difficulty: "MEDIA",
+          history: {
+            createdAt: "",
+            workedBy: [{ id: "m1", name: "Ana" }],
+            reviewedBy: [{ id: "m2", name: "Beto" }],
+            columnMs: {},
+            completedAt: null,
+            cycleMs: null,
+            minutesWorked: 120,
+            minutesReviewed: 30,
+          },
+        }),
+      ]),
+    );
+
+    const result = JSON.parse(text(await call("get_task", { projectId: "p1", taskId: "T-01" })));
+
+    expect(result).toMatchObject({
+      id: "T-01",
+      description: "Con GitHub",
+      difficulty: "MEDIA",
+      workedBy: ["Ana"],
+      reviewedBy: ["Beto"],
+      minutesWorked: 120,
+      minutesReviewed: 30,
+      labelsToken: "tok",
+    });
+  });
+
+  it("responde error si la tarea o el proyecto no existen", async () => {
+    projects.getProject.mockResolvedValue(fullProject([task()]));
+    expect((await call("get_task", { projectId: "p1", taskId: "T-09" })).isError).toBe(true);
+
+    projects.getProject.mockResolvedValue(null);
+    expect((await call("get_task", { projectId: "x", taskId: "T-01" })).isError).toBe(true);
+  });
+});
+
+describe("get_feature", () => {
+  it("trae la descripción, sus tareas (sin descripción) y el labelsToken", async () => {
+    projects.getProject.mockResolvedValue(
+      fullProject([task(), task({ id: "T-02", featureId: "F-02" })], [feature(), feature({ id: "F-02", name: "Otra" })]),
+    );
+
+    const raw = text(await call("get_feature", { projectId: "p1", featureId: "F-01" }));
+    const result = JSON.parse(raw);
+
+    expect(result).toMatchObject({ id: "F-01", description: "Texto largo de la feature", labelsToken: "tok" });
+    expect(result.tasks.map((t: { id: string }) => t.id)).toEqual(["T-01"]);
+    expect(raw).not.toContain("Con GitHub");
+  });
+
+  it("responde error si la feature no existe", async () => {
+    projects.getProject.mockResolvedValue(fullProject([task()], [feature()]));
+    expect((await call("get_feature", { projectId: "p1", featureId: "F-09" })).isError).toBe(true);
+  });
+});
+
+describe("list_my_tasks", () => {
+  it("no trae la descripción: eso es de get_task", async () => {
+    projects.getAssignedTasks.mockResolvedValue([{ ...task(), project: { id: "p1", name: "Proyecto" } }]);
+
+    const raw = text(await call("list_my_tasks", { includeDone: false }));
+
+    expect(projects.getAssignedTasks).toHaveBeenCalledWith(false);
+    expect(JSON.parse(raw)[0]).toMatchObject({ project: { id: "p1", name: "Proyecto" }, id: "T-01", name: "Login" });
+    expect(raw).not.toContain("Con GitHub");
+  });
+});
+
 describe("update_task", () => {
   it("completa los campos omitidos con los actuales", async () => {
     projects.getProject.mockResolvedValue(project([task()]));
@@ -165,37 +326,6 @@ describe("update_task", () => {
     const time = await call("update_task", { projectId: "p1", taskId: "T-01", labelsToken: "tok", minutesSpent: 60 });
     expect(time.isError).toBe(true);
     expect(text(time)).toContain("log_time");
-  });
-
-  it("get_project incluye dificultad, quién trabajó y revisó y las horas dedicadas", async () => {
-    projects.getProject.mockResolvedValue({
-      ...project([
-        task({
-          difficulty: "MEDIA",
-          history: {
-            createdAt: "",
-            workedBy: [{ id: "m1", name: "Ana" }],
-            reviewedBy: [{ id: "m2", name: "Beto" }],
-            columnMs: {},
-            completedAt: null,
-            cycleMs: null,
-            minutesWorked: 120,
-            minutesReviewed: 30,
-          },
-        }),
-      ]),
-      team: [],
-      docs: [],
-      actas: [],
-    });
-    const result = JSON.parse(text(await call("get_project", { projectId: "p1" })));
-    expect(result.tasks[0]).toMatchObject({
-      difficulty: "MEDIA",
-      workedBy: ["Ana"],
-      reviewedBy: ["Beto"],
-      minutesWorked: 120,
-      minutesReviewed: 30,
-    });
   });
 
   it("null desasigna y quita la feature, a diferencia de omitir el campo", async () => {
