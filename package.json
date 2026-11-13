@@ -11,6 +11,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "dev:test-users": "node --env-file=.env.local scripts/dev-test-users.mjs",
     "postinstall": "prisma generate"
   },
   "dependencies": {
