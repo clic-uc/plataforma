@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { GithubIcon } from "@/components/icons";
 import { authClient } from "@/lib/auth-client";
+import { GITHUB_NOT_INVITED_ERROR } from "@/lib/invitations";
 
 type TestLogin = {
   users: readonly { role: string; label: string; email: string }[];
@@ -21,7 +22,10 @@ export function LoginCard({ testLogin }: { testLogin: TestLogin | null }) {
 
   async function handleGithub() {
     setPending(true);
-    await authClient.signIn.social({ provider: "github", callbackURL: "/dashboard" });
+    // Sin errorCallbackURL Better Auth manda los errores del callback a su propia
+    // página (/api/auth/error), y en producción a "/?error=...", que se pierde al
+    // redirigir. Así vuelven acá con ?error, incluido github_not_invited.
+    await authClient.signIn.social({ provider: "github", callbackURL: "/dashboard", errorCallbackURL: "/login" });
   }
 
   async function handleTestUser(email: string) {
@@ -56,11 +60,18 @@ export function LoginCard({ testLogin }: { testLogin: TestLogin | null }) {
       <h1 className="auth-title">Ingresar</h1>
       <p className="auth-lead">Usa tu cuenta de GitHub para entrar a proyectos, calendario y StandUps.</p>
 
-      {error && (
+      {error === GITHUB_NOT_INVITED_ERROR ? (
         <div className="auth-error">
-          No pudimos iniciar tu sesión. Si tu correo de GitHub es privado, revisa que la aplicación tenga permiso para
-          leerlo, o inténtalo de nuevo.
+          Tu cuenta de GitHub no está invitada. Pídele a coordinación que agregue tu usuario de GitHub y vuelve a
+          intentarlo.
         </div>
+      ) : (
+        error && (
+          <div className="auth-error">
+            No pudimos iniciar tu sesión. Si tu correo de GitHub es privado, revisa que la aplicación tenga permiso para
+            leerlo, o inténtalo de nuevo.
+          </div>
+        )
       )}
 
       <button className="btn-primary auth-btn" onClick={handleGithub} disabled={pending}>
@@ -69,7 +80,7 @@ export function LoginCard({ testLogin }: { testLogin: TestLogin | null }) {
       </button>
 
       <p className="auth-note">
-        Si es tu primera vez, tu cuenta quedará a la espera de que coordinación la apruebe.
+        Para entrar por primera vez, coordinación tiene que haber agregado tu usuario de GitHub a las invitaciones.
       </p>
 
       {testLogin && (

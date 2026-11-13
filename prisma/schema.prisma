@@ -104,11 +104,12 @@ enum DocSlotType {
 
 /// Perfil de dominio e identidad de Better Auth en un mismo modelo
 /// (user.modelName = "member", en src/lib/auth.ts). Premisa: todo Member se
-/// origina en un login, no hay pre-registro.
+/// origina en un login, no hay pre-registro (solo una Invitation que lo permite).
 ///
 /// Los campos de dominio requieren @default. Better Auth construye el INSERT
 /// únicamente con sus campos (name, email, emailVerified, image, createdAt,
-/// updatedAt); una columna NOT NULL sin default rompe el alta.
+/// updatedAt, más githubLogin) y lo que agrega el hook de alta; una columna
+/// NOT NULL sin default rompe el alta.
 model Member {
   id            String   @id @default(cuid())
   name          String
@@ -135,9 +136,15 @@ model Member {
   availability String[] @default([])
   streak       Int      @default(0)
 
-  /// Gate de acceso: nadie entra hasta que coordinación lo aprueba desde la
-  /// pestaña "Pendientes" de /miembros.
+  /// Gate de acceso. Quien entra con una invitación nace aprobado; queda en false
+  /// solo en cuentas creadas antes de la lista de invitaciones, que coordinación
+  /// aprueba o rechaza desde la pestaña "Pendientes" de /miembros.
   isVerifiedByCoordinator Boolean @default(false)
+
+  /// Usuario de GitHub con el que se creó la cuenta, tal como lo devolvió GitHub.
+  /// Se guarda al crearla y no se actualiza si la persona se lo cambia después.
+  /// null en las cuentas anteriores a las invitaciones y en los usuarios de prueba.
+  githubLogin String?
 
   sessions          Session[]
   accounts          Account[]
@@ -159,6 +166,23 @@ model Member {
   oauthApplications OauthApplication[]
   oauthAccessTokens OauthAccessToken[]
   oauthConsents     OauthConsent[]
+  invitationsSent   Invitation[]        @relation("InvitationCreator")
+}
+
+/// Lista de usuarios de GitHub que pueden crear una cuenta. El primer login de
+/// alguien que no está acá no crea nada (databaseHooks en src/lib/auth.ts); el de
+/// alguien que está crea el Member ya aprobado con este rol y marca usedAt.
+model Invitation {
+  id          String     @id @default(cuid())
+  /// Siempre en minúsculas (CHECK en la migración), así el @unique no distingue mayúsculas.
+  githubLogin String     @unique
+  role        MemberRole
+  createdById String?
+  createdAt   DateTime   @default(now())
+  /// Cuándo se creó la cuenta con ella. Una invitación usada ya no deja entrar a nadie.
+  usedAt      DateTime?
+
+  createdBy Member? @relation("InvitationCreator", fields: [createdById], references: [id], onDelete: SetNull)
 }
 
 model Project {

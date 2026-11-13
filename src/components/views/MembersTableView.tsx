@@ -9,9 +9,10 @@ import { MemberAvatar } from "@/components/ui/Avatar";
 import { RankStars } from "@/components/ui/RankStars";
 import { SearchIcon } from "@/components/icons";
 import { InviteMemberModal } from "@/components/views/InviteMemberModal";
+import { InvitationsPanel } from "@/components/views/InvitationsPanel";
 import { PendingMembersTable } from "@/components/views/PendingMembersTable";
 import { useIsCoordinacion } from "@/components/providers/CurrentMemberProvider";
-import { useMembers, usePendingMembers, type MemberListItem } from "@/lib/api/members";
+import { useInvitations, useMembers, usePendingMembers, type MemberListItem } from "@/lib/api/members";
 import { normalizeSearch } from "@/lib/api/format";
 import { MEMBER_STATUS_OPTIONS } from "@/lib/api/status";
 
@@ -27,6 +28,7 @@ export function MembersTableView() {
   const isCoordinacion = useIsCoordinacion();
   const { data: members = [] } = useMembers();
   const { data: pending = [] } = usePendingMembers({ enabled: isCoordinacion });
+  const { data: invitations = [] } = useInvitations({ enabled: isCoordinacion });
 
   const [tab, setTab] = useState<"miembros" | "pendientes">("miembros");
   const [search, setSearch] = useState("");
@@ -60,7 +62,7 @@ export function MembersTableView() {
             className={`utab${tab === "pendientes" ? " active" : ""}`}
             onClick={() => setTab("pendientes")}
           >
-            Pendientes <span className="utab-count">{pending.length}</span>
+            Pendientes <span className="utab-count">{invitations.length + pending.length}</span>
           </button>
         )}
         <div style={{ marginLeft: "auto", paddingBottom: 6 }}>
@@ -71,7 +73,11 @@ export function MembersTableView() {
       {inviting && <InviteMemberModal onClose={() => setInviting(false)} />}
 
       {tab === "pendientes" ? (
-        <PendingMembersTable pending={pending} />
+        <div className="flex flex-col gap-8">
+          <InvitationsPanel invitations={invitations} />
+          {/* Cuentas creadas cuando el registro era abierto; con invitaciones ya no aparecen nuevas. */}
+          {pending.length > 0 && <PendingMembersTable pending={pending} />}
+        </div>
       ) : (
         <>
           <div className="filter-row">
@@ -103,7 +109,7 @@ export function MembersTableView() {
               <div className="ph-text">
                 {filtering
                   ? "Ningún miembro coincide con la búsqueda. Prueba con otro nombre o quita el filtro de estado."
-                  : "Todavía no hay miembros aprobados. Invita a alguien compartiendo el enlace de ingreso."}
+                  : "Todavía no hay miembros aprobados. Invita a alguien desde «Invitar miembro»."}
               </div>
             </div>
           ) : (

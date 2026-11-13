@@ -111,16 +111,40 @@ Domain rules that live in code, not the schema (derived `Task.done`, server-gene
 
 ### Authentication and authorization
 
-`src/lib/auth.ts` holds the Better Auth instance (GitHub only, no domain restriction — anyone with a
-GitHub account can sign up, and `Member.isVerifiedByCoordinator` is the only thing gating access).
-Coordination approves or rejects pending accounts from the "Pendientes" tab in `/miembros` (see
-Domain behaviour › Members).
+`src/lib/auth.ts` holds the Better Auth instance (GitHub only). **Sign-up is closed by an allowlist
+of GitHub usernames**: the `Invitation` table (migration `20261113120000_github_invitations`), which
+coordination manages from the "Pendientes" tab in `/miembros` (see Domain behaviour › Members).
+
+- **The gate is a `databaseHooks.user.create.before` hook** (`admitInvitedUser`,
+  `src/lib/auth/invitations.ts`; the decision itself is pure, `decideSignUp` in
+  `src/lib/invitations.ts`). GitHub's `mapProfileToUser` also passes `profile.login` as
+  `githubLogin`; the hook looks it up, lowercased, among the *unused* invitations. Without one it
+  throws an `APIError` whose message is `github_not_invited`: the row is never inserted, and Better
+  Auth's callback redirects to the sign-in's `errorCallbackURL` (`/login`) with
+  `?error=github_not_invited`, which `LoginCard` explains. It throws instead of returning `false`
+  on purpose: with `false` Better Auth carries on with a null user and ends in the generic
+  `unable_to_create_user`. Anything created without a GitHub login is rejected too.
+- **With an invitation the `Member` is born approved** (`isVerifiedByCoordinator = true`, the
+  invitation's role, `joinedAt = now`). The adapter only inserts fields it knows, so `githubLogin`,
+  `role`, `isVerifiedByCoordinator` and `joinedAt` are declared in `user.additionalFields`; the last
+  three with `input: false`. `githubLogin` must accept input (with `input: false` Better Auth drops
+  what `mapProfileToUser` returns), so the `hooks.before` middleware rejects it on `/update-user`.
+- **The invitation is marked used in the `after` hook** (`markInvitationUsed`), not in `before`: the
+  Prisma adapter runs here without a transaction, so marking it before the insert would consume it
+  even if the insert then failed. A failure there is logged, not raised (the account already exists);
+  the Pendientes list hides invitations whose login already belongs to a member.
+- **Only creation goes through the hook.** Existing accounts sign in as before, invited or not, and
+  `githubLogin` is written only at creation (no `overrideUserInfoOnSignIn`), so it goes stale if the
+  person renames their GitHub account. Accounts created before the allowlist have it `null`.
+- Every OAuth callback error now lands on `/login?error=…` (before, Better Auth showed its own error
+  page and, in production, redirected to `/` and lost the code).
+
 `src/lib/auth/guards.ts` is the enforcement point:
 
 - `getCurrentMember()` — the `Member` behind the session, or `null`. Wrapped in React `cache()`. It rereads
   the row instead of trusting `session.user` because `role` and `isVerifiedByCoordinator` are domain
-  fields Better Auth does not carry in the session — and so a role change takes effect without
-  signing in again.
+  fields (Better Auth only declares them so the sign-up hook can write them) — and so a role change
+  takes effect without signing in again.
 - `requireMember()` / `requireCoordinacion()` — throw `AuthError`.
 - `runAsMember(id, fn)` — makes `getCurrentMember()` return that member instead of reading the
   session cookie, for the duration of `fn` (an `AsyncLocalStorage`). Only the MCP route uses it, so an
@@ -150,14 +174,16 @@ skills) and Better Auth's identity, wired with `user: { modelName: "member" }` i
 Everything already pointed at `Member` — `Task.assigneeId`, `Document.authorId`,
 `ProjectMember.memberId`, `Standup.memberId` — and `Session.userId` / `Account.userId` now do too.
 
-This works because **every member is born from a login**; there is no pre-registration. If that ever
-changes and coordination needs to create members before they sign in, this is the decision to
+This works because **every member is born from a login**; there is no pre-registration. An
+invitation is not a member: it only allows that GitHub login to create its own `Member` on its first
+sign-in. If coordination ever needs to create members before they sign in, this is the decision to
 revisit.
 
-One consequence worth knowing: every domain column on `Member` needs a `@default` (`role` →
-`ROOKIE`, `status` → `ACTIVO`, and so on). Better Auth inserts the row knowing only its own fields,
-so anything `NOT NULL` without a default would break sign-up. That is also why there is no creation
-hook. And deleting a member's row deletes the person entirely, sessions included.
+One consequence worth knowing: every domain column on `Member` needs a `@default` or must be
+nullable (`role` → `ROOKIE`, `status` → `ACTIVO`, `githubLogin` nullable, and so on). Better Auth
+inserts the row knowing only its own fields plus the declared `additionalFields` that the creation
+hook fills (see Authentication and authorization), so anything `NOT NULL` without a default would
+break sign-up. And deleting a member's row deletes the person entirely, sessions included.
 
 ## Domain behaviour
 
@@ -314,18 +340,37 @@ Weekly StandUp, this week's hours chart and the hours history.
 - **Deleting a member deletes the row**, which is also their Better Auth identity: sessions and the
   GitHub account cascade, they leave the teams, their tasks become unassigned and their documents and
   events lose their author. To set someone aside without deleting them there is the **Hiatus** status.
+  The invitation they used stays used, so coming back needs a new one.
 - **The page has two tabs, Miembros and Pendientes** (the latter for coordination). A "Gestionar
   equipos" placeholder was removed: project teams are managed from each project.
-- **Inviting is sharing the `/login` link**: there is no pre-registration (see `Member` is the user).
-- **Approving** is done from `/miembros`, "Pendientes" tab (coordination only; the sidebar shows how
-  many requests wait). Approving sets the role and sets `joinedAt` to the approval date. Rejecting
-  deletes the account; since signup is open, the person can come back in and is pending again.
+- **Inviting is adding the GitHub username, then sharing the `/login` link.** In "Pendientes",
+  coordination adds the login with the role the person will get (default Rookie, like approving); on
+  their first GitHub sign-in the account is created already approved with that role (see
+  Authentication and authorization). The tab lists the unused invitations (login, role, who invited,
+  date) and lets coordination remove one; a used one cannot be removed (409 `INVITATION_USED`).
+  Endpoints `GET`/`POST /api/members/invitations` and `DELETE /api/members/invitations/[id]`,
+  coordination only (`getInvitations`/`createInvitation`/`deleteInvitation` in
+  `members.server.ts`). Not in the MCP, like every coordination action.
+  - **The login is validated and normalised** (`normalizeGithubLogin`, `src/lib/invitations.ts`):
+    alphanumerics and single hyphens, 1–39 characters, no leading or trailing hyphen, a leading `@`
+    stripped, stored lowercased (a CHECK keeps it so, which makes the unique case-insensitive). A login
+    already invited is 409 `ALREADY_INVITED`; one that already belongs to a member (compared
+    case-insensitively with `Member.githubLogin`) is 409 `ALREADY_MEMBER`. Inviting again someone
+    whose account was deleted reuses their used row as a fresh invitation.
+  - Someone not invited who tries to sign in sees "Tu cuenta de GitHub no está invitada…" on
+    `/login`, and nothing is written.
+- **Approving** applies only to **legacy pending accounts**: those created while sign-up was open
+  (`isVerifiedByCoordinator = false`). With invitations no new ones appear, so "Pendientes" shows
+  them under "Cuentas por aprobar" only while any are left, with approve/reject as before
+  (coordination only). The sidebar badge still counts only these, not invitations. Approving sets the
+  role and sets `joinedAt` to the approval date. Rejecting deletes the account; signing in again then
+  requires an invitation.
 - **Birthday** stores only day and month, in the year 2000 at noon UTC, read with UTC getters
   (`src/lib/api/member-fields.ts`).
 - **Weekly availability**: `Member.availability` stores blocks `LUN_MANANA`…`VIE_NOCHE`. Monday–Friday
   × morning/afternoon/evening, no exact hours.
 - `getMembers()` / `getMember()` exclude accounts with `isVerifiedByCoordinator = false`: a pending
-  account is not a member yet and must not show up in the table or the selectors.
+  (legacy) account is not a member yet and must not show up in the table or the selectors.
 - **`area` was removed** from members and projects (migration `20261027130000_drop_area`): it was free
   text that was only displayed and filtered on, and the stored values were lost.
 
@@ -628,8 +673,10 @@ Claude Code) or any MCP client. Streamable HTTP, stateless.
 
 There is no seed. `prisma db seed`, `prisma/seed/seed.ts` and the member/project demo data were
 removed, together with the `tsx` dependency only they used: the database holds real data and the seed
-wiped demo records nobody reseeded. To get test data in a fresh database, sign in with GitHub and
-approve the account from "Pendientes". The `prisma/seed` folder is gone.
+wiped demo records nobody reseeded. In a fresh database nobody is invited yet, so the first account
+needs its invitation inserted by hand (`INSERT INTO "Invitation" (id, "githubLogin", role) VALUES
+('first', '<login in lowercase>', 'COORDINACION')`); after that, sign in with GitHub and invite the
+rest from "Pendientes". The `prisma/seed` folder is gone.
 
 **Test users on the `dev` Neon branch**: one approved member per role (Rookie, Equipo,
 Coordinación), to test permissions and each role's journey without real accounts.
