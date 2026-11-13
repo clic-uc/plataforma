@@ -14,6 +14,7 @@ export interface MemberListItem {
   initials: string;
   image: string | null;
   email: string;
+  roleValue: MemberRole;
   status: string;
   statusColor: BadgeColor;
   statusValue: MemberStatus;
@@ -46,7 +47,6 @@ export interface MemberStandupView {
 
 export interface MemberDetail extends MemberListItem {
   role: string;
-  roleValue: MemberRole;
   /** "MM-DD", o null si no está registrado. */
   birthdayValue: string | null;
   joinedAt: string;

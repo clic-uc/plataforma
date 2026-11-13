@@ -16,7 +16,7 @@ import {
   saveStandup,
   updateTimeEntry,
 } from "@/lib/api/tiempo.server";
-import type { TimeEntryInput, TimeEntryView } from "@/lib/api/tiempo";
+import type { StandupView, TimeEntryInput, TimeEntryView } from "@/lib/api/tiempo";
 import {
   MAX_DESCRIPTION_LENGTH,
   MAX_ENTRY_MINUTES,
@@ -68,6 +68,17 @@ async function linkFromLabel(args: LinkArgs & { taskLabel: string }): Promise<Li
 
 const INVALID_ENTRY = `Datos inválidos: los minutos van de ${MINUTES_STEP} en ${MINUTES_STEP} (de ${MINUTES_STEP} a ${MAX_ENTRY_MINUTES}), la fecha no puede ser futura y la descripción es obligatoria (máx. ${MAX_DESCRIPTION_LENGTH} caracteres).`;
 
+/**
+ * El StandUp de una semana, sin memberId (siempre es la persona conectada) ni weekStart
+ * (va afuera, y así viene también cuando todavía no se envió).
+ */
+function standupResult(weekStart: string, standup: StandupView | null) {
+  return {
+    weekStart,
+    standup: standup && { text: standup.text, learned: standup.learned, updatedAt: standup.updatedAt },
+  };
+}
+
 function entryView(entry: TimeEntryView) {
   return {
     id: entry.id,
@@ -87,7 +98,7 @@ export function registerTiempoTools(server: McpServer): void {
     "get_standup",
     {
       title: "Ver mi StandUp",
-      description: "El StandUp propio de una semana, o null si todavía no se envió.",
+      description: "El StandUp propio de una semana: `{ weekStart, standup }`, con standup en null si todavía no se envió.",
       inputSchema: z.object({ weekStart: weekStart.optional().describe("Por defecto, la semana en curso") }),
       annotations: { readOnlyHint: true },
     },
@@ -95,7 +106,7 @@ export function registerTiempoTools(server: McpServer): void {
       run(async () => {
         const week = args.weekStart ?? currentWeekStart();
         if (!parseWeekParam(week)) return fail("weekStart tiene que ser un lunes con formato YYYY-MM-DD");
-        return json({ weekStart: week, standup: await getStandup(week) });
+        return json(standupResult(week, await getStandup(week)));
       }),
   );
 
@@ -104,7 +115,7 @@ export function registerTiempoTools(server: McpServer): void {
     {
       title: "Enviar StandUp",
       description:
-        "Envía el StandUp semanal propio. Hay uno por semana: si ya existía, se reemplaza. Solo se acepta la semana en curso o la anterior.",
+        "Envía el StandUp semanal propio. Hay uno por semana: si ya existía, se reemplaza. Solo se acepta la semana en curso o la anterior. Devuelve lo mismo que get_standup.",
       inputSchema: z.object({
         text: z.string().describe(`¿Qué hice? Máx. ${MAX_STANDUP_LENGTH} caracteres`),
         learned: z.string().optional().describe(`¿Qué aprendí? Opcional, máx. ${MAX_STANDUP_LENGTH} caracteres`),
@@ -123,7 +134,8 @@ export function registerTiempoTools(server: McpServer): void {
             `Datos inválidos: weekStart tiene que ser un lunes, y el texto es obligatorio (máx. ${MAX_STANDUP_LENGTH} caracteres).`,
           );
         }
-        return json(await saveStandup(input));
+        const saved = await saveStandup(input);
+        return json(standupResult(saved.weekStart, saved));
       }),
   );
 

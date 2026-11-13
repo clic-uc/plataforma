@@ -32,21 +32,17 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const dayKey = z.string().regex(DAY_KEY, 'Formato "YYYY-MM-DD"');
 const time = z.string().regex(TIME, 'Formato "HH:mm"');
 
-/** Hora de Chile en lugar del instante UTC: es la que se ve en la app y la que el modelo va a repetir. */
-function eventView(event: CalendarEventView) {
-  const when = event.allDay
-    ? { allDay: true, ...isoToAllDay(event.startsAt, event.endsAt) }
-    : {
-        allDay: false,
-        start: instantToZonedTime(new Date(event.startsAt)),
-        end: instantToZonedTime(new Date(event.endsAt)),
-      };
+/**
+ * El evento en la lista, sin descripción (es texto libre y sin tope: get_event). Hora de
+ * Chile en lugar del instante UTC, que es la que se ve en la app y la que el modelo va a
+ * repetir, con los mismos nombres que reciben create_event y update_event.
+ */
+function eventRowView(event: CalendarEventView) {
   return {
     id: event.id,
     title: event.title,
     kind: event.kind,
-    ...when,
-    description: event.description,
+    ...currentWhen(event),
     location: event.location,
     project: event.project,
     createdBy: event.createdBy?.name ?? null,
@@ -54,13 +50,9 @@ function eventView(event: CalendarEventView) {
   };
 }
 
-/** Primer y último día (inclusive) que ocupa el evento, en la misma lectura que eventView. */
-function eventDays(event: CalendarEventView): { first: string; last: string } {
-  if (event.allDay) return isoToAllDay(event.startsAt, event.endsAt);
-  return {
-    first: instantToZonedTime(new Date(event.startsAt)).date,
-    last: instantToZonedTime(new Date(event.endsAt)).date,
-  };
+/** El evento completo: get_event y lo que devuelven create_event y update_event. */
+function eventView(event: CalendarEventView) {
+  return { ...eventRowView(event), description: event.description };
 }
 
 type When = { allDay: boolean; date: string; endDate: string; startTime?: string; endTime?: string };
@@ -97,7 +89,7 @@ export function registerCalendarTools(server: McpServer): void {
     "list_events",
     {
       title: "Ver calendario",
-      description: `Eventos del calendario de CLIC entre dos fechas (inclusive, máx. ${MAX_RANGE_DAYS} días). Las horas están en hora de Chile.`,
+      description: `Eventos del calendario de CLIC entre dos fechas (inclusive, máx. ${MAX_RANGE_DAYS} días), sin descripción: para leerla, get_event. Las horas están en hora de Chile y los campos son los mismos que reciben create_event y update_event (date, endDate, startTime, endTime).`,
       inputSchema: z.object({ from: dayKey, to: dayKey }),
       annotations: { readOnlyHint: true },
     },
@@ -111,11 +103,28 @@ export function registerCalendarTools(server: McpServer): void {
         return json(
           events
             .filter((event) => {
-              const { first, last } = eventDays(event);
-              return first <= to && last >= from;
+              const { date, endDate } = currentWhen(event);
+              return date <= to && endDate >= from;
             })
-            .map(eventView),
+            .map(eventRowView),
         );
+      }),
+  );
+
+  server.registerTool(
+    "get_event",
+    {
+      title: "Ver evento",
+      description:
+        "Un evento del calendario completo, con su descripción (list_events no la trae). Las horas están en hora de Chile.",
+      inputSchema: z.object({ id: z.string().describe("id del evento (de list_events)") }),
+      annotations: { readOnlyHint: true },
+    },
+    ({ id }) =>
+      run(async () => {
+        const event = await getEvent(id);
+        if (!event) return fail("No existe el evento");
+        return json(eventView(event));
       }),
   );
 

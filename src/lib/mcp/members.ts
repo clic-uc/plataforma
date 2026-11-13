@@ -26,7 +26,7 @@ export function registerMemberTools(server: McpServer): void {
     "list_members",
     {
       title: "Listar miembros",
-      description: "Miembros aprobados de CLIC con su estado y los proyectos en que participan.",
+      description: "Miembros aprobados de CLIC con su rol, su estado y los proyectos en que participan.",
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
@@ -38,6 +38,7 @@ export function registerMemberTools(server: McpServer): void {
             id: m.id,
             name: m.name,
             email: m.email,
+            role: m.roleValue,
             status: m.statusValue,
             projects: m.projects.map((p) => p.name),
           })),
