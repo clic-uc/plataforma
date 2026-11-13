@@ -1,18 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AuthError,
+  assertProjectWriter,
   getCurrentMember,
   requireCoordinacion,
   requireMcpAccess,
   requireMember,
   runAsMember,
 } from "@/lib/auth/guards";
+import type { CurrentMember } from "@/lib/auth/current-member";
 
-const { getSession, findUnique } = vi.hoisted(() => ({ getSession: vi.fn(), findUnique: vi.fn() }));
+const { getSession, findUnique, findMembership } = vi.hoisted(() => ({
+  getSession: vi.fn(),
+  findUnique: vi.fn(),
+  findMembership: vi.fn(),
+}));
 
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession } } }));
-vi.mock("@/lib/prisma", () => ({ prisma: { member: { findUnique } } }));
+vi.mock("@/lib/prisma", () => ({ prisma: { member: { findUnique }, projectMember: { findUnique: findMembership } } }));
 
 /** Fila completa de Member: el guard debe devolver solo la proyección. */
 function memberRow(overrides: Record<string, unknown> = {}) {
@@ -39,6 +45,7 @@ function memberRow(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   getSession.mockReset();
   findUnique.mockReset();
+  findMembership.mockReset();
   getSession.mockResolvedValue({ user: { id: "m1" } });
   findUnique.mockResolvedValue(memberRow());
 });
@@ -111,6 +118,38 @@ describe("requireCoordinacion", () => {
   it("revisa primero la aprobación: una cuenta pendiente no recibe FORBIDDEN_ROLE", async () => {
     findUnique.mockResolvedValue(memberRow({ role: "COORDINACION", isVerifiedByCoordinator: false }));
     await expect(requireCoordinacion()).rejects.toMatchObject({ code: "PENDING_APPROVAL" });
+  });
+});
+
+describe("assertProjectWriter", () => {
+  const member = (role: CurrentMember["role"]): CurrentMember => ({
+    id: "m1",
+    name: "Ana",
+    email: "a@b.c",
+    image: null,
+    role,
+    isVerified: true,
+  });
+
+  it.each(["EQUIPO", "ROOKIE"] as const)("deja pasar a %s si está en el equipo del proyecto", async (role) => {
+    findMembership.mockResolvedValue({ memberId: "m1" });
+    await expect(assertProjectWriter(member(role), "p1")).resolves.toBeUndefined();
+    expect(findMembership).toHaveBeenCalledWith({
+      where: { projectId_memberId: { projectId: "p1", memberId: "m1" } },
+      select: { memberId: true },
+    });
+  });
+
+  it.each(["EQUIPO", "ROOKIE"] as const)("lanza 403 NOT_ON_TEAM a %s fuera del equipo", async (role) => {
+    findMembership.mockResolvedValue(null);
+    const error = await assertProjectWriter(member(role), "p1").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AuthError);
+    expect(error).toMatchObject({ status: 403, code: "NOT_ON_TEAM" });
+  });
+
+  it("deja pasar a coordinación sin mirar el equipo", async () => {
+    await expect(assertProjectWriter(member("COORDINACION"), "p1")).resolves.toBeUndefined();
+    expect(findMembership).not.toHaveBeenCalled();
   });
 });
 

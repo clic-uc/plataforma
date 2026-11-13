@@ -20,7 +20,8 @@ export function DocVersionModal({
   previous: ProjectDocVersion | undefined;
   /** false cuando el editor ya tiene exactamente este contenido. */
   canRestore: boolean;
-  onRestore: () => void;
+  /** Sin él no se ofrece restaurar: solo el equipo del proyecto y coordinación editan. */
+  onRestore?: () => void;
   onClose: () => void;
 }) {
   const [view, setView] = useState<"changes" | "content">("changes");
@@ -70,15 +71,17 @@ export function DocVersionModal({
 
       <div className="modal-footer" style={{ padding: 0, border: "none", marginTop: 16 }}>
         <button type="button" className="btn-ghost" onClick={onClose}>Cerrar</button>
-        <button
-          type="button"
-          className="btn-primary"
-          disabled={!canRestore}
-          title={canRestore ? "Lleva este contenido al editor; se aplica al guardar" : "El editor ya tiene este contenido"}
-          onClick={onRestore}
-        >
-          Restaurar esta versión
-        </button>
+        {onRestore && (
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={!canRestore}
+            title={canRestore ? "Lleva este contenido al editor; se aplica al guardar" : "El editor ya tiene este contenido"}
+            onClick={onRestore}
+          >
+            Restaurar esta versión
+          </button>
+        )}
       </div>
     </Modal>
   );

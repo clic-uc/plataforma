@@ -10,6 +10,7 @@ import { CreateTaskModal } from "@/components/views/CreateTaskModal";
 import { CreateFeatureModal } from "@/components/views/CreateFeatureModal";
 import { IssueLinksPanel } from "@/components/views/IssueLinksPanel";
 import { IssueTypeTag } from "@/components/views/ProjectIssuesList";
+import { useCanEditProject } from "@/components/providers/CurrentMemberProvider";
 import { errorMessage } from "@/lib/api/http";
 import { useProject } from "@/lib/api/projects";
 import {
@@ -173,6 +174,7 @@ function ReviewToggle({ projectId, number, reviewed }: { projectId: string; numb
 export function IssueView({ projectId, number }: { projectId: string; number: number }) {
   const router = useRouter();
   const { data: project } = useProject(projectId);
+  const canEditProject = useCanEditProject(project);
   const { data: issue } = useIssue(projectId, number);
 
   // Edición del issue: los campos se cargan al pulsar "Editar".
@@ -425,15 +427,18 @@ export function IssueView({ projectId, number }: { projectId: string; number: nu
           </select>
         </div>
 
-        <div className="side-sec">
-          <div className="ds-lbl">Llevar a trabajo</div>
-          <button type="button" className="btn-ghost issue-side-btn" onClick={() => setCreatingTask(true)}>
-            Crear tarea
-          </button>
-          <button type="button" className="btn-ghost issue-side-btn" onClick={() => setCreatingFeature(true)}>
-            Crear feature
-          </button>
-        </div>
+        {/* Crear tareas y features es del equipo del proyecto y coordinación; el issue sigue abierto a todos. */}
+        {canEditProject && (
+          <div className="side-sec">
+            <div className="ds-lbl">Llevar a trabajo</div>
+            <button type="button" className="btn-ghost issue-side-btn" onClick={() => setCreatingTask(true)}>
+              Crear tarea
+            </button>
+            <button type="button" className="btn-ghost issue-side-btn" onClick={() => setCreatingFeature(true)}>
+              Crear feature
+            </button>
+          </div>
+        )}
 
         <IssueLinksPanel project={project} number={number} />
 

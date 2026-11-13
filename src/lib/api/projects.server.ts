@@ -12,22 +12,15 @@ import {
 } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireMember, requireCoordinacion } from "@/lib/auth/guards";
+import { assertProjectWriter, requireMember, requireCoordinacion } from "@/lib/auth/guards";
 import { ApiError } from "@/lib/api/errors";
 import { ownActivity } from "@/lib/api/issues.server";
 import { MAX_COMMENT_LENGTH, MAX_QUOTE_LENGTH } from "@/lib/comments";
 import { formatLabel, labelNumber, labelsToken, matchesLabelsToken, nextLabel } from "@/lib/api/labels";
 import { summarizeTaskHistory, type TaskTransitionRow } from "@/lib/task-history";
-import { MAX_DESCRIPTION_LENGTH, dayKeyToDate, isValidEntryMinutes, todayKey } from "@/lib/tiempo";
-import {
-  formatDateTime,
-  formatDayMonth,
-  formatDayMonthYear,
-  formatMonthYear,
-  getInitials,
-  parseISODateInput,
-  toISODateInput,
-} from "@/lib/api/format";
+import { MAX_DESCRIPTION_LENGTH, dateToDayKey, dayKeyToDate, isValidEntryMinutes, todayKey } from "@/lib/tiempo";
+import { isDayKey } from "@/lib/calendar";
+import { formatDateTime, formatDayMonth, formatDayMonthYear, formatMonthYear, getInitials } from "@/lib/api/format";
 import {
   docSlotBadgeColor,
   docSlotIcon,
@@ -198,8 +191,8 @@ export async function getProjects(): Promise<ProjectListItem[]> {
     progress: progressFromTasks(project.tasks),
     teamSize: project.members.length,
     team: toTeam(project.members),
-    startDate: formatMonthYear(project.startDate),
-    startDateISO: toISODateInput(project.startDate),
+    startDate: formatMonthYear(project.startDate, "UTC"),
+    startDateISO: dateToDayKey(project.startDate),
     archived: project.archived,
   }));
 }
@@ -321,8 +314,8 @@ export async function getProject(id: string, now: Date = new Date()): Promise<Pr
     progress: progressFromTasks(project.tasks),
     teamSize: project.members.length,
     team: toTeam(project.members),
-    startDate: formatMonthYear(project.startDate),
-    startDateISO: toISODateInput(project.startDate),
+    startDate: formatMonthYear(project.startDate, "UTC"),
+    startDateISO: dateToDayKey(project.startDate),
     archived: project.archived,
     labelsToken: labelsToken(project.features, project.tasks),
     docs: [...project.documents]
@@ -338,7 +331,7 @@ export async function getProject(id: string, now: Date = new Date()): Promise<Pr
     actas: project.actas.map((acta) => ({
       id: acta.id,
       title: acta.title,
-      date: formatDayMonth(acta.date),
+      date: formatDayMonth(acta.date, "UTC"),
     })),
     features: project.features.map((feature) => ({
       id: feature.label,
@@ -409,7 +402,7 @@ export function parseCreateProjectInput(body: unknown): CreateProjectInput | nul
   if (!(Object.values(ProjectStatus) as string[]).includes(status)) return null;
 
   const startDate = typeof b.startDate === "string" ? b.startDate : "";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return null;
+  if (!isDayKey(startDate)) return null;
 
   return { name, client, description, status: status as ProjectStatus, startDate };
 }
@@ -423,7 +416,7 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectD
       client: input.client,
       description: input.description,
       status: input.status,
-      startDate: parseISODateInput(input.startDate),
+      startDate: dayKeyToDate(input.startDate),
       archived: false,
     },
   });
@@ -471,7 +464,7 @@ export function parseUpdateProjectInput(body: unknown): UpdateProjectInput | nul
   if (!(Object.values(ProjectStatus) as string[]).includes(status)) return null;
 
   const startDate = typeof b.startDate === "string" ? b.startDate : "";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return null;
+  if (!isDayKey(startDate)) return null;
 
   if (typeof b.archived !== "boolean") return null;
 
@@ -491,7 +484,7 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
       client: input.client,
       description: input.description,
       status: input.status,
-      startDate: parseISODateInput(input.startDate),
+      startDate: dayKeyToDate(input.startDate),
       archived: input.archived,
     },
   });
@@ -530,7 +523,7 @@ export async function getProjectDoc(projectId: string, docId: string): Promise<P
       type: "Acta",
       badgeColor: "amber",
       author: "",
-      date: formatDayMonth(acta.date),
+      date: formatDayMonth(acta.date, "UTC"),
       content: acta.content ?? "",
     };
   }
@@ -573,6 +566,7 @@ export async function updateProjectDoc(projectId: string, docId: string, content
 
   const target = await findDocTarget(projectId, docId);
   if (!target) return null;
+  await assertProjectWriter(member, projectId);
   // Cada guardado con cambios es una versión; guardar lo mismo no registra nada.
   if (content === target.content) return getProjectDoc(projectId, docId);
 
@@ -680,12 +674,16 @@ export async function createProjectDocComment(
   return toDocComment(comment);
 }
 
-/** Resolver un comentario es borrar su fila. false si no existe o es de otro documento. */
+/**
+ * Resolver un comentario es borrar su fila. false si no existe o es de otro documento.
+ * Comentar está abierto a cualquier miembro; resolver, solo al equipo del proyecto.
+ */
 export async function resolveProjectDocComment(projectId: string, docId: string, commentId: string): Promise<boolean> {
-  await requireMember();
+  const member = await requireMember();
 
   const target = await findDocTarget(projectId, docId);
   if (!target) return false;
+  await assertProjectWriter(member, projectId);
 
   const { count } = await prisma.docComment.deleteMany({ where: { id: commentId, ...target.parent } });
   return count > 0;
@@ -699,6 +697,7 @@ export async function createProjectDoc(projectId: string, slotKey: string): Prom
 
   const existing = await prisma.document.findUnique({ where: { projectId_slot: { projectId, slot } } });
   if (!existing || existing.filled) return null;
+  await assertProjectWriter(member, projectId);
 
   await prisma.document.update({
     where: { projectId_slot: { projectId, slot } },
@@ -716,19 +715,20 @@ export function parseCreateActaInput(body: unknown): CreateActaInput | null {
   if (!title) return null;
 
   const date = typeof b.date === "string" ? b.date : "";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  if (!isDayKey(date)) return null;
 
   return { title, date };
 }
 
 export async function createActa(projectId: string, input: CreateActaInput): Promise<ProjectDetail | null> {
-  await requireMember();
+  const member = await requireMember();
 
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
   if (!project) return null;
+  await assertProjectWriter(member, projectId);
 
   await prisma.acta.create({
-    data: { projectId, title: input.title, date: parseISODateInput(input.date) },
+    data: { projectId, title: input.title, date: dayKeyToDate(input.date) },
   });
 
   return getProject(projectId);
@@ -769,6 +769,7 @@ export async function createFeature(projectId: string, input: CreateFeatureInput
 
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
   if (!project) return null;
+  await assertProjectWriter(member, projectId);
 
   const issueId = input.issueNumber ? await requireIssueId(projectId, input.issueNumber) : null;
 
@@ -817,10 +818,11 @@ export async function updateFeature(
   input: UpdateFeatureInput,
   token: string | null,
 ): Promise<ProjectDetail | null> {
-  await requireMember();
+  const member = await requireMember();
 
   const id = (await resolveLabels(projectId, token)).featureId(label);
   if (!id) return null;
+  await assertProjectWriter(member, projectId);
 
   const { count } = await prisma.feature.updateMany({
     where: { id },
@@ -832,10 +834,11 @@ export async function updateFeature(
 }
 
 export async function deleteFeature(projectId: string, label: string, token: string | null): Promise<ProjectDetail | null> {
-  await requireMember();
+  const member = await requireMember();
 
   const id = (await resolveLabels(projectId, token)).featureId(label);
   if (!id) return null;
+  await assertProjectWriter(member, projectId);
 
   const deleted = await prisma.$transaction(async (tx) => {
     await tx.task.deleteMany({ where: { featureId: id } });
@@ -928,6 +931,7 @@ export async function createTask(
 
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
   if (!project) return null;
+  await assertProjectWriter(member, projectId);
 
   if (isWorkColumn(input.column) && !input.assigneeId) {
     throw new ApiError(422, "ASSIGNEE_REQUIRED", ASSIGNEE_REQUIRED_MESSAGE);
@@ -1042,6 +1046,7 @@ export async function updateTask(
   const labels = await resolveLabels(projectId, token);
   const id = labels.taskId(label);
   if (!id) return null;
+  await assertProjectWriter(member, projectId);
 
   let featureId: string | null = null;
   if (input.featureId) {
@@ -1112,10 +1117,11 @@ export async function updateTask(
 }
 
 export async function deleteTask(projectId: string, label: string, token: string | null): Promise<ProjectDetail | null> {
-  await requireMember();
+  const member = await requireMember();
 
   const id = (await resolveLabels(projectId, token)).taskId(label);
   if (!id) return null;
+  await assertProjectWriter(member, projectId);
 
   const deleted = await prisma.$transaction(async (tx) => {
     const { count } = await tx.task.deleteMany({ where: { id } });
@@ -1158,6 +1164,8 @@ export async function setIssueLink(
     select: { id: true },
   });
   if (!issue) return null;
+  // Vincular cambia el plan (la feature o tarea), no solo el issue: es del equipo.
+  await assertProjectWriter(member, projectId);
 
   const issues = linked ? { connect: { id: issue.id } } : { disconnect: { id: issue.id } };
   await prisma.$transaction([
@@ -1174,8 +1182,9 @@ export async function setIssueLink(
 // ─── Equipo ───
 //
 // Componer el equipo es una decisión de proyecto, igual que editarlo: solo
-// coordinación. La asignación de tareas, en cambio, la puede hacer cualquier
-// miembro, pero restringida a quienes están en el equipo (assertAssignable).
+// coordinación. El equipo es, a su vez, quien trabaja en el proyecto: solo él (y
+// coordinación) toca tareas, features, documentos y actas (assertProjectWriter), y solo
+// a alguien del equipo se le asigna una tarea (assertAssignable).
 
 export function parseAddProjectMemberInput(body: unknown): AddProjectMemberInput | null {
   if (typeof body !== "object" || body === null) return null;

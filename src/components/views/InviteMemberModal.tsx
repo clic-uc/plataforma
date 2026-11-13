@@ -5,9 +5,9 @@ import { Modal } from "@/components/ui/Modal";
 import { useIsCoordinacion } from "@/components/providers/CurrentMemberProvider";
 
 /**
- * No hay pre-registro: todo Member nace de un login con GitHub (ver CLAUDE.md).
- * Invitar es compartir el enlace de ingreso; la cuenta queda pendiente hasta que
- * coordinación la apruebe.
+ * No hay pre-registro: todo Member nace de un login con GitHub (ver CLAUDE.md),
+ * pero solo si coordinación agregó antes su usuario en «Pendientes». Invitar es
+ * eso más compartir el enlace de ingreso; la cuenta nace aprobada.
  */
 export function InviteMemberModal({ onClose }: { onClose: () => void }) {
   const isCoordinacion = useIsCoordinacion();
@@ -27,8 +27,9 @@ export function InviteMemberModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Invitar miembro" onClose={onClose}>
       <p style={{ fontSize: 13, color: "var(--text-2)", margin: "0 0 14px", lineHeight: 1.45 }}>
-        Comparte este enlace. La persona entra con su cuenta de GitHub y su solicitud queda pendiente hasta que{" "}
-        {isCoordinacion ? "la apruebes en la pestaña «Pendientes»" : "coordinación la apruebe"}.
+        {isCoordinacion
+          ? "Agrega primero su usuario de GitHub en la pestaña «Pendientes», con el rol que tendrá, y comparte este enlace. Al entrar con GitHub su cuenta queda lista."
+          : "Pídele a coordinación que agregue su usuario de GitHub a las invitaciones y comparte este enlace. Sin invitación, GitHub no puede crear la cuenta."}
       </p>
 
       <div className="form-field">

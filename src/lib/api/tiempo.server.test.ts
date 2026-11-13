@@ -25,6 +25,7 @@ const { prisma } = vi.hoisted(() => ({
     feature: { findMany: vi.fn() },
     standup: { findUnique: vi.fn(), upsert: vi.fn() },
     timeEntry: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
+    projectMember: { findUnique: vi.fn() },
   },
 }));
 
@@ -39,6 +40,8 @@ vi.mock("@/lib/auth/guards", async (importOriginal) => ({
 beforeEach(() => {
   for (const model of Object.values(prisma)) for (const fn of Object.values(model)) fn.mockReset();
   vi.mocked(requireMember).mockResolvedValue({ id: "yo", role: "EQUIPO", name: "yo", email: "", image: null, isVerified: true });
+  // Salvo que el test diga otra cosa, quien registra está en el equipo del proyecto.
+  prisma.projectMember.findUnique.mockResolvedValue({ memberId: "yo" });
 });
 
 function standupRow(overrides: Record<string, unknown> = {}) {
@@ -273,6 +276,43 @@ describe("createTimeEntry / updateTimeEntry / deleteTimeEntry", () => {
   });
 });
 
+describe("horas solo en proyectos del equipo", () => {
+  beforeEach(() => {
+    prisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    prisma.projectMember.findUnique.mockResolvedValue(null);
+    prisma.timeEntry.create.mockResolvedValue(entryRow());
+    prisma.timeEntry.update.mockResolvedValue(entryRow());
+  });
+
+  it("rechaza registrar en un proyecto donde no se está, con 422 NOT_ON_TEAM", async () => {
+    await expect(createTimeEntry(validEntry)).rejects.toMatchObject({ status: 422, code: "NOT_ON_TEAM" });
+    expect(prisma.projectMember.findUnique).toHaveBeenCalledWith({
+      where: { projectId_memberId: { projectId: "p1", memberId: "yo" } },
+      select: { memberId: true },
+    });
+    expect(prisma.timeEntry.create).not.toHaveBeenCalled();
+  });
+
+  it("coordinación registra en cualquier proyecto", async () => {
+    vi.mocked(requireMember).mockResolvedValue({ id: "yo", role: "COORDINACION", name: "yo", email: "", image: null, isVerified: true });
+    await createTimeEntry(validEntry);
+    expect(prisma.timeEntry.create).toHaveBeenCalled();
+  });
+
+  it("un registro antiguo de un proyecto ajeno se edita mientras no cambie de proyecto", async () => {
+    prisma.timeEntry.findFirst.mockResolvedValue({ projectId: "p1" });
+    await updateTimeEntry("t1", { ...validEntry, minutes: 60 });
+    expect(prisma.timeEntry.update).toHaveBeenCalled();
+    expect(prisma.projectMember.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("mover un registro a un proyecto ajeno se rechaza", async () => {
+    prisma.timeEntry.findFirst.mockResolvedValue({ projectId: "p0" });
+    await expect(updateTimeEntry("t1", validEntry)).rejects.toMatchObject({ status: 422, code: "NOT_ON_TEAM" });
+    expect(prisma.timeEntry.update).not.toHaveBeenCalled();
+  });
+});
+
 describe("horas que salen de mover una tarea", () => {
   const linked = { kind: "TRABAJO", taskId: "ta", task: { label: "T-02", name: "Login" } };
 
@@ -329,6 +369,7 @@ describe("createTimeEntry / updateTimeEntry con tarea", () => {
   });
 
   it("rechaza una tarea de otro proyecto o inexistente con 422 INVALID_TASK", async () => {
+    prisma.timeEntry.findFirst.mockResolvedValue({ projectId: "p1" });
     for (const task of [{ projectId: "p2" }, null]) {
       prisma.task.findUnique.mockResolvedValue(task);
       await expect(createTimeEntry(linked)).rejects.toMatchObject({ status: 422, code: "INVALID_TASK" });

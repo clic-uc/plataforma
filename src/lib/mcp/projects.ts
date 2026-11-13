@@ -291,7 +291,7 @@ export function registerProjectTools(server: McpServer): void {
     {
       title: "Crear tarea",
       description:
-        "Crea una tarea en un proyecto. Solo se puede asignar a miembros del equipo del proyecto. Para crearla en PROGRESO o REVISION hay que asignarla. Una tarea queda terminada cuando está en la columna LISTO.",
+        "Crea una tarea en un proyecto. Solo el equipo del proyecto o coordinación. Solo se puede asignar a miembros del equipo del proyecto. Para crearla en PROGRESO o REVISION hay que asignarla. Una tarea queda terminada cuando está en la columna LISTO.",
       inputSchema: z.object({
         projectId,
         name: z.string().min(1),
@@ -341,7 +341,7 @@ export function registerProjectTools(server: McpServer): void {
     {
       title: "Editar tarea",
       description:
-        "Edita una tarea: solo cambian los campos que se envían. Sirve para moverla de columna, asignarla o desasignarla. PROGRESO y REVISION exigen asignado: al moverla ahí sin asignado, envía también assigneeId. Al sacarla de PROGRESO o REVISION, si la persona conectada la tenía asignada, puede registrar en minutesSpent el tiempo que le dedicó (queda en sus horas, vinculado a la tarea); es opcional.",
+        "Edita una tarea (solo el equipo del proyecto o coordinación): solo cambian los campos que se envían. Sirve para moverla de columna, asignarla o desasignarla. PROGRESO y REVISION exigen asignado: al moverla ahí sin asignado, envía también assigneeId. Al sacarla de PROGRESO o REVISION, si la persona conectada la tenía asignada, puede registrar en minutesSpent el tiempo que le dedicó (queda en sus horas, vinculado a la tarea); es opcional.",
       inputSchema: z.object({
         projectId,
         taskId: z.string().describe("Label de la tarea (T-01)"),
@@ -400,7 +400,7 @@ export function registerProjectTools(server: McpServer): void {
     "create_feature",
     {
       title: "Crear feature",
-      description: "Crea una feature en un proyecto. Nace en estado PENDIENTE. Descripción en Markdown (GFM).",
+      description: "Crea una feature en un proyecto (solo el equipo del proyecto o coordinación). Nace en estado PENDIENTE. Descripción en Markdown (GFM).",
       inputSchema: z.object({
         projectId,
         name: z.string().min(1),
@@ -438,7 +438,7 @@ export function registerProjectTools(server: McpServer): void {
     {
       title: "Editar feature",
       description:
-        "Edita una feature: solo cambian los campos que se envían. El estado (PENDIENTE, EN_PROGRESO, HECHO) es manual: no se deriva de sus tareas.",
+        "Edita una feature (solo el equipo del proyecto o coordinación): solo cambian los campos que se envían. El estado (PENDIENTE, EN_PROGRESO, HECHO) es manual: no se deriva de sus tareas.",
       inputSchema: z.object({
         projectId,
         featureId: z.string().describe("Label de la feature (F-01)"),
@@ -504,7 +504,7 @@ export function registerProjectTools(server: McpServer): void {
     {
       title: "Crear documento",
       description:
-        "Crea uno de los documentos fijos de un proyecto que todavía está vacío (lo mismo que hacer clic en su fila en la app), con contenido inicial opcional en Markdown (GFM, sin HTML ni listas de tareas). Los que ya existen se editan con update_document.",
+        "Crea uno de los documentos fijos de un proyecto que todavía está vacío (lo mismo que hacer clic en su fila en la app; solo el equipo del proyecto o coordinación), con contenido inicial opcional en Markdown (GFM, sin HTML ni listas de tareas). Los que ya existen se editan con update_document.",
       inputSchema: z.object({
         projectId,
         slot: z.enum(["kickoff", "requerimientos", "tecnico", "decisiones", "informe"]),
@@ -529,7 +529,7 @@ export function registerProjectTools(server: McpServer): void {
     {
       title: "Crear acta",
       description:
-        "Crea un acta en un proyecto, con contenido inicial opcional en Markdown (GFM, sin HTML ni listas de tareas). Devuelve su docId para get_document y update_document.",
+        "Crea un acta en un proyecto (solo el equipo del proyecto o coordinación), con contenido inicial opcional en Markdown (GFM, sin HTML ni listas de tareas). Devuelve su docId para get_document y update_document.",
       inputSchema: z.object({
         projectId,
         title: z.string().min(1),
@@ -564,7 +564,7 @@ export function registerProjectTools(server: McpServer): void {
     {
       title: "Resolver comentario de documento",
       description:
-        "Resuelve un comentario de un documento o acta, como el botón «Resolver» de la app: lo borra y no queda registro. Antes, muéstrale a la persona qué comentarios vas a resolver y espera su confirmación.",
+        "Resuelve un comentario de un documento o acta, como el botón «Resolver» de la app: lo borra y no queda registro. Solo el equipo del proyecto o coordinación. Antes, muéstrale a la persona qué comentarios vas a resolver y espera su confirmación.",
       inputSchema: z.object({
         projectId,
         docId,
@@ -584,7 +584,7 @@ export function registerProjectTools(server: McpServer): void {
     {
       title: "Editar documento",
       description:
-        "Reemplaza el contenido completo de un documento o acta: envía el texto entero, no solo lo que cambia. Cada guardado con cambios queda en el historial de versiones. Formato Markdown (GFM) sin HTML ni listas de tareas (- [ ]): las tareas viven en el kanban.",
+        "Reemplaza el contenido completo de un documento o acta (solo el equipo del proyecto o coordinación): envía el texto entero, no solo lo que cambia. Cada guardado con cambios queda en el historial de versiones. Formato Markdown (GFM) sin HTML ni listas de tareas (- [ ]): las tareas viven en el kanban.",
       inputSchema: z.object({
         projectId,
         docId,

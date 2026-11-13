@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { errorMessage } from "@/lib/api/http";
 import { KANBAN_COLUMN_OPTIONS } from "@/lib/api/status";
 import { useIssueLink, type IssueLinkVariables, type ProjectDetail } from "@/lib/api/projects";
+import { useCanEditProject } from "@/components/providers/CurrentMemberProvider";
 
 const columnLabel = Object.fromEntries(KANBAN_COLUMN_OPTIONS.map((opt) => [opt.value, opt.label]));
 
@@ -14,6 +15,9 @@ const columnLabel = Object.fromEntries(KANBAN_COLUMN_OPTIONS.map((opt) => [opt.v
  */
 export function IssueLinksPanel({ project, number }: { project: ProjectDetail; number: number }) {
   const link = useIssueLink(project.id);
+  // Vincular y desvincular direcciona features y tareas: es del equipo del proyecto y
+  // coordinación. El resto ve la lista sin los controles.
+  const canEdit = useCanEditProject(project);
   // El select se vuelve a "Vincular existente…" tras elegir; la opción solo dispara la acción.
   const [choice, setChoice] = useState("");
 
@@ -47,16 +51,18 @@ export function IssueLinksPanel({ project, number }: { project: ProjectDetail; n
               <span className="issue-link-label">{f.id}</span>
               <span className="issue-link-name" title={f.name}>{f.name}</span>
               <Badge color={f.statusColor}>{f.status}</Badge>
-              <button
-                type="button"
-                className="issue-link-x"
-                title="Desvincular"
-                aria-label={`Desvincular ${f.id}`}
-                disabled={pendingLabel === f.id}
-                onClick={() => mutate("features", f.id, false)}
-              >
-                ×
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  className="issue-link-x"
+                  title="Desvincular"
+                  aria-label={`Desvincular ${f.id}`}
+                  disabled={pendingLabel === f.id}
+                  onClick={() => mutate("features", f.id, false)}
+                >
+                  ×
+                </button>
+              )}
             </div>
           ))}
           {tasks.map((t) => (
@@ -64,22 +70,24 @@ export function IssueLinksPanel({ project, number }: { project: ProjectDetail; n
               <span className="issue-link-label">{t.id}</span>
               <span className={`issue-link-name${t.done ? " done" : ""}`} title={t.name}>{t.name}</span>
               <span className="issue-link-col">{columnLabel[t.columnValue]}</span>
-              <button
-                type="button"
-                className="issue-link-x"
-                title="Desvincular"
-                aria-label={`Desvincular ${t.id}`}
-                disabled={pendingLabel === t.id}
-                onClick={() => mutate("tasks", t.id, false)}
-              >
-                ×
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  className="issue-link-x"
+                  title="Desvincular"
+                  aria-label={`Desvincular ${t.id}`}
+                  disabled={pendingLabel === t.id}
+                  onClick={() => mutate("tasks", t.id, false)}
+                >
+                  ×
+                </button>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      {(unlinkedFeatures.length > 0 || unlinkedTasks.length > 0) && (
+      {canEdit && (unlinkedFeatures.length > 0 || unlinkedTasks.length > 0) && (
         <select
           className="field-select issue-link-select"
           value={choice}

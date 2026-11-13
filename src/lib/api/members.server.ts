@@ -17,6 +17,7 @@ import {
   parseAvailability,
   sanitizeAvailability,
 } from "@/lib/api/member-fields";
+import { normalizeGithubLogin } from "@/lib/invitations";
 import {
   memberRoleLabel,
   memberStatusColor,
@@ -27,8 +28,10 @@ import {
 import type {
   AchievementIcon,
   ApproveMemberInput,
+  CreateInvitationInput,
   MemberAdminInput,
   MemberDetail,
+  MemberInvitation,
   MemberListItem,
   PendingMember,
   UpdateMemberInput,
@@ -283,8 +286,8 @@ export async function approveMember(id: string, input: ApproveMemberInput): Prom
  * Rechaza una solicitud o saca a un miembro: en ambos casos borra la fila, que
  * es también la identidad de Better Auth (sesiones y cuenta de GitHub caen en
  * cascada). Sus tareas quedan sin asignar y sus documentos y eventos sin autor.
- * Como el registro es abierto, la persona puede volver a entrar y quedaría de
- * nuevo pendiente.
+ * Para volver a entrar, la persona necesita una invitación nueva: la que usó ya
+ * no sirve, y sin invitación GitHub no crea la cuenta.
  *
  * Quien borra es coordinación y no puede borrarse a sí mismo, así que nunca se
  * queda la plataforma sin coordinación por esta vía.
@@ -297,4 +300,123 @@ export async function deleteMember(id: string): Promise<boolean> {
 
   const { count } = await prisma.member.deleteMany({ where: { id } });
   return count > 0;
+}
+
+// ─── Invitaciones ───
+//
+// La lista de usuarios de GitHub que pueden crear una cuenta (ver el hook de alta
+// en src/lib/auth/invitations.ts). La administra coordinación desde "Pendientes".
+
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
+}
+
+export function parseCreateInvitationInput(body: unknown): CreateInvitationInput | null {
+  if (typeof body !== "object" || body === null) return null;
+  const b = body as Record<string, unknown>;
+
+  const githubLogin = typeof b.githubLogin === "string" ? normalizeGithubLogin(b.githubLogin) : null;
+  if (!githubLogin) return null;
+
+  const role = typeof b.role === "string" ? b.role : "";
+  if (!(Object.values(MemberRole) as string[]).includes(role)) return null;
+
+  return { githubLogin, role: role as MemberRole };
+}
+
+type InvitationRow = {
+  id: string;
+  githubLogin: string;
+  role: MemberRole;
+  createdAt: Date;
+  createdBy: { name: string } | null;
+};
+
+const invitationSelect = {
+  id: true,
+  githubLogin: true,
+  role: true,
+  createdAt: true,
+  createdBy: { select: { name: true } },
+} as const;
+
+function toInvitationView(row: InvitationRow): MemberInvitation {
+  return {
+    id: row.id,
+    githubLogin: row.githubLogin,
+    role: memberRoleLabel[row.role],
+    roleValue: row.role,
+    invitedBy: row.createdBy?.name ?? null,
+    createdAt: formatDayMonthYear(row.createdAt),
+  };
+}
+
+/** El Member creado con ese login, si existe. Member.githubLogin conserva las mayúsculas de GitHub. */
+function findMemberByGithubLogin(githubLogin: string) {
+  return prisma.member.findFirst({
+    where: { githubLogin: { equals: githubLogin, mode: "insensitive" } },
+    select: { id: true },
+  });
+}
+
+/**
+ * Invitaciones sin usar, la más reciente primero. Se saltan las de un login que ya
+ * es de un miembro: el hook marca usedAt después de crear la cuenta y, si esa
+ * escritura fallara, la invitación seguiría aquí aunque ya no esté pendiente.
+ */
+export async function getInvitations(): Promise<MemberInvitation[]> {
+  await requireCoordinacion();
+
+  const [rows, members] = await Promise.all([
+    prisma.invitation.findMany({ where: { usedAt: null }, orderBy: { createdAt: "desc" }, select: invitationSelect }),
+    prisma.member.findMany({ where: { githubLogin: { not: null } }, select: { githubLogin: true } }),
+  ]);
+  const taken = new Set(members.map((m) => m.githubLogin?.toLowerCase()));
+  return rows.filter((row) => !taken.has(row.githubLogin)).map(toInvitationView);
+}
+
+/**
+ * Agrega un login a la lista. Si ya tuvo una invitación usada y su cuenta se borró
+ * después, se reutiliza esa fila (el login es único) como una invitación nueva.
+ */
+export async function createInvitation(input: CreateInvitationInput): Promise<MemberInvitation> {
+  const actor = await requireCoordinacion();
+
+  if (await findMemberByGithubLogin(input.githubLogin)) {
+    throw new ApiError(409, "ALREADY_MEMBER", `@${input.githubLogin} ya tiene una cuenta en la plataforma`);
+  }
+
+  const alreadyInvited = new ApiError(409, "ALREADY_INVITED", `@${input.githubLogin} ya está invitado`);
+  const existing = await prisma.invitation.findUnique({
+    where: { githubLogin: input.githubLogin },
+    select: { usedAt: true },
+  });
+  if (existing && existing.usedAt === null) throw alreadyInvited;
+
+  const data = { role: input.role, createdById: actor.id, createdAt: new Date(), usedAt: null };
+  try {
+    const row = existing
+      ? await prisma.invitation.update({ where: { githubLogin: input.githubLogin }, data, select: invitationSelect })
+      : await prisma.invitation.create({
+          data: { ...data, githubLogin: input.githubLogin },
+          select: invitationSelect,
+        });
+    return toInvitationView(row);
+  } catch (error) {
+    // Dos coordinadores invitando al mismo login a la vez.
+    if (isUniqueViolation(error)) throw alreadyInvited;
+    throw error;
+  }
+}
+
+/** Quita una invitación sin usar. Una usada es historia de cómo entró alguien: 409. */
+export async function deleteInvitation(id: string): Promise<boolean> {
+  await requireCoordinacion();
+
+  const { count } = await prisma.invitation.deleteMany({ where: { id, usedAt: null } });
+  if (count > 0) return true;
+
+  const exists = await prisma.invitation.findUnique({ where: { id }, select: { id: true } });
+  if (!exists) return false;
+  throw new ApiError(409, "INVITATION_USED", "Esa invitación ya se usó para crear una cuenta");
 }

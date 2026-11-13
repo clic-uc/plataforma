@@ -7,22 +7,25 @@ import { errorMessage } from "@/lib/api/http";
 
 /**
  * Descripción en Markdown de una feature o tarea: se lee renderizada y "Editar" abre la
- * barra de formato con el textarea. Sin descripción abre directo para escribir.
+ * barra de formato con el textarea. Sin descripción abre directo para escribir, salvo para
+ * quien no puede editarla, que solo la lee.
  */
 export function DescriptionEditor({
   description,
+  canEdit,
   saving,
   error,
   onSave,
 }: {
   description: string | null;
+  canEdit: boolean;
   saving: boolean;
   error: Error | null;
   /** onDone vuelve a la lectura; quien llama lo invoca cuando el guardado terminó bien. */
   onSave: (description: string | null, onDone: () => void) => void;
 }) {
   // null = leyendo. El borrador nace al pulsar "Editar", así nunca arrastra un texto viejo.
-  const [draft, setDraft] = useState<string | null>(description ? null : "");
+  const [draft, setDraft] = useState<string | null>(description || !canEdit ? null : "");
   const { textareaRef, format, onKeyDown } = useMarkdownEditor(draft ?? "", setDraft);
 
   function handleSubmit(e: FormEvent) {
@@ -30,14 +33,16 @@ export function DescriptionEditor({
     onSave(draft?.trim() || null, () => setDraft(null));
   }
 
-  if (draft === null) {
+  if (draft === null || !canEdit) {
     return (
       <div className="form-field">
         <div className="desc-head">
           <div className="f-label">Descripción</div>
-          <button type="button" className="doc-c-resolve" onClick={() => setDraft(description ?? "")}>
-            Editar
-          </button>
+          {canEdit && (
+            <button type="button" className="doc-c-resolve" onClick={() => setDraft(description ?? "")}>
+              Editar
+            </button>
+          )}
         </div>
         {description ? <Markdown>{description}</Markdown> : <div className="doc-e-empty">Sin descripción.</div>}
       </div>

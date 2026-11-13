@@ -111,16 +111,40 @@ Domain rules that live in code, not the schema (derived `Task.done`, server-gene
 
 ### Authentication and authorization
 
-`src/lib/auth.ts` holds the Better Auth instance (GitHub only, no domain restriction — anyone with a
-GitHub account can sign up, and `Member.isVerifiedByCoordinator` is the only thing gating access).
-Coordination approves or rejects pending accounts from the "Pendientes" tab in `/miembros` (see
-Domain behaviour › Members).
+`src/lib/auth.ts` holds the Better Auth instance (GitHub only). **Sign-up is closed by an allowlist
+of GitHub usernames**: the `Invitation` table (migration `20261113120000_github_invitations`), which
+coordination manages from the "Pendientes" tab in `/miembros` (see Domain behaviour › Members).
+
+- **The gate is a `databaseHooks.user.create.before` hook** (`admitInvitedUser`,
+  `src/lib/auth/invitations.ts`; the decision itself is pure, `decideSignUp` in
+  `src/lib/invitations.ts`). GitHub's `mapProfileToUser` also passes `profile.login` as
+  `githubLogin`; the hook looks it up, lowercased, among the *unused* invitations. Without one it
+  throws an `APIError` whose message is `github_not_invited`: the row is never inserted, and Better
+  Auth's callback redirects to the sign-in's `errorCallbackURL` (`/login`) with
+  `?error=github_not_invited`, which `LoginCard` explains. It throws instead of returning `false`
+  on purpose: with `false` Better Auth carries on with a null user and ends in the generic
+  `unable_to_create_user`. Anything created without a GitHub login is rejected too.
+- **With an invitation the `Member` is born approved** (`isVerifiedByCoordinator = true`, the
+  invitation's role, `joinedAt = now`). The adapter only inserts fields it knows, so `githubLogin`,
+  `role`, `isVerifiedByCoordinator` and `joinedAt` are declared in `user.additionalFields`; the last
+  three with `input: false`. `githubLogin` must accept input (with `input: false` Better Auth drops
+  what `mapProfileToUser` returns), so the `hooks.before` middleware rejects it on `/update-user`.
+- **The invitation is marked used in the `after` hook** (`markInvitationUsed`), not in `before`: the
+  Prisma adapter runs here without a transaction, so marking it before the insert would consume it
+  even if the insert then failed. A failure there is logged, not raised (the account already exists);
+  the Pendientes list hides invitations whose login already belongs to a member.
+- **Only creation goes through the hook.** Existing accounts sign in as before, invited or not, and
+  `githubLogin` is written only at creation (no `overrideUserInfoOnSignIn`), so it goes stale if the
+  person renames their GitHub account. Accounts created before the allowlist have it `null`.
+- Every OAuth callback error now lands on `/login?error=…` (before, Better Auth showed its own error
+  page and, in production, redirected to `/` and lost the code).
+
 `src/lib/auth/guards.ts` is the enforcement point:
 
 - `getCurrentMember()` — the `Member` behind the session, or `null`. Wrapped in React `cache()`. It rereads
   the row instead of trusting `session.user` because `role` and `isVerifiedByCoordinator` are domain
-  fields Better Auth does not carry in the session — and so a role change takes effect without
-  signing in again.
+  fields (Better Auth only declares them so the sign-up hook can write them) — and so a role change
+  takes effect without signing in again.
 - `requireMember()` / `requireCoordinacion()` — throw `AuthError`.
 - `runAsMember(id, fn)` — makes `getCurrentMember()` return that member instead of reading the
   session cookie, for the duration of `fn` (an `AsyncLocalStorage`). Only the MCP route uses it, so an
@@ -150,14 +174,16 @@ skills) and Better Auth's identity, wired with `user: { modelName: "member" }` i
 Everything already pointed at `Member` — `Task.assigneeId`, `Document.authorId`,
 `ProjectMember.memberId`, `Standup.memberId` — and `Session.userId` / `Account.userId` now do too.
 
-This works because **every member is born from a login**; there is no pre-registration. If that ever
-changes and coordination needs to create members before they sign in, this is the decision to
+This works because **every member is born from a login**; there is no pre-registration. An
+invitation is not a member: it only allows that GitHub login to create its own `Member` on its first
+sign-in. If coordination ever needs to create members before they sign in, this is the decision to
 revisit.
 
-One consequence worth knowing: every domain column on `Member` needs a `@default` (`role` →
-`ROOKIE`, `status` → `ACTIVO`, and so on). Better Auth inserts the row knowing only its own fields,
-so anything `NOT NULL` without a default would break sign-up. That is also why there is no creation
-hook. And deleting a member's row deletes the person entirely, sessions included.
+One consequence worth knowing: every domain column on `Member` needs a `@default` or must be
+nullable (`role` → `ROOKIE`, `status` → `ACTIVO`, `githubLogin` nullable, and so on). Better Auth
+inserts the row knowing only its own fields plus the declared `additionalFields` that the creation
+hook fills (see Authentication and authorization), so anything `NOT NULL` without a default would
+break sign-up. And deleting a member's row deletes the person entirely, sessions included.
 
 ## Domain behaviour
 
@@ -279,8 +305,13 @@ Weekly StandUp, this week's hours chart and the hours history.
   (`src/components/ui/`), shared with the move dialog and the task edit modal.
 - **Minutes come in 15-minute steps**, from 15 min to 24 h per entry. The sum of a day is not checked
   against 24 h. Hours cannot be logged in the future (by Chile's "today").
-- **Any existing project**: being on its team is not required, in line with the rest of the
-  authorization (see below). The form does not offer archived projects.
+- **Only projects of your team** (Plataforma Interna #32): whoever works on a project should be on
+  it. Logging on another one is 422 `NOT_ON_TEAM`; coordination logs on any. Hours already logged on
+  a project the person is not on (from before the rule, or after leaving the team) are kept and stay
+  editable as long as they do not change project; moving them to a project requires being on its
+  team. The form offers only those projects, not archived ones, and the current one when editing;
+  with none, it explains why. Pending hours of someone who has since left the team can no longer be
+  logged ("Descartar" still works).
 - **Deleting a project deletes its hours** (`deleteProject`), like its tasks. To keep them, archive it.
 - **Dates**: `Standup.weekStart` and `TimeEntry.date` are dates without time at midnight UTC, like
   all-day events; over the API they travel as `"YYYY-MM-DD"`. Week math and the chart aggregation
@@ -314,18 +345,37 @@ Weekly StandUp, this week's hours chart and the hours history.
 - **Deleting a member deletes the row**, which is also their Better Auth identity: sessions and the
   GitHub account cascade, they leave the teams, their tasks become unassigned and their documents and
   events lose their author. To set someone aside without deleting them there is the **Hiatus** status.
+  The invitation they used stays used, so coming back needs a new one.
 - **The page has two tabs, Miembros and Pendientes** (the latter for coordination). A "Gestionar
   equipos" placeholder was removed: project teams are managed from each project.
-- **Inviting is sharing the `/login` link**: there is no pre-registration (see `Member` is the user).
-- **Approving** is done from `/miembros`, "Pendientes" tab (coordination only; the sidebar shows how
-  many requests wait). Approving sets the role and sets `joinedAt` to the approval date. Rejecting
-  deletes the account; since signup is open, the person can come back in and is pending again.
+- **Inviting is adding the GitHub username, then sharing the `/login` link.** In "Pendientes",
+  coordination adds the login with the role the person will get (default Rookie, like approving); on
+  their first GitHub sign-in the account is created already approved with that role (see
+  Authentication and authorization). The tab lists the unused invitations (login, role, who invited,
+  date) and lets coordination remove one; a used one cannot be removed (409 `INVITATION_USED`).
+  Endpoints `GET`/`POST /api/members/invitations` and `DELETE /api/members/invitations/[id]`,
+  coordination only (`getInvitations`/`createInvitation`/`deleteInvitation` in
+  `members.server.ts`). Not in the MCP, like every coordination action.
+  - **The login is validated and normalised** (`normalizeGithubLogin`, `src/lib/invitations.ts`):
+    alphanumerics and single hyphens, 1–39 characters, no leading or trailing hyphen, a leading `@`
+    stripped, stored lowercased (a CHECK keeps it so, which makes the unique case-insensitive). A login
+    already invited is 409 `ALREADY_INVITED`; one that already belongs to a member (compared
+    case-insensitively with `Member.githubLogin`) is 409 `ALREADY_MEMBER`. Inviting again someone
+    whose account was deleted reuses their used row as a fresh invitation.
+  - Someone not invited who tries to sign in sees "Tu cuenta de GitHub no está invitada…" on
+    `/login`, and nothing is written.
+- **Approving** applies only to **legacy pending accounts**: those created while sign-up was open
+  (`isVerifiedByCoordinator = false`). With invitations no new ones appear, so "Pendientes" shows
+  them under "Cuentas por aprobar" only while any are left, with approve/reject as before
+  (coordination only). The sidebar badge still counts only these, not invitations. Approving sets the
+  role and sets `joinedAt` to the approval date. Rejecting deletes the account; signing in again then
+  requires an invitation.
 - **Birthday** stores only day and month, in the year 2000 at noon UTC, read with UTC getters
   (`src/lib/api/member-fields.ts`).
 - **Weekly availability**: `Member.availability` stores blocks `LUN_MANANA`…`VIE_NOCHE`. Monday–Friday
   × morning/afternoon/evening, no exact hours.
 - `getMembers()` / `getMember()` exclude accounts with `isVerifiedByCoordinator = false`: a pending
-  account is not a member yet and must not show up in the table or the selectors.
+  (legacy) account is not a member yet and must not show up in the table or the selectors.
 - **`area` was removed** from members and projects (migration `20261027130000_drop_area`): it was free
   text that was only displayed and filtered on, and the stored values were lost.
 
@@ -386,7 +436,8 @@ Weekly StandUp, this week's hours chart and the hours history.
   documents and actas like `DocVersion` (a CHECK for a single parent). Selecting text in the
   **preview** shows "+ Comentar" and the comment lands in the side panel.
   - **No threads and no resolve-versus-delete distinction**: "Resolver" deletes the row (hard
-    delete). Any member can resolve any comment. Nothing records what was resolved.
+    delete). Any member can comment, but only the project's team (and coordination) resolves, and
+    it can resolve anyone's comment. Nothing records what was resolved.
   - **The fragment is anchored by its text, not by position**: `quote` (the preview text, without the
     Markdown syntax) and `occurrence` (which of its repetitions, 0 = the first). Positions would
     drift with any earlier edit; the text survives. The pure logic is in `src/lib/comments.ts` and the
@@ -445,7 +496,8 @@ Weekly StandUp, this week's hours chart and the hours history.
   `EditTaskModal`, and deleting is a red text action at the left of that modal's footer, with the same
   confirmation as before. The `labelsToken` is pinned when the detail opens and travels to the edit and
   the delete without being reread. Deleting a project likewise lives in `EditProjectModal`.
-- **Task assignment**: any member can assign, but only people on the project's team
+- **Task assignment**: whoever can edit the project's tasks (its team and coordination, see
+  Authorization scope) assigns them, and only to people on the project's team
   (`assertAssignable` in `projects.server.ts` answers 422 otherwise). A project without a team does not
   allow assigning until coordination builds it. `assigneeId` is required in the body of task
   POST/PATCH, even if `null`, so a client that does not know the field does not unassign by accident.
@@ -485,7 +537,8 @@ features or tasks. `Issue` + `IssueComment` (migration `20261028130000_issues`).
   feature or task by label, so they require `X-Labels-Token` like every label mutation; the issue
   goes by number. `ProjectTask.issues` / `ProjectFeature.issues` carry the linked numbers, and the
   task/feature detail modals link back to them. Deleting either side removes the link. Linking or
-  unlinking counts as issue activity.
+  unlinking counts as issue activity. Linking, unlinking and creating from an issue change the plan,
+  so they are for the project's team and coordination, unlike the rest of the issue.
 - **Status**: `ABIERTO` / `CERRADO`. Closing requires a reason (`RESUELTO`, `DESCARTADO`,
   `DUPLICADO`); reopening clears it. A CHECK in the migration keeps `closeReason`/`closedAt` set if
   and only if it is closed. Type is `BUG` / `IDEA` / `PREGUNTA` (an enum, not free labels).
@@ -496,7 +549,8 @@ features or tasks. `Issue` + `IssueComment` (migration `20261028130000_issues`).
   does not move `lastActivityAt` or unmark the issue for anyone. Closing keeps it. The list filters by
   it and orders by activity (default) or by priority (high → none, by activity within each level;
   `sortIssuesByPriority`).
-- **Permissions**: any approved member opens, comments, closes and reopens issues on any project.
+- **Permissions**: any approved member opens, comments, closes and reopens issues on any project,
+  team or not (see Authorization scope).
   Title, body and type are edited by the author or `COORDINACION`. Each comment is edited only by its
   author (`editedAt` shows "editado"), not even by coordination. Deleting an issue is coordination
   only and takes its thread; comments cannot be deleted. Closing is the normal way out.
@@ -616,20 +670,57 @@ Claude Code) or any MCP client. Streamable HTTP, stateless.
 
 ### Authorization scope
 
-- **Only projects are told apart.** Only `COORDINACION` can create, edit or delete projects and
-  compose their team. Everything else — tasks, features, actas, documents, comments, issues — can be done by
-  any approved member on **any** project, whether or not they are on it. `ProjectMember` only restricts
-  who a task can be assigned to.
-- **The UI hides coordination actions** (new/edit/delete project, managing the team) through
-  `useIsCoordinacion()` from `CurrentMemberProvider`. That is presentation only: the server is what
-  rejects with 403.
+Decided in Plataforma Interna #32.
+
+- **Projects themselves are coordination's.** Only `COORDINACION` creates, edits or deletes projects
+  and composes their team.
+- **Everyone sees every project.** Any approved member reads any project — tasks, features,
+  documents, actas, issues, history — whether or not they are on its team. Lists, the Dashboard and the
+  MCP are not filtered by team.
+- **Only the team works on it.** Creating, editing, moving and deleting tasks and features, linking
+  them to issues (`setIssueLink`, and creating them from an issue), creating and editing documents and
+  actas, and resolving document comments is for the project's team (`ProjectMember`) and coordination.
+  Anyone else gets 403 `NOT_ON_TEAM`. The check is `assertProjectWriter(member, projectId)`
+  (`src/lib/auth/guards.ts`), called after the function has checked the project or entity exists, so a
+  missing one is still a 404. Rookies follow the same rule (they are only kept out of the MCP).
+- **Conversation stays open.** Opening, commenting, closing, reopening, prioritizing and marking issues
+  as reviewed, and commenting on documents, is for any approved member on any project: it is how
+  someone outside a team gives feedback without touching its plan.
+- **Hours** are logged only on projects where the person is on the team (coordination is exempt;
+  see Time and StandUps).
+- Tasks are assigned only to people on the team (`assertAssignable`, 422).
+- **The UI hides what the person cannot do**: coordination actions through `useIsCoordinacion()`,
+  project work through `useCanEditProject(project)` (both in `CurrentMemberProvider`, the latter on top
+  of the pure `canEditProject` in `src/lib/project-access.ts`, using the team that `ProjectDetail`
+  already carries). That is presentation only: the server is what rejects with 403.
 
 ### Data and seed
 
 There is no seed. `prisma db seed`, `prisma/seed/seed.ts` and the member/project demo data were
 removed, together with the `tsx` dependency only they used: the database holds real data and the seed
-wiped demo records nobody reseeded. To get test data in a fresh database, sign in with GitHub and
-approve the account from "Pendientes". The `prisma/seed` folder is gone.
+wiped demo records nobody reseeded. In a fresh database nobody is invited yet, so the first account
+needs its invitation inserted by hand (`INSERT INTO "Invitation" (id, "githubLogin", role) VALUES
+('first', '<login in lowercase>', 'COORDINACION')`); after that, sign in with GitHub and invite the
+rest from "Pendientes". The `prisma/seed` folder is gone.
+
+**Test users on the `dev` Neon branch**: one approved member per role (Rookie, Equipo,
+Coordinación), to test permissions and each role's journey without real accounts.
+
+- `pnpm dev:test-users` (`scripts/dev-test-users.mjs`) creates them, plus the project Test
+  (`test-project-dev`) with Equipo and Coordinación on its team and the Rookie outside it. It is
+  idempotent and refuses to run unless `NEON_BRANCH` in `.env.local` is `dev`; run it again after
+  every "Reset from parent", which copies production over `dev`.
+- They sign in with **email and password**, which Better Auth enables only when
+  `ENABLE_TEST_LOGIN=1` and the process is not on Vercel (`isTestLoginEnabled`,
+  `src/lib/auth/test-login.ts`). With it, `/login` shows a button per role. Sign-up stays disabled:
+  the script is the only way those accounts exist, and since it writes them with SQL they need no
+  invitation (the allowlist hook only runs when Better Auth creates an account). Emails `rookie@` / `equipo@` /
+  `coordinacion@test.clic.local`, password `clic-dev-pass` unless `TEST_USERS_PASSWORD` says
+  otherwise (the list and the default live in both the script and `test-login.ts`).
+- They work for the MCP too (`clic-local`): the email sign-in goes through `fetch`, so instead of
+  following the plugin's redirect to `/autorizar` like GitHub does, `LoginCard` resumes the
+  authorization itself when `/login` carries an OAuth query (`client_id`). The Rookie gets 403
+  from `/api/mcp`, as it should.
 
 ## Known state
 

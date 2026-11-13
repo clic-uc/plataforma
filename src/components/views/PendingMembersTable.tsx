@@ -6,7 +6,11 @@ import { ApproveMemberModal } from "@/components/views/ApproveMemberModal";
 import { errorMessage } from "@/lib/api/http";
 import { useDeleteMember, type PendingMember } from "@/lib/api/members";
 
-/** Cola de cuentas esperando aprobación. Solo la monta coordinación. */
+/**
+ * Cuentas esperando aprobación: las que se crearon cuando el registro era abierto.
+ * Con las invitaciones las cuentas nacen aprobadas, así que no aparecen nuevas.
+ * Solo la monta coordinación, y solo si queda alguna.
+ */
 export function PendingMembersTable({ pending }: { pending: PendingMember[] }) {
   const [approving, setApproving] = useState<PendingMember | null>(null);
   const reject = useDeleteMember();
@@ -14,7 +18,7 @@ export function PendingMembersTable({ pending }: { pending: PendingMember[] }) {
   function handleReject(member: PendingMember) {
     if (
       !window.confirm(
-        `¿Rechazar la solicitud de ${member.name}? Se borra su cuenta; si vuelve a entrar con GitHub aparecerá de nuevo como pendiente.`,
+        `¿Rechazar la solicitud de ${member.name}? Se borra su cuenta; para volver a entrar necesitará una invitación.`,
       )
     ) {
       return;
@@ -22,16 +26,15 @@ export function PendingMembersTable({ pending }: { pending: PendingMember[] }) {
     reject.mutate(member.id);
   }
 
-  if (pending.length === 0) {
-    return (
-      <div className="ph">
-        <div className="ph-text">No hay solicitudes pendientes. Cuando alguien entre con GitHub por primera vez, aparecerá aquí.</div>
-      </div>
-    );
-  }
-
   return (
-    <>
+    <section className="flex flex-col gap-3">
+      <div>
+        <h2 className="text-sm font-semibold text-text-1">Cuentas por aprobar</h2>
+        <p className="mt-1 text-sm text-text-2">
+          Entraron con GitHub antes de que existieran las invitaciones y esperan que coordinación las apruebe.
+        </p>
+      </div>
+
       {reject.isError && (
         <div className="modal-error">{errorMessage(reject.error, "No se pudo rechazar la solicitud. Intenta de nuevo.")}</div>
       )}
@@ -84,6 +87,6 @@ export function PendingMembersTable({ pending }: { pending: PendingMember[] }) {
       </div>
 
       {approving && <ApproveMemberModal member={approving} onClose={() => setApproving(null)} />}
-    </>
+    </section>
   );
 }

@@ -12,12 +12,14 @@ export function getInitials(name: string): string {
   return initials.toUpperCase();
 }
 
-export function formatMonthYear(date: Date): string {
-  return new Intl.DateTimeFormat("es-CL", { month: "short", year: "numeric" }).format(date).replace(".", "");
+// `timeZone: "UTC"` para las fechas sin hora que se guardan a medianoche UTC (inicio de un
+// proyecto, fecha de un acta): sin ella se leen en la zona del proceso, y en Chile caen un día antes.
+export function formatMonthYear(date: Date, timeZone?: string): string {
+  return new Intl.DateTimeFormat("es-CL", { month: "short", year: "numeric", timeZone }).format(date).replace(".", "");
 }
 
-export function formatDayMonth(date: Date): string {
-  return new Intl.DateTimeFormat("es-CL", { day: "numeric", month: "short" }).format(date).replace(".", "");
+export function formatDayMonth(date: Date, timeZone?: string): string {
+  return new Intl.DateTimeFormat("es-CL", { day: "numeric", month: "short", timeZone }).format(date).replace(".", "");
 }
 
 export function formatDayMonthYear(date: Date): string {
@@ -48,9 +50,13 @@ export function formatWeekdayDayMonthYear(date: Date): string {
   }).format(date).replace(/\./g, "");
 }
 
-// Estas fechas se tratan como "solo calendario" (sin hora ni zona horaria) en toda la app
-// — usar Date#toISOString()/new Date(string) las corrompería en zonas con offset negativo
-// (ej. "2026-06-01" se lee como medianoche UTC, que en Chile cae el 31 de mayo).
+// Una fecha de calendario en la hora local del proceso: para el navegador ("hoy" en un
+// formulario, las vistas del calendario). Usar Date#toISOString()/new Date(string) aquí
+// la corrompería en zonas con offset negativo ("2026-06-01" se lee como medianoche UTC,
+// que en Chile cae el 31 de mayo).
+// Lo que se guarda en la base como fecha sin hora (medianoche UTC) no pasa por aquí: el
+// servidor lo lee y escribe con dateToDayKey / dayKeyToDate (src/lib/tiempo.ts), que no
+// dependen de la zona horaria del proceso.
 export function toISODateInput(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");

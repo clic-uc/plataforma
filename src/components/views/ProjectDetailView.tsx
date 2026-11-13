@@ -44,7 +44,7 @@ import { ProjectTeamModal } from "@/components/views/ProjectTeamModal";
 import { CreateIssueModal } from "@/components/views/CreateIssueModal";
 import { ProjectIssuesList } from "@/components/views/ProjectIssuesList";
 import { useProjectIssues, type IssueFilter, type IssueOrder, type IssuePriorityFilter } from "@/lib/api/issues";
-import { useCurrentMember, useIsCoordinacion } from "@/components/providers/CurrentMemberProvider";
+import { useCanEditProject, useCurrentMember, useIsCoordinacion } from "@/components/providers/CurrentMemberProvider";
 import { moveNeedsDialog, planMove } from "@/lib/task-move";
 
 const docIcon = {
@@ -109,14 +109,18 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const [columnFilter, setColumnFilter] = useState<KanbanColumn | "">("");
   const [onlyActive, setOnlyActive] = useState(false);
   const { data: project } = useProject(projectId);
+  // Tareas, features, documentos y actas los trabajan el equipo y coordinación; el resto ve el
+  // proyecto sin esas acciones (el servidor responde 403 NOT_ON_TEAM igual).
+  const canEdit = useCanEditProject(project);
   const { data: issues = [] } = useProjectIssues(projectId);
   const createDoc = useCreateProjectDoc(projectId);
   const moveTask = useMoveTask(projectId);
   const updateTask = useUpdateTask(projectId);
   if (!project) return null;
 
-  // Acciones sin modal propio (arrastrar, activar/desactivar): su error se muestra en un aviso.
-  const inlineMutations = [moveTask, updateTask];
+  // Acciones sin modal propio (arrastrar, activar/desactivar, crear un documento): su error se
+  // muestra en un aviso.
+  const inlineMutations = [moveTask, updateTask, createDoc];
   const inlineError = inlineMutations.find((m) => m.isError)?.error ?? null;
 
   const openIssues = issues.filter((issue) => issue.status === "ABIERTO").length;
@@ -204,6 +208,12 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             </button>
           </div>
         )}
+        {/* Coordinación siempre puede editar, así que esta nota nunca comparte lugar con "Editar proyecto". */}
+        {!canEdit && (
+          <p className="max-w-60 text-right text-xs text-text-3">
+            No estás en el equipo de este proyecto: puedes verlo, comentar documentos y participar en sus issues.
+          </p>
+        )}
       </header>
 
       {inlineError && (
@@ -232,12 +242,12 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             <IssuesTabIcon size={13} />
             Issues <span className="utab-count" title="Abiertos">{openIssues}</span>
           </button>
-          {tab === "backlog" && (
+          {canEdit && tab === "backlog" && (
             <div className="pd-work-actions">
               <button className="btn-xs btn-xs-p" onClick={() => setCreatingFeature(true)}>+ Nueva feature</button>
             </div>
           )}
-          {(tab === "tareas" || tab === "kanban") && (
+          {canEdit && (tab === "tareas" || tab === "kanban") && (
             <div className="pd-work-actions">
               <button className="btn-xs btn-xs-p" onClick={() => setCreatingTask(true)}>+ Nueva tarea</button>
             </div>
@@ -321,7 +331,11 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
           <div>
             {project.features.length === 0 && (
               <div className="ph">
-                <div className="ph-text">Sin features todavía. Agrega la primera con «Nueva feature» para ordenar el backlog.</div>
+                <div className="ph-text">
+                  {canEdit
+                    ? "Sin features todavía. Agrega la primera con «Nueva feature» para ordenar el backlog."
+                    : "Sin features todavía."}
+                </div>
               </div>
             )}
             {project.features.map((f) => (
@@ -354,7 +368,9 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
               <div className="ph">
                 <div className="ph-text">
                   {project.tasks.length === 0
-                    ? "Sin tareas todavía. Crea la primera con «Nueva tarea»."
+                    ? canEdit
+                      ? "Sin tareas todavía. Crea la primera con «Nueva tarea»."
+                      : "Sin tareas todavía."
                     : "Ninguna tarea coincide con los filtros."}
                 </div>
               </div>
@@ -365,14 +381,17 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                 className={`task-row clickable${t.active ? "" : " inactive"}`}
                 onClick={() => setViewingTask({ task: t, labelsToken: project.labelsToken })}
               >
-                <input
-                  type="checkbox"
-                  className="task-check"
-                  checked={t.active}
-                  title={t.active ? "Ocultar del kanban" : "Mostrar en kanban"}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={() => toggleTaskActive(t, project.labelsToken)}
-                />
+                {/* Activar o desactivar es editar la tarea; sin permiso, la fila atenuada ya dice cuál está fuera del kanban. */}
+                {canEdit && (
+                  <input
+                    type="checkbox"
+                    className="task-check"
+                    checked={t.active}
+                    title={t.active ? "Ocultar del kanban" : "Mostrar en kanban"}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleTaskActive(t, project.labelsToken)}
+                  />
+                )}
                 {t.featureId && <span className="task-feat-tag">{t.featureId}</span>}
                 <div className="task-id">{t.id}</div>
                 <div className={`task-name${t.done ? " done" : ""}`}>{t.name}</div>
@@ -416,12 +435,18 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                     <div
                       key={t.id}
                       className={`kanban-card${dragging?.taskId === t.id ? " dragging" : ""}${col.key === "listo" ? " is-done" : ""}`}
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.effectAllowed = "move";
-                        e.dataTransfer.setData("text/plain", t.id);
-                        setDragging({ taskId: t.id, labelsToken: project.labelsToken });
-                      }}
+                      draggable={canEdit}
+                      // Sin permiso no se arrastra: tampoco al soltar texto seleccionado de la tarjeta,
+                      // que dispara dragstart aunque la tarjeta no sea draggable.
+                      onDragStart={
+                        canEdit
+                          ? (e) => {
+                              e.dataTransfer.effectAllowed = "move";
+                              e.dataTransfer.setData("text/plain", t.id);
+                              setDragging({ taskId: t.id, labelsToken: project.labelsToken });
+                            }
+                          : undefined
+                      }
                       onDragEnd={endDrag}
                       onClick={() => setViewingTask({ task: t, labelsToken: project.labelsToken })}
                     >
@@ -436,7 +461,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
                       </div>
                     </div>
                   ))}
-                  {col.key === "pendiente" && (
+                  {canEdit && col.key === "pendiente" && (
                     <button type="button" className="kanban-col-add" onClick={() => setCreatingTask(true)}>+ Nueva tarea</button>
                   )}
                 </div>
@@ -461,6 +486,20 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
           <div className="card-label">Documentos</div>
           {project.docs.map((doc) => {
             const Icon = docIcon[doc.icon];
+            if (!doc.filled && !canEdit) {
+              // Sin permiso para crearlo, el documento vacío es solo una fila informativa.
+              return (
+                <div key={doc.key} className="flex items-center gap-2.5 py-[7px]">
+                  <div className="doc-fixed-icon empty">
+                    <Icon />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-text-2">{doc.name}</div>
+                    <div className="mt-px text-xs text-text-3">Sin crear</div>
+                  </div>
+                </div>
+              );
+            }
             if (!doc.filled) {
               return (
                 <button
@@ -502,10 +541,14 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
         <div className="pd-side-sec">
           <div className="card-label">
             <span>Actas {project.actas.length > 0 && <span className="label-count">{project.actas.length}</span>}</span>
-            <button type="button" className="link-add" onClick={() => setCreatingActa(true)}>+ Agregar acta</button>
+            {canEdit && (
+              <button type="button" className="link-add" onClick={() => setCreatingActa(true)}>+ Agregar acta</button>
+            )}
           </div>
           {project.actas.length === 0 ? (
-            <div className="empty-line">Sin actas. Registra la próxima reunión con «Agregar acta».</div>
+            <div className="empty-line">
+              {canEdit ? "Sin actas. Registra la próxima reunión con «Agregar acta»." : "Sin actas todavía."}
+            </div>
           ) : (
             project.actas.map((acta) => (
               <Link key={acta.id} href={`/proyectos/${project.id}/docs/${acta.id}`} className="acta-row">
@@ -526,6 +569,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
           feature={liveFeature(viewingFeature.feature)}
           tasks={project.tasks.filter((t) => t.featureId === viewingFeature.feature.id)}
           labelsToken={viewingFeature.labelsToken}
+          canEdit={canEdit}
           onEdit={() => {
             setEditingFeature({ feature: liveFeature(viewingFeature.feature), labelsToken: viewingFeature.labelsToken });
             setViewingFeature(null);
@@ -555,6 +599,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
           projectId={project.id}
           task={liveTask(viewingTask.task)}
           labelsToken={viewingTask.labelsToken}
+          canEdit={canEdit}
           onEdit={() => {
             setEditingTask({ task: liveTask(viewingTask.task), labelsToken: viewingTask.labelsToken });
             setViewingTask(null);
