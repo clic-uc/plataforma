@@ -27,7 +27,7 @@ import {
 import type { ProjectDetail, ProjectFeature, ProjectTask } from "@/lib/api/projects";
 import { labelNumber } from "@/lib/api/labels";
 import { MAX_ENTRY_MINUTES, MINUTES_STEP, isValidEntryMinutes } from "@/lib/tiempo";
-import { fail, json, run } from "@/lib/mcp/result";
+import { fail, json, orNull, run } from "@/lib/mcp/result";
 
 const projectId = z.string().describe("id del proyecto (de list_projects)");
 const labelsToken = z.string().describe("labelsToken que devolvió get_project");
@@ -95,8 +95,16 @@ function featureRowView(feature: ProjectFeature) {
   };
 }
 
+/** Una feature completa, con su descripción. Sin taskCount: en get_feature las tareas vienen en `tasks`. */
 function featureView(feature: ProjectFeature) {
-  return { ...featureRowView(feature), description: feature.description };
+  return {
+    id: feature.id,
+    name: feature.name,
+    priority: feature.priorityValue,
+    status: feature.statusValue,
+    description: feature.description,
+    issues: feature.issues,
+  };
 }
 
 export interface TaskFilter {
@@ -486,7 +494,7 @@ export function registerProjectTools(server: McpServer): void {
           date: doc.date,
           version: contentVersion(doc.content),
           content: doc.content,
-          comments,
+          comments: comments.map((c) => ({ ...c, author: orNull(c.author) })),
         });
       }),
   );

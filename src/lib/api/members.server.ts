@@ -62,6 +62,7 @@ export async function getMembers(): Promise<MemberListItem[]> {
     initials: getInitials(member.name),
     image: member.image,
     email: member.email,
+    roleValue: member.role,
     status: memberStatusLabel[member.status],
     statusColor: memberStatusColor[member.status],
     statusValue: member.status,

@@ -5,7 +5,7 @@ import { AuthError } from "@/lib/auth/guards";
 import type { ProjectDetail, ProjectFeature, ProjectTask } from "@/lib/api/projects";
 import { registerTools } from "@/lib/mcp/server";
 
-const { projects, issues, events, tiempo } = vi.hoisted(() => ({
+const { projects, issues, events, tiempo, members } = vi.hoisted(() => ({
   projects: {
     getProject: vi.fn(),
     getAssignedTasks: vi.fn(),
@@ -30,8 +30,16 @@ const { projects, issues, events, tiempo } = vi.hoisted(() => ({
     setIssuePriority: vi.fn(),
     setIssueReviewed: vi.fn(),
   },
-  events: { createEvent: vi.fn(), getEvent: vi.fn(), updateEvent: vi.fn() },
-  tiempo: { createTimeEntry: vi.fn(), updateTimeEntry: vi.fn(), getTimeEntryLink: vi.fn(), resolveTaskLabel: vi.fn() },
+  events: { createEvent: vi.fn(), getEvent: vi.fn(), getEvents: vi.fn(), updateEvent: vi.fn() },
+  tiempo: {
+    createTimeEntry: vi.fn(),
+    updateTimeEntry: vi.fn(),
+    getTimeEntryLink: vi.fn(),
+    resolveTaskLabel: vi.fn(),
+    getStandup: vi.fn(),
+    saveStandup: vi.fn(),
+  },
+  members: { getMembers: vi.fn() },
 }));
 
 // Las funciones .server.ts se mockean; los parse* son los reales, para que las
@@ -51,6 +59,10 @@ vi.mock("@/lib/api/events.server", async (importOriginal) => ({
 vi.mock("@/lib/api/tiempo.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api/tiempo.server")>()),
   ...tiempo,
+}));
+vi.mock("@/lib/api/members.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api/members.server")>()),
+  ...members,
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 vi.mock("@/lib/auth", () => ({ auth: {} }));
@@ -249,6 +261,12 @@ describe("get_feature", () => {
     expect(result).toMatchObject({ id: "F-01", description: "Texto largo de la feature", labelsToken: "tok" });
     expect(result.tasks.map((t: { id: string }) => t.id)).toEqual(["T-01"]);
     expect(raw).not.toContain("Con GitHub");
+  });
+
+  it("no repite taskCount: las tareas vienen en `tasks`", async () => {
+    projects.getProject.mockResolvedValue(fullProject([task()], [feature()]));
+    const result = JSON.parse(text(await call("get_feature", { projectId: "p1", featureId: "F-01" })));
+    expect(result).not.toHaveProperty("taskCount");
   });
 
   it("responde error si la feature no existe", async () => {
@@ -532,6 +550,20 @@ describe("create_acta", () => {
   });
 });
 
+describe("get_document", () => {
+  it("el autor de un comentario que ya no existe es null, no una cadena vacía", async () => {
+    projects.getProjectDoc.mockResolvedValue({ title: "Kickoff", type: "Documento", author: "Ana", date: "5 ago 2026", content: "Hola" });
+    projects.getProjectDocComments.mockResolvedValue([
+      { id: "c1", author: "", date: "6 ago 2026", quote: "Hola", occurrence: 0, body: "Ojo" },
+      { id: "c2", author: "Beto", date: "6 ago 2026", quote: "Hola", occurrence: 0, body: "Sí" },
+    ]);
+
+    const result = JSON.parse(text(await call("get_document", { projectId: "p1", docId: "kickoff" })));
+
+    expect(result.comments.map((c: { author: string | null }) => c.author)).toEqual([null, "Beto"]);
+  });
+});
+
 describe("resolve_document_comment", () => {
   it("resuelve el comentario", async () => {
     projects.resolveProjectDocComment.mockResolvedValue(true);
@@ -567,6 +599,31 @@ describe("issues", () => {
     canDelete: false,
     comments: [],
   };
+
+  it("sin valor es null y el detalle no repite commentCount", async () => {
+    const open = {
+      ...issue,
+      status: "ABIERTO",
+      closeReason: null,
+      author: "",
+      closedBy: "",
+      closedAt: "",
+      commentCount: 1,
+      comments: [{ id: "c1", author: "", date: "1 nov 2026", edited: false, body: "Hola", canEdit: false }],
+    };
+    issues.getIssue.mockResolvedValue(open);
+    projects.getProject.mockResolvedValue(project([]));
+
+    const detail = JSON.parse(text(await call("get_issue", { projectId: "p1", number: 3 })));
+
+    expect(detail).toMatchObject({ author: null, closedBy: null, closedAt: null });
+    expect(detail.comments[0].author).toBeNull();
+    expect(detail).not.toHaveProperty("commentCount");
+
+    issues.getProjectIssues.mockResolvedValue([open]);
+    const [row] = JSON.parse(text(await call("list_issues", { projectId: "p1", status: "ABIERTO" })));
+    expect(row).toMatchObject({ author: null, commentCount: 1 });
+  });
 
   it("close_issue cierra con el motivo", async () => {
     issues.setIssueStatus.mockResolvedValue(issue);
@@ -837,6 +894,123 @@ describe("update_event", () => {
     events.getEvent.mockResolvedValue(null);
     const result = await call("update_event", { id: "e9", title: "X" });
     expect(result.isError).toBe(true);
+  });
+});
+
+describe("list_events y get_event", () => {
+  const timed = {
+    id: "e1",
+    title: "Daily",
+    description: "Texto largo del evento",
+    location: "Sala 2",
+    kind: "REUNION",
+    allDay: false,
+    // 10:00–10:30 en Chile (UTC-4 en julio).
+    startsAt: "2026-07-15T14:00:00.000Z",
+    endsAt: "2026-07-15T14:30:00.000Z",
+    seriesId: null,
+    project: { id: "p1", name: "San Miguel" },
+    createdBy: { id: "m1", name: "Ana", initials: "A" },
+    canEdit: true,
+  };
+  const allDay = {
+    ...timed,
+    id: "e2",
+    title: "Feriado",
+    allDay: true,
+    startsAt: "2026-07-16T00:00:00.000Z",
+    endsAt: "2026-07-18T00:00:00.000Z",
+  };
+
+  it("list_events usa los mismos campos que create_event y update_event, sin descripción", async () => {
+    events.getEvents.mockResolvedValue([timed, allDay]);
+
+    const raw = text(await call("list_events", { from: "2026-07-15", to: "2026-07-20" }));
+    const [first, second] = JSON.parse(raw);
+
+    expect(first).toMatchObject({ id: "e1", allDay: false, date: "2026-07-15", endDate: "2026-07-15", startTime: "10:00", endTime: "10:30" });
+    expect(second).toMatchObject({ id: "e2", allDay: true, date: "2026-07-16", endDate: "2026-07-17" });
+    expect(second).not.toHaveProperty("startTime");
+    expect(first).not.toHaveProperty("start");
+    expect(first).not.toHaveProperty("description");
+    expect(raw).not.toContain("Texto largo");
+    expect(first).toMatchObject({ location: "Sala 2", createdBy: "Ana" });
+  });
+
+  it("list_events deja fuera los eventos que no tocan el rango", async () => {
+    events.getEvents.mockResolvedValue([timed, allDay]);
+    const result = JSON.parse(text(await call("list_events", { from: "2026-07-17", to: "2026-07-20" })));
+    expect(result.map((e: { id: string }) => e.id)).toEqual(["e2"]);
+  });
+
+  it("get_event trae el evento completo, con la descripción", async () => {
+    events.getEvent.mockResolvedValue(timed);
+    const result = JSON.parse(text(await call("get_event", { id: "e1" })));
+    expect(result).toMatchObject({ id: "e1", description: "Texto largo del evento", startTime: "10:00", location: "Sala 2" });
+  });
+
+  it("get_event responde error si el evento no existe", async () => {
+    events.getEvent.mockResolvedValue(null);
+    expect((await call("get_event", { id: "e9" })).isError).toBe(true);
+  });
+
+  it("create_event y update_event devuelven el evento completo, con la descripción", async () => {
+    events.createEvent.mockResolvedValue([timed]);
+    const created = JSON.parse(
+      text(await call("create_event", { title: "Daily", kind: "REUNION", allDay: false, date: "2026-07-15", startTime: "10:00", endTime: "10:30" })),
+    );
+    expect(created[0]).toMatchObject({ description: "Texto largo del evento", startTime: "10:00" });
+
+    events.getEvent.mockResolvedValue(timed);
+    events.updateEvent.mockResolvedValue(timed);
+    const updated = JSON.parse(text(await call("update_event", { id: "e1", title: "Daily 2" })));
+    expect(updated).toMatchObject({ description: "Texto largo del evento", startTime: "10:00" });
+  });
+});
+
+describe("list_members", () => {
+  it("trae el rol de cada miembro", async () => {
+    members.getMembers.mockResolvedValue([
+      { id: "m1", name: "Ana", email: "a@x.cl", roleValue: "COORDINACION", statusValue: "ACTIVO", projects: [{ id: "p1", name: "San Miguel" }] },
+    ]);
+
+    const result = JSON.parse(text(await call("list_members", {})));
+
+    expect(result).toEqual([
+      { id: "m1", name: "Ana", email: "a@x.cl", role: "COORDINACION", status: "ACTIVO", projects: ["San Miguel"] },
+    ]);
+  });
+});
+
+describe("StandUp", () => {
+  const saved = { memberId: "m1", weekStart: "2026-07-13", text: "Hice esto", learned: null, updatedAt: "2026-07-15T14:00:00.000Z" };
+
+  it("get_standup devuelve weekStart afuera y el standup sin memberId ni weekStart repetido", async () => {
+    tiempo.getStandup.mockResolvedValue(saved);
+
+    const result = JSON.parse(text(await call("get_standup", { weekStart: "2026-07-13" })));
+
+    expect(result).toEqual({
+      weekStart: "2026-07-13",
+      standup: { text: "Hice esto", learned: null, updatedAt: "2026-07-15T14:00:00.000Z" },
+    });
+  });
+
+  it("get_standup sin enviar devuelve standup null, con la semana", async () => {
+    tiempo.getStandup.mockResolvedValue(null);
+    const result = JSON.parse(text(await call("get_standup", { weekStart: "2026-07-13" })));
+    expect(result).toEqual({ weekStart: "2026-07-13", standup: null });
+  });
+
+  it("submit_standup devuelve la misma forma que get_standup", async () => {
+    tiempo.saveStandup.mockResolvedValue(saved);
+
+    const result = JSON.parse(text(await call("submit_standup", { text: "Hice esto", weekStart: "2026-07-13" })));
+
+    expect(result).toEqual({
+      weekStart: "2026-07-13",
+      standup: { text: "Hice esto", learned: null, updatedAt: "2026-07-15T14:00:00.000Z" },
+    });
   });
 });
 

@@ -8,6 +8,15 @@ export function json(data: unknown): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify(data) }] };
 }
 
+/**
+ * Los modelos de vista de la UI marcan "sin valor" con "" (autor que ya no existe, issue
+ * abierto sin fecha de cierre); en el MCP el vacío es siempre null, como en el resto de
+ * los campos opcionales.
+ */
+export function orNull(value: string): string | null {
+  return value === "" ? null : value;
+}
+
 /** Error que el modelo lee para corregir y reintentar; no es un fallo del servidor. */
 export function fail(message: string): CallToolResult {
   return { content: [{ type: "text", text: message }], isError: true };

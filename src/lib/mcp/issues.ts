@@ -21,13 +21,13 @@ import {
 import { getProject, setIssueLink } from "@/lib/api/projects.server";
 import { matchesPriorityFilter, type IssueDetail, type IssueListItem } from "@/lib/api/issues";
 import type { ProjectDetail } from "@/lib/api/projects";
-import { fail, json, run } from "@/lib/mcp/result";
+import { fail, json, orNull, run } from "@/lib/mcp/result";
 
 const projectId = z.string().describe("id del proyecto (de list_projects)");
 const number = z.number().int().positive().describe("Número del issue (el 12 de #12)");
 const labelsToken = z.string().describe("labelsToken que devolvió get_project o get_issue");
 
-function issueListView(issue: IssueListItem) {
+function issueFields(issue: IssueListItem) {
   return {
     number: issue.number,
     title: issue.title,
@@ -35,22 +35,26 @@ function issueListView(issue: IssueListItem) {
     priority: issue.priority,
     status: issue.status,
     closeReason: issue.closeReason,
-    author: issue.author,
+    author: orNull(issue.author),
     lastActivityAt: issue.lastActivityAt,
-    commentCount: issue.commentCount,
     reviewed: issue.reviewedByMe,
   };
 }
 
-// canEdit/canDelete solo ocultan botones en la UI; al modelo no le sirven.
+function issueListView(issue: IssueListItem) {
+  return { ...issueFields(issue), commentCount: issue.commentCount };
+}
+
+// canEdit/canDelete solo ocultan botones en la UI; al modelo no le sirven. Sin commentCount:
+// el hilo completo viene en `comments`.
 function issueView(issue: IssueDetail) {
   return {
-    ...issueListView(issue),
+    ...issueFields(issue),
     createdAt: issue.createdAt,
     body: issue.body,
-    closedBy: issue.closedBy,
-    closedAt: issue.closedAt,
-    comments: issue.comments.map((c) => ({ author: c.author, date: c.date, edited: c.edited, body: c.body })),
+    closedBy: orNull(issue.closedBy),
+    closedAt: orNull(issue.closedAt),
+    comments: issue.comments.map((c) => ({ author: orNull(c.author), date: c.date, edited: c.edited, body: c.body })),
   };
 }
 

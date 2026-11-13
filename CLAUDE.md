@@ -561,6 +561,16 @@ Claude Code) or any MCP client. Streamable HTTP, stateless.
   them and the hours), which also return the `labelsToken`. `list_my_tasks` has no description either.
   A new tool that returns a list should follow the same rule: summaries in the list, the unbounded text
   (descriptions, bodies, threads) behind a read of one item.
+- **Read responses follow the same few rules**, so a model can rely on them. "No value" is always
+  `null`: the UI view models use `""` (a deleted author, an open issue's close date) and `orNull`
+  (`src/lib/mcp/result.ts`) converts. A response never repeats what it already carries: no
+  `commentCount` next to `comments`, no `taskCount` next to `tasks`, no `memberId` in the StandUp
+  (always the connected person), whose shape is `{ weekStart, standup }` in `get_standup` and
+  `submit_standup` alike. `list_events` returns the field names that `create_event` / `update_event`
+  take (`date`, `endDate`, `startTime`, `endTime`; all-day events only the first two) and no
+  `description`, which is `get_event`'s. `list_members` carries each member's `role`. Dates in issues,
+  documents and member StandUps are still display text ("12 nov 2026, 23:54"), not ISO; that and the
+  lists that grow without a cap are open as issues of the platform.
 - **Tasks and features go by label with `labelsToken`**, like the UI: `get_project`, `get_task` and
   `get_feature` return it and
   `update_task`, `update_feature` and `create_task` (with a feature) require it. `update_task`,
